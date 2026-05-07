@@ -1,0 +1,147 @@
+<% content_for :page_title, "Admin Stats" %>
+
+<div class="space-y-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-950">Platform stats</h2>
+      <p class="mt-1 text-sm text-slate-500">Global Staywise usage, subscriptions, and AI activity.</p>
+    </div>
+    <%= link_to "Manage users", admin_users_path, class: secondary_button_class %>
+  </div>
+
+  <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <% [
+      ["Total users", @total_users],
+      ["Paying accounts", @paying_accounts],
+      ["Active paid subscriptions", @paying_subscriptions],
+      ["Total properties", @total_properties],
+      ["Guests", @total_guests],
+      ["Conversations", @total_conversations],
+      ["Open alerts", @open_alerts],
+      ["AI messages", @ai_messages]
+    ].each do |label, value| %>
+      <div class="<%= card_class %> p-4">
+        <p class="text-sm text-slate-500"><%= label %></p>
+        <p class="mt-3 text-3xl font-semibold text-slate-950"><%= value %></p>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-2">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Subscriptions by plan</h3>
+      </div>
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <tbody class="divide-y divide-slate-100">
+          <% Subscription::PLANS.each do |plan| %>
+            <tr>
+              <td class="px-5 py-3 font-medium text-slate-900"><%= plan.humanize %></td>
+              <td class="px-5 py-3 text-right text-slate-600"><%= @subscriptions_by_plan[plan] || 0 %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Subscriptions by status</h3>
+      </div>
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <tbody class="divide-y divide-slate-100">
+          <% Subscription::STATUSES.each do |status| %>
+            <tr>
+              <td class="px-5 py-3">
+                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(status) %>"><%= status.humanize %></span>
+              </td>
+              <td class="px-5 py-3 text-right text-slate-600"><%= @subscriptions_by_status[status] || 0 %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-3">
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Users by role</h3>
+      <div class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-slate-500">Admins</span><strong><%= @admin_users %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">Owners</span><strong><%= @owner_users %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">Members</span><strong><%= @member_users %></strong></div>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Subscription health</h3>
+      <div class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-slate-500">Trialing</span><strong><%= @trialing_subscriptions %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">Past due</span><strong><%= @past_due_subscriptions %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">Canceled</span><strong><%= @canceled_subscriptions %></strong></div>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Conversation health</h3>
+      <div class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-slate-500">Active conversations</span><strong><%= @active_conversations %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">Open alerts</span><strong><%= @open_alerts %></strong></div>
+        <div class="flex justify-between"><span class="text-slate-500">AI messages</span><strong><%= @ai_messages %></strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-2">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Alerts by type</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @alerts_by_type.each do |type, count| %>
+          <div class="flex items-center justify-between px-5 py-3 text-sm">
+            <span class="font-medium text-slate-900"><%= type.humanize %></span>
+            <span class="text-slate-500"><%= count %></span>
+          </div>
+        <% end %>
+        <% if @alerts_by_type.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No alerts yet.</p>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Recent signups</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @recent_signups.each do |user| %>
+          <div class="px-5 py-3 text-sm">
+            <p class="font-medium text-slate-950"><%= user.email %></p>
+            <p class="mt-1 text-xs text-slate-500"><%= user.account.name %> · <%= user.created_at.to_fs(:short) %></p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> overflow-hidden">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <h3 class="text-base font-semibold text-slate-950">Recent subscription events</h3>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <% @recent_billing_events.each do |event| %>
+        <div class="flex items-center justify-between gap-4 px-5 py-3 text-sm">
+          <div>
+            <p class="font-medium text-slate-950"><%= event.event_type %></p>
+            <p class="mt-1 text-xs text-slate-500"><%= event.account&.name || "Unknown account" %></p>
+          </div>
+          <span class="text-xs text-slate-400"><%= event.created_at.to_fs(:short) %></span>
+        </div>
+      <% end %>
+      <% if @recent_billing_events.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No subscription events yet.</p>
+      <% end %>
+    </div>
+  </section>
+</div>

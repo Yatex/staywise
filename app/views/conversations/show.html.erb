@@ -1,0 +1,66 @@
+<% content_for :page_title, "Conversation" %>
+
+<div class="grid gap-6 xl:grid-cols-[1fr_340px]">
+  <section class="<%= card_class %> overflow-hidden">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <%= link_to "Back to conversations", conversations_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+      <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-950"><%= @conversation.guest.display_name %></h2>
+          <p class="mt-1 text-sm text-slate-500"><%= @conversation.property.display_name %> · WhatsApp</p>
+        </div>
+        <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@conversation.status) %>"><%= @conversation.status.humanize %></span>
+      </div>
+    </div>
+
+    <div class="space-y-4 bg-slate-50 px-5 py-6">
+      <% @messages.each do |message| %>
+        <div class="flex <%= message.sender == "guest" ? "justify-start" : "justify-end" %>">
+          <div class="<%= message.sender == "guest" ? "border-slate-200 bg-white text-slate-800" : "border-slate-900 bg-slate-900 text-white" %> max-w-[760px] rounded-xl border px-4 py-3 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-wide <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= message.sender.humanize %></p>
+            <p class="mt-2 whitespace-pre-line text-sm leading-6"><%= message.body %></p>
+            <p class="mt-3 text-xs <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= message.created_at.to_fs(:short) %></p>
+          </div>
+        </div>
+      <% end %>
+      <% if @messages.blank? %>
+        <p class="text-sm text-slate-500">No messages yet.</p>
+      <% end %>
+    </div>
+  </section>
+
+  <aside class="space-y-4">
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Guest</h3>
+      <dl class="mt-4 space-y-3 text-sm">
+        <div>
+          <dt class="text-slate-500">Phone</dt>
+          <dd class="font-medium text-slate-900"><%= @conversation.guest.phone_number %></dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Language</dt>
+          <dd class="font-medium text-slate-900"><%= @conversation.guest.language.presence || "Not set" %></dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Reservation</dt>
+          <dd class="font-medium text-slate-900"><%= @conversation.guest.reservation_reference.presence || "Not set" %></dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Conversation alerts</h3>
+      <div class="mt-4 space-y-3">
+        <% @alerts.each do |alert| %>
+          <%= link_to alert_path(alert), class: "block rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50" do %>
+            <p class="text-sm font-medium text-slate-950"><%= alert.title %></p>
+            <p class="mt-1 text-xs text-slate-500"><%= alert.priority.humanize %> · <%= alert.status.humanize %></p>
+          <% end %>
+        <% end %>
+        <% if @alerts.blank? %>
+          <p class="text-sm text-slate-500">No alerts for this conversation.</p>
+        <% end %>
+      </div>
+    </div>
+  </aside>
+</div>

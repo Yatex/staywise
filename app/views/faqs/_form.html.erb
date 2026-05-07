@@ -1,0 +1,35 @@
+<%= form_with model: [property, faq], class: "space-y-5" do |form| %>
+  <% if faq.errors.any? %>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <%= faq.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <div class="<%= card_class %> p-5">
+    <div class="grid gap-4">
+      <div>
+        <%= form.label :question, class: label_class %>
+        <%= form.text_field :question, class: field_class, required: true %>
+      </div>
+      <div>
+        <%= form.label :answer, class: label_class %>
+        <%= form.text_area :answer, rows: 8, class: field_class, required: true %>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :category, class: label_class %>
+          <%= form.text_field :category, class: field_class, placeholder: "Access, checkout, amenities..." %>
+        </div>
+        <label class="mt-8 flex items-center gap-2 text-sm font-medium text-slate-700">
+          <%= form.check_box :active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Active
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-3">
+    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Save FAQ", class: primary_button_class %>
+  </div>
+<% end %>

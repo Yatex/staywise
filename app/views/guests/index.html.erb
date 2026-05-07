@@ -1,0 +1,27 @@
+<% content_for :page_title, "Guests" %>
+
+<div class="space-y-6">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-950">Guests</h2>
+    <p class="mt-1 text-sm text-slate-500">Guests are created automatically from WhatsApp conversations.</p>
+  </div>
+
+  <div class="<%= card_class %> overflow-hidden">
+    <div class="divide-y divide-slate-100">
+      <% @guests.each do |guest| %>
+        <%= link_to guest_path(guest), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="font-medium text-slate-950"><%= guest.display_name %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= guest.property&.display_name || "No property assigned" %></p>
+            </div>
+            <p class="text-sm text-slate-500"><%= guest.phone_number %></p>
+          </div>
+        <% end %>
+      <% end %>
+      <% if @guests.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No guests yet.</p>
+      <% end %>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,85 @@
+<%= form_with model: property, class: "space-y-6" do |form| %>
+  <% if property.errors.any? %>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <%= property.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <section class="<%= card_class %> p-5">
+    <h2 class="text-base font-semibold text-slate-950">Property basics</h2>
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+      <div>
+        <%= form.label :name, "Property name", class: label_class %>
+        <%= form.text_field :name, class: field_class, required: true %>
+      </div>
+      <div>
+        <%= form.label :internal_nickname, class: label_class %>
+        <%= form.text_field :internal_nickname, class: field_class %>
+      </div>
+      <div class="md:col-span-2">
+        <%= form.label :address, class: label_class %>
+        <%= form.text_field :address, class: field_class %>
+      </div>
+      <div class="md:col-span-2">
+        <%= form.label :tag_list, "Tags", class: label_class %>
+        <%= form.text_field :tag_list, value: property.tag_list, class: field_class, placeholder: "beachfront, family, premium" %>
+        <p class="mt-2 text-xs text-slate-500">Separate tags with commas. Tags are used for grouping and filtering properties.</p>
+      </div>
+      <div>
+        <%= form.label :check_in_time, class: label_class %>
+        <%= form.text_field :check_in_time, class: field_class, placeholder: "3:00 PM" %>
+      </div>
+      <div>
+        <%= form.label :checkout_time, class: label_class %>
+        <%= form.text_field :checkout_time, class: field_class, placeholder: "11:00 AM" %>
+      </div>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h2 class="text-base font-semibold text-slate-950">Guest essentials</h2>
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+      <div>
+        <%= form.label :wifi_name, "WiFi name", class: label_class %>
+        <%= form.text_field :wifi_name, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :wifi_password, "WiFi password", class: label_class %>
+        <%= form.text_field :wifi_password, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :access_instructions, class: label_class %>
+        <%= form.text_area :access_instructions, rows: 5, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :parking_instructions, class: label_class %>
+        <%= form.text_area :parking_instructions, rows: 5, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :house_rules, class: label_class %>
+        <%= form.text_area :house_rules, rows: 5, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :emergency_information, class: label_class %>
+        <%= form.text_area :emergency_information, rows: 5, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :owner_contact_instructions, class: label_class %>
+        <%= form.text_area :owner_contact_instructions, rows: 5, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :ai_general_notes, "General notes for the AI", class: label_class %>
+        <%= form.text_area :ai_general_notes, rows: 5, class: field_class %>
+      </div>
+      <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+        <%= form.check_box :ai_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+        Enable AI replies for this property
+      </label>
+    </div>
+  </section>
+
+  <div class="flex items-center justify-end gap-3">
+    <%= link_to "Cancel", property.persisted? ? property_path(property) : properties_path, class: secondary_button_class %>
+    <%= form.submit property.persisted? ? "Save changes" : "Create property", class: primary_button_class %>
+  </div>
+<% end %>

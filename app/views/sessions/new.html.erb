@@ -1,0 +1,25 @@
+<% content_for :page_title, "Sign in" %>
+
+<section class="w-full max-w-md">
+  <div class="<%= card_class %> p-6">
+    <div class="mb-6">
+      <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">S</div>
+      <h1 class="text-2xl font-semibold text-slate-950">Sign in to Staywise</h1>
+      <p class="mt-2 text-sm text-slate-500">Manage guest knowledge, conversations, alerts, and subscriptions.</p>
+    </div>
+
+    <%= form_with url: login_path, class: "space-y-4" do |form| %>
+      <div>
+        <%= form.label :email, class: label_class %>
+        <%= form.email_field :email, class: field_class, required: true %>
+      </div>
+      <div>
+        <%= form.label :password, class: label_class %>
+        <%= form.password_field :password, class: field_class, required: true %>
+      </div>
+      <%= form.submit "Sign in", class: "#{primary_button_class} w-full" %>
+    <% end %>
+
+    <p class="mt-5 text-center text-sm text-slate-500">New to Staywise? <%= link_to "Create an account", signup_path, class: "font-semibold text-slate-950" %></p>
+  </div>
+</section>

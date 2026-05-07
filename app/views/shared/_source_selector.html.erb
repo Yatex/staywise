@@ -1,0 +1,13 @@
+<% if sources.any? %>
+  <div class="<%= card_class %> mb-6 p-5">
+    <h3 class="text-base font-semibold text-slate-950"><%= title %></h3>
+    <p class="mt-1 text-sm text-slate-500"><%= description %></p>
+    <%= form_with url: url, method: :get, class: "mt-4 grid gap-3 md:grid-cols-[1fr_auto]" do %>
+      <%= select_tag :source_id,
+        options_for_select(sources.map { |source| [label.call(source), source.id] }, params[:source_id]),
+        include_blank: "Choose an existing item",
+        class: field_class %>
+      <%= submit_tag "Use as template", class: secondary_button_class %>
+    <% end %>
+  </div>
+<% end %>

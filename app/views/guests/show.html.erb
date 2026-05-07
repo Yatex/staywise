@@ -1,0 +1,55 @@
+<% content_for :page_title, @guest.display_name %>
+
+<div class="grid gap-6 xl:grid-cols-[340px_1fr]">
+  <aside class="<%= card_class %> h-fit p-5">
+    <%= link_to "Back to guests", guests_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+    <h2 class="mt-4 text-xl font-semibold text-slate-950"><%= @guest.display_name %></h2>
+    <dl class="mt-5 space-y-3 text-sm">
+      <div>
+        <dt class="text-slate-500">Phone</dt>
+        <dd class="font-medium text-slate-900"><%= @guest.phone_number %></dd>
+      </div>
+      <div>
+        <dt class="text-slate-500">Property</dt>
+        <dd class="font-medium text-slate-900"><%= @guest.property&.display_name || "Not assigned" %></dd>
+      </div>
+      <div>
+        <dt class="text-slate-500">Stay dates</dt>
+        <dd class="font-medium text-slate-900"><%= [@guest.check_in_date, @guest.checkout_date].compact.join(" to ").presence || "Not set" %></dd>
+      </div>
+    </dl>
+  </aside>
+
+  <section class="space-y-6">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Conversations</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @conversations.each do |conversation| %>
+          <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <p class="font-medium text-slate-950"><%= conversation.property.display_name %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= conversation.status.humanize %> · <%= conversation.last_message_at&.to_fs(:short) || "No messages yet" %></p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Alerts</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @alerts.each do |alert| %>
+          <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <p class="font-medium text-slate-950"><%= alert.title %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= alert.priority.humanize %> · <%= alert.status.humanize %></p>
+          <% end %>
+        <% end %>
+        <% if @alerts.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No alerts for this guest.</p>
+        <% end %>
+      </div>
+    </div>
+  </section>
+</div>

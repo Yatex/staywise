@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+
+# Default to port 3000 if not specified
+export PORT="${PORT:-3000}"
+
+# Let the debug gem allow remote connections,
+# but avoid loading until `debugger` is called
+export RUBY_DEBUG_OPEN="true"
+export RUBY_DEBUG_LAZY="true"
+
+if gem list foreman -i --silent; then
+  exec foreman start -f Procfile.dev "$@"
+else
+  echo "Foreman is not installed. Running Rails only; use bin/rails tailwindcss:watch in another terminal for live CSS."
+  exec bin/rails server "$@"
+fi

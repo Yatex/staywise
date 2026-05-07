@@ -1,0 +1,31 @@
+<% content_for :page_title, "Alerts" %>
+
+<div class="space-y-6">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-950">Alerts and tasks</h2>
+    <p class="mt-1 text-sm text-slate-500">AI-detected guest situations that need owner attention.</p>
+  </div>
+
+  <div class="<%= card_class %> overflow-hidden">
+    <div class="divide-y divide-slate-100">
+      <% @alerts.each do |alert| %>
+        <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p class="font-medium text-slate-950"><%= alert.title %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %> · <%= alert.guest&.display_name || "Unknown guest" %></p>
+              <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= alert.description %></p>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= alert.priority.humanize %></span>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.status) %>"><%= alert.status.humanize %></span>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+      <% if @alerts.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No alerts yet.</p>
+      <% end %>
+    </div>
+  </div>
+</div>

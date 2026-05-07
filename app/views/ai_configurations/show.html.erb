@@ -1,0 +1,160 @@
+<% content_for :page_title, "AI Assistant" %>
+
+<div class="space-y-6">
+  <section class="<%= card_class %> p-5">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Guest assistant</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-950">Staywise AI</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Configure how the assistant answers, when it escalates, and what owner actions it should create from WhatsApp conversations.</p>
+      </div>
+      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@account.ai_active? ? "active" : "paused") %>"><%= @account.ai_active? ? "Active" : "Paused" %></span>
+    </div>
+
+    <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="rounded-lg bg-slate-50 p-4">
+        <p class="text-sm text-slate-500">Tone</p>
+        <p class="mt-2 font-semibold text-slate-950"><%= @account.ai_tone.presence || "Friendly" %></p>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-4">
+        <p class="text-sm text-slate-500">Response style</p>
+        <p class="mt-2 font-semibold text-slate-950"><%= @account.ai_response_style.humanize %></p>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-4">
+        <p class="text-sm text-slate-500">Language</p>
+        <p class="mt-2 font-semibold text-slate-950"><%= @account.ai_preferred_language == "auto" ? "Auto-detect" : @account.ai_preferred_language.upcase %></p>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-4">
+        <p class="text-sm text-slate-500">Channel</p>
+        <p class="mt-2 font-semibold text-slate-950"><%= @account.ai_default_channel.humanize %></p>
+      </div>
+    </div>
+  </section>
+
+  <%= form_with model: @account, url: ai_configuration_path, class: "space-y-6" do |form| %>
+    <% if @account.errors.any? %>
+      <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <%= @account.errors.full_messages.to_sentence %>
+      </div>
+    <% end %>
+
+    <section class="<%= card_class %> p-5">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <h3 class="text-base font-semibold text-slate-950">Behavior</h3>
+          <p class="mt-1 text-sm text-slate-500">Global behavior for guest replies across all properties.</p>
+        </div>
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+          <%= form.check_box :ai_active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Active
+        </label>
+      </div>
+
+      <div class="mt-5 grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :ai_tone, "Tone", class: label_class %>
+          <%= form.text_field :ai_tone, class: field_class, placeholder: "Friendly and practical" %>
+        </div>
+        <div>
+          <%= form.label :ai_response_style, "Response style", class: label_class %>
+          <%= form.select :ai_response_style, Account::AI_RESPONSE_STYLES.map { |style| [style.humanize, style] }, {}, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :ai_preferred_language, "Preferred language", class: label_class %>
+          <%= form.select :ai_preferred_language, [["Auto-detect", "auto"], ["English", "en"], ["Spanish", "es"], ["Portuguese", "pt"]], {}, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :ai_default_channel, "Default channel", class: label_class %>
+          <%= form.select :ai_default_channel, Account::AI_CHANNELS.map { |channel| [channel.humanize, channel] }, {}, class: field_class %>
+        </div>
+        <div class="md:col-span-2">
+          <%= form.label :ai_goal, "Assistant goal", class: label_class %>
+          <%= form.text_area :ai_goal, rows: 4, class: field_class, placeholder: "Answer guest questions quickly, escalate owner decisions, and protect accuracy." %>
+        </div>
+        <div class="md:col-span-2">
+          <%= form.label :default_ai_instructions, "Global instructions", class: label_class %>
+          <%= form.text_area :default_ai_instructions, rows: 6, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :unsure_behavior, "When unsure", class: label_class %>
+          <%= form.text_area :unsure_behavior, rows: 5, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :emergency_contact_behavior, "Emergency behavior", class: label_class %>
+          <%= form.text_area :emergency_contact_behavior, rows: 5, class: field_class %>
+        </div>
+      </div>
+    </section>
+
+    <section class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Escalation rules</h3>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <% Alert::TYPES.each do |type| %>
+          <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
+            <%= hidden_field_tag "account[ai_escalation_rules][#{type}]", "0" %>
+            <%= check_box_tag "account[ai_escalation_rules][#{type}]", "1", @account.ai_escalation_rules.fetch(type, true), class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+            <%= type.humanize %>
+          </label>
+        <% end %>
+      </div>
+    </section>
+
+    <section class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Automation</h3>
+      <div class="mt-4 grid gap-3 md:grid-cols-3">
+        <% Account::DEFAULT_AUTOMATION_SETTINGS.each_key do |setting| %>
+          <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
+            <%= hidden_field_tag "account[ai_automation_settings][#{setting}]", "0" %>
+            <%= check_box_tag "account[ai_automation_settings][#{setting}]", "1", @account.ai_automation_settings.fetch(setting, true), class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+            <%= setting.humanize %>
+          </label>
+        <% end %>
+      </div>
+    </section>
+
+    <div class="flex justify-end">
+      <%= form.submit "Save AI configuration", class: primary_button_class %>
+    </div>
+  <% end %>
+
+  <section class="grid gap-6 xl:grid-cols-2">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Recent AI replies</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @recent_ai_responses.each do |message| %>
+          <div class="px-5 py-4">
+            <p class="line-clamp-2 text-sm text-slate-700"><%= message.body %></p>
+            <p class="mt-2 text-xs text-slate-400"><%= message.conversation.property.display_name %> · <%= message.created_at.to_fs(:short) %></p>
+          </div>
+        <% end %>
+        <% if @recent_ai_responses.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No AI replies yet.</p>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h3 class="text-base font-semibold text-slate-950">Owner review queue</h3>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @open_ai_alerts.each do |alert| %>
+          <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-medium text-slate-950"><%= alert.title %></p>
+                <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %></p>
+              </div>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= alert.priority.humanize %></span>
+            </div>
+          <% end %>
+        <% end %>
+        <% if @open_ai_alerts.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No open AI alerts.</p>
+        <% end %>
+      </div>
+    </div>
+  </section>
+</div>

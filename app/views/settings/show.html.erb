@@ -1,0 +1,83 @@
+<% content_for :page_title, "Settings" %>
+
+<div class="mx-auto max-w-5xl">
+  <% if @settings_error.present? %>
+    <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><%= @settings_error %></div>
+  <% end %>
+
+  <%= form_with model: @account, url: settings_path, class: "space-y-6" do |form| %>
+    <section class="<%= card_class %> p-5">
+      <h2 class="text-base font-semibold text-slate-950">Account profile</h2>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :name, "Organization name", class: label_class %>
+          <%= form.text_field :name, class: field_class %>
+        </div>
+        <%= fields_for :user, @user do |user_form| %>
+          <div>
+            <%= user_form.label :name, "Your name", class: label_class %>
+            <%= user_form.text_field :name, class: field_class %>
+          </div>
+          <div>
+            <%= user_form.label :email, class: label_class %>
+            <%= user_form.email_field :email, class: field_class %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section class="<%= card_class %> p-5">
+      <h2 class="text-base font-semibold text-slate-950">AI owner instructions</h2>
+      <div class="mt-2">
+        <%= link_to "Open full AI assistant configuration", ai_configuration_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      </div>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :ai_tone, "Tone of voice", class: label_class %>
+          <%= form.text_field :ai_tone, class: field_class, placeholder: "Friendly, concise, calm" %>
+        </div>
+        <div>
+          <%= form.label :languages_supported, class: label_class %>
+          <%= form.text_field :languages_supported, class: field_class, placeholder: "English, Spanish, Portuguese" %>
+        </div>
+        <div>
+          <%= form.label :late_checkout_policy, class: label_class %>
+          <%= form.select :late_checkout_policy, [["Always ask owner", "always_escalate"], ["Answer only if configured", "answer_if_configured"]], {}, class: field_class %>
+        </div>
+        <div class="md:col-span-2">
+          <%= form.label :default_ai_instructions, class: label_class %>
+          <%= form.text_area :default_ai_instructions, rows: 5, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :unsure_behavior, "What to do when unsure", class: label_class %>
+          <%= form.text_area :unsure_behavior, rows: 5, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :emergency_contact_behavior, class: label_class %>
+          <%= form.text_area :emergency_contact_behavior, rows: 5, class: field_class %>
+        </div>
+      </div>
+    </section>
+
+    <section class="<%= card_class %> p-5">
+      <h2 class="text-base font-semibold text-slate-950">Integrations and notifications</h2>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+          <%= form.check_box :whatsapp_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          WhatsApp provider configured
+        </label>
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+          <%= form.check_box :email_alerts_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Email urgent alerts through Resend
+        </label>
+      </div>
+      <div class="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+        Environment variables are expected for WhatsApp, Stripe, Resend, and the AI service. The app does not store provider secrets in the database.
+      </div>
+    </section>
+
+    <div class="flex justify-end">
+      <%= form.submit "Save settings", class: primary_button_class %>
+    </div>
+  <% end %>
+</div>

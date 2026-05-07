@@ -1,0 +1,30 @@
+<% content_for :page_title, "Recommendations" %>
+
+<div class="space-y-6">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-950">Recommendations</h2>
+    <p class="mt-1 text-sm text-slate-500">All host-approved places across your properties.</p>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <% @recommendations.each do |recommendation| %>
+      <div class="<%= card_class %> p-5">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="font-semibold text-slate-950"><%= recommendation.name %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= recommendation.category.humanize %> for <%= recommendation.property.display_name %></p>
+          </div>
+          <%= link_to "Edit", edit_property_recommendation_path(recommendation.property, recommendation), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+        </div>
+        <p class="mt-4 text-sm text-slate-600"><%= recommendation.description.presence || recommendation.owner_note.presence || recommendation.address.presence || "No details yet." %></p>
+      </div>
+    <% end %>
+  </div>
+
+  <% if @recommendations.blank? %>
+    <div class="<%= card_class %> p-8 text-center">
+      <h3 class="text-lg font-semibold text-slate-950">No recommendations yet</h3>
+      <p class="mt-2 text-sm text-slate-500">Open a property to add restaurants, cafes, supermarkets, pharmacies, transport tips, and places to visit.</p>
+    </div>
+  <% end %>
+</div>

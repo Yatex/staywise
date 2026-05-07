@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Staywise</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= stylesheet_link_tag "tailwind", "data-turbo-track": "reload" %>
+
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body class="min-h-screen bg-slate-50 font-sans text-slate-950 antialiased">
+    <% if authenticated? %>
+      <div class="min-h-screen lg:flex">
+        <%= render "shared/sidebar" %>
+
+        <div class="flex-1 lg:pl-72">
+          <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+            <div class="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= current_account.name %></p>
+                <h1 class="text-lg font-semibold text-slate-950"><%= content_for(:page_title).presence || "Staywise" %></h1>
+              </div>
+              <div class="flex items-center gap-3">
+                <%= link_to "New property", new_property_path, class: secondary_button_class %>
+                <details class="relative">
+                  <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white">
+                      <%= (current_user.name.presence || current_user.email).first.upcase %>
+                    </span>
+                    <span class="hidden min-w-0 sm:block">
+                      <span class="block max-w-44 truncate text-sm font-semibold text-slate-900"><%= current_user.name.presence || current_user.email %></span>
+                      <span class="block max-w-44 truncate text-xs text-slate-500"><%= current_user.email %></span>
+                    </span>
+                    <span class="text-xs text-slate-400">v</span>
+                  </summary>
+
+                  <div class="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                    <div class="border-b border-slate-100 px-4 py-3">
+                      <p class="truncate text-sm font-semibold text-slate-950"><%= current_user.name.presence || current_user.email %></p>
+                      <p class="mt-1 truncate text-xs text-slate-500"><%= current_user.email %></p>
+                    </div>
+                    <nav class="p-2">
+                      <%= link_to "AI Assistant", ai_configuration_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to "Subscriptions", subscription_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to "Settings", settings_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                    </nav>
+                    <div class="border-t border-slate-100 p-2">
+                      <%= button_to "Sign out", logout_path, method: :delete, class: "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-950" %>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </header>
+
+          <main class="px-4 py-6 sm:px-6 lg:px-8">
+            <%= render "shared/flash" %>
+            <%= yield %>
+          </main>
+        </div>
+      </div>
+    <% else %>
+      <main class="flex min-h-screen items-center justify-center px-4 py-12">
+        <%= render "shared/flash" %>
+        <%= yield %>
+      </main>
+    <% end %>
+  </body>
+</html>

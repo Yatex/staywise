@@ -1,0 +1,109 @@
+<% content_for :page_title, "Dashboard" %>
+
+<div class="space-y-6">
+  <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <% [
+      ["Total properties", @total_properties],
+      ["Active conversations", @active_conversations],
+      ["Open alerts", @open_alerts],
+      ["Escalated questions", @unanswered_questions],
+      ["Recent AI replies", @recent_ai_responses.count]
+    ].each do |label, value| %>
+      <div class="<%= card_class %> p-4">
+        <p class="text-sm text-slate-500"><%= label %></p>
+        <p class="mt-3 text-3xl font-semibold text-slate-950"><%= value %></p>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-950">Recent guest conversations</h2>
+          <p class="text-sm text-slate-500">WhatsApp threads the AI has handled or escalated.</p>
+        </div>
+        <%= link_to "View all", conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @recent_conversations.each do |conversation| %>
+          <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
+                <p class="mt-1 text-sm text-slate-500"><%= conversation.property.display_name %></p>
+              </div>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= conversation.status.humanize %></span>
+            </div>
+          <% end %>
+        <% end %>
+        <% if @recent_conversations.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No guest conversations yet. Incoming WhatsApp messages will appear here.</p>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-950">Open alerts</h2>
+          <p class="text-sm text-slate-500">Owner action needed.</p>
+        </div>
+        <%= link_to "View all", alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @alerts.each do |alert| %>
+          <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-medium text-slate-950"><%= alert.title %></p>
+                <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %></p>
+              </div>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= alert.priority.humanize %></span>
+            </div>
+          <% end %>
+        <% end %>
+        <% if @alerts.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No open alerts. Nicely quiet.</p>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
+    <div class="<%= card_class %> p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base font-semibold text-slate-950">Properties summary</h2>
+        <%= link_to "Manage", properties_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      </div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <% @properties.each do |property| %>
+          <%= link_to property_path(property), class: "rounded-lg border border-slate-200 p-4 transition hover:border-slate-300 hover:bg-slate-50" do %>
+            <p class="font-medium text-slate-950"><%= property.display_name %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= property.address.presence || "Address not set" %></p>
+            <p class="mt-3 text-xs text-slate-400"><%= property.knowledge_blocks.size %> guide blocks, <%= property.faqs.size %> FAQs</p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="<%= card_class %> p-5">
+      <h2 class="text-base font-semibold text-slate-950">AI activity summary</h2>
+      <div class="mt-4 space-y-3">
+        <% @recent_ai_responses.each do |message| %>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <p class="line-clamp-2 text-sm text-slate-700"><%= message.body %></p>
+            <p class="mt-2 text-xs text-slate-400"><%= message.created_at.to_fs(:short) %></p>
+          </div>
+        <% end %>
+        <% if @recent_ai_responses.blank? %>
+          <p class="text-sm text-slate-500">AI responses will show up once guests start messaging.</p>
+        <% end %>
+      </div>
+      <div class="mt-5 rounded-lg bg-slate-50 p-4">
+        <p class="text-sm font-semibold text-slate-900">Subscription status</p>
+        <p class="mt-1 text-sm text-slate-500"><%= @subscription&.plan&.humanize || "Starter" %> plan, <%= @subscription&.status&.humanize || "incomplete" %></p>
+      </div>
+    </div>
+  </section>
+</div>

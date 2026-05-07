@@ -1,0 +1,33 @@
+<%= form_with model: [property, knowledge_block], class: "space-y-5" do |form| %>
+  <% if knowledge_block.errors.any? %>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <%= knowledge_block.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <div class="<%= card_class %> p-5">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <%= form.label :title, class: label_class %>
+        <%= form.text_field :title, class: field_class, required: true %>
+      </div>
+      <div>
+        <%= form.label :category, class: label_class %>
+        <%= form.select :category, KnowledgeBlock::CATEGORIES.map { |category| [category.humanize, category] }, {}, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :status, class: label_class %>
+        <%= form.select :status, KnowledgeBlock::STATUSES.map { |status| [status.humanize, status] }, {}, class: field_class %>
+      </div>
+      <div class="md:col-span-2">
+        <%= form.label :content, class: label_class %>
+        <%= form.text_area :content, rows: 10, class: field_class, required: true %>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-3">
+    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Save block", class: primary_button_class %>
+  </div>
+<% end %>

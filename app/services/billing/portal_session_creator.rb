@@ -1,0 +1,42 @@
+require "net/http"
+
+module Billing
+  class PortalSessionCreator
+    STRIPE_ENDPOINT = "https://api.stripe.com/v1/billing_portal/sessions".freeze
+
+    def initialize(account:, return_url:)
+      @account = account
+      @return_url = return_url
+    end
+
+    def call
+      subscription = @account.active_subscription
+      return { error: "No Stripe customer is linked yet." } if subscription&.stripe_customer_id.blank?
+      return { error: "STRIPE_SECRET_KEY is not configured." } if stripe_secret.blank?
+
+      response = post_to_stripe(subscription.stripe_customer_id)
+      body = JSON.parse(response.body) rescue {}
+
+      if response.is_a?(Net::HTTPSuccess)
+        { url: body["url"] }
+      else
+        { error: body.dig("error", "message") || "Stripe portal failed." }
+      end
+    end
+
+    private
+
+    def post_to_stripe(customer_id)
+      uri = URI(STRIPE_ENDPOINT)
+      request = Net::HTTP::Post.new(uri)
+      request.basic_auth(stripe_secret, "")
+      request.set_form_data("customer" => customer_id, "return_url" => @return_url)
+
+      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+    end
+
+    def stripe_secret
+      ENV["STRIPE_SECRET_KEY"]
+    end
+  end
+end

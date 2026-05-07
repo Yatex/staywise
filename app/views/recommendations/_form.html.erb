@@ -1,0 +1,53 @@
+<%= form_with model: [property, recommendation], class: "space-y-5" do |form| %>
+  <% if recommendation.errors.any? %>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <%= recommendation.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <div class="<%= card_class %> p-5">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <%= form.label :name, class: label_class %>
+        <%= form.text_field :name, class: field_class, required: true %>
+      </div>
+      <div>
+        <%= form.label :category, class: label_class %>
+        <%= form.select :category, Recommendation::CATEGORIES.map { |category| [category.humanize, category] }, {}, class: field_class %>
+      </div>
+      <div class="md:col-span-2">
+        <%= form.label :description, class: label_class %>
+        <%= form.text_area :description, rows: 4, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :address, class: label_class %>
+        <%= form.text_field :address, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :distance_or_walking_time, "Distance or walking time", class: label_class %>
+        <%= form.text_field :distance_or_walking_time, class: field_class, placeholder: "5 min walk" %>
+      </div>
+      <div>
+        <%= form.label :google_maps_url, "Google Maps URL", class: label_class %>
+        <%= form.url_field :google_maps_url, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :website_url, "Website URL", class: label_class %>
+        <%= form.url_field :website_url, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :phone_number, class: label_class %>
+        <%= form.text_field :phone_number, class: field_class %>
+      </div>
+      <div class="md:col-span-2">
+        <%= form.label :owner_note, "Owner note / why recommended", class: label_class %>
+        <%= form.text_area :owner_note, rows: 4, class: field_class %>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-3">
+    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Save recommendation", class: primary_button_class %>
+  </div>
+<% end %>

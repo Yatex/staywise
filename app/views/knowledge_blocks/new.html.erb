@@ -1,0 +1,16 @@
+<% content_for :page_title, "New guide block" %>
+
+<div class="mx-auto max-w-4xl">
+  <div class="mb-6">
+    <%= link_to "Back to property", property_path(@property), class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+    <h2 class="mt-3 text-xl font-semibold text-slate-950">Add guide block</h2>
+    <p class="mt-1 text-sm text-slate-500">This content becomes part of the property's AI knowledge base.</p>
+  </div>
+  <%= render "shared/source_selector",
+    sources: @source_knowledge_blocks,
+    url: new_property_knowledge_block_path(@property),
+    title: "Reuse a guide block",
+    description: "Start with a guide block from another property and adjust it for this stay.",
+    label: ->(block) { "#{block.property.display_name} - #{block.title}" } %>
+  <%= render "form", property: @property, knowledge_block: @knowledge_block %>
+</div>

@@ -1,0 +1,131 @@
+<main class="min-h-screen bg-slate-50">
+  <section class="relative min-h-[92vh] overflow-hidden bg-slate-950 text-white">
+    <img
+      src="https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1800&q=80"
+      alt="Short-term rental apartment interior"
+      class="absolute inset-0 h-full w-full object-cover opacity-45"
+    >
+    <div class="absolute inset-0 bg-slate-950/55"></div>
+
+    <header class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
+      <%= link_to root_path, class: "flex items-center gap-3" do %>
+        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sm font-bold text-slate-950">S</span>
+        <span class="text-base font-semibold">Staywise</span>
+      <% end %>
+      <nav class="flex items-center gap-2">
+        <%= link_to "Sign in", login_path, class: "rounded-lg px-3 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 hover:text-white" %>
+        <%= link_to "Start free", signup_path, class: "rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
+      </nav>
+    </header>
+
+    <div class="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:pb-20 lg:pt-16">
+      <div class="max-w-2xl">
+        <p class="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-sm font-medium text-white/80 backdrop-blur">AI guest support for Airbnb hosts</p>
+        <h1 class="mt-6 max-w-3xl text-5xl font-semibold leading-tight tracking-normal text-white sm:text-6xl">Staywise answers guest questions from your property guide.</h1>
+        <p class="mt-6 max-w-xl text-lg leading-8 text-white/78">Owners configure each apartment once. Guests ask through WhatsApp. The assistant replies with approved information and creates alerts when the host needs to decide.</p>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <%= link_to "Create your account", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
+          <%= link_to "See how it works", "#workflow", class: "rounded-lg border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15" %>
+        </div>
+      </div>
+
+      <div class="relative min-h-[460px] lg:min-h-[560px]" aria-label="Staywise product preview">
+        <div class="absolute left-0 top-10 w-[76%] rounded-2xl border border-white/15 bg-white/95 p-4 text-slate-950 shadow-2xl backdrop-blur">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Rambla Studio</p>
+              <p class="mt-1 text-lg font-semibold">Guest guide</p>
+            </div>
+            <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">AI ready</span>
+          </div>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <% [["Check-in", "Keypad and lockbox steps"], ["WiFi", "Network and password"], ["House rules", "Quiet hours and smoking"], ["Local tips", "Cafes, pharmacies, transport"]].each do |title, body| %>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-sm font-semibold text-slate-950"><%= title %></p>
+                <p class="mt-2 text-sm text-slate-500"><%= body %></p>
+              </div>
+            <% end %>
+          </div>
+          <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+            <p class="text-sm font-semibold text-slate-950">Open alerts</p>
+            <div class="mt-3 flex items-start justify-between gap-4 rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200">
+              <div>
+                <p class="text-sm font-medium text-amber-700">Late checkout request</p>
+                <p class="mt-1 text-xs text-amber-700/80">Guest needs host approval.</p>
+              </div>
+              <span class="rounded-full bg-white px-2 py-1 text-xs font-semibold text-amber-700">Medium</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="absolute bottom-0 right-0 w-[54%] min-w-[260px] rounded-[2rem] border border-white/20 bg-slate-900 p-3 shadow-2xl">
+          <div class="rounded-[1.5rem] bg-slate-50 p-4">
+            <div class="flex items-center gap-2 border-b border-slate-200 pb-3">
+              <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
+              <p class="text-sm font-semibold text-slate-900">WhatsApp guest</p>
+            </div>
+            <div class="mt-4 space-y-3">
+              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">What is the WiFi password?</div>
+              <div class="ml-auto max-w-[88%] rounded-2xl bg-emerald-600 p-3 text-sm text-white shadow-sm">The WiFi network is Staywise Guest. The password is welcome-home.</div>
+              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">Can I check out later?</div>
+              <div class="ml-auto max-w-[88%] rounded-2xl bg-slate-900 p-3 text-sm text-white shadow-sm">I will check this with your host and get back to you shortly.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="workflow" class="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+    <div class="max-w-3xl">
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-400">Core loop</p>
+      <h2 class="mt-3 text-3xl font-semibold text-slate-950">One dashboard for every answer guests keep asking for.</h2>
+    </div>
+    <div class="mt-8 grid gap-4 md:grid-cols-3">
+      <% [
+        ["Configure each property", "Add check-in steps, WiFi, rules, emergency info, FAQs, and local recommendations."],
+        ["Guests ask on WhatsApp", "Each property gets a QR and link so guests can start a conversation without another app."],
+        ["AI replies or escalates", "Staywise answers from approved content and creates alerts for refunds, emergencies, late checkout, or missing facts."]
+      ].each_with_index do |(title, body), index| %>
+        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= index + 1 %></span>
+          <h3 class="mt-5 text-lg font-semibold text-slate-950"><%= title %></h3>
+          <p class="mt-3 text-sm leading-6 text-slate-500"><%= body %></p>
+        </article>
+      <% end %>
+    </div>
+  </section>
+
+  <section class="border-y border-slate-200 bg-white">
+    <div class="mx-auto grid max-w-7xl gap-8 px-5 py-16 sm:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+      <div>
+        <p class="text-sm font-semibold uppercase tracking-wide text-slate-400">Built for hospitality</p>
+        <h2 class="mt-3 text-3xl font-semibold text-slate-950">Helpful answers without invented policies.</h2>
+        <p class="mt-4 text-sm leading-6 text-slate-500">Staywise is strict about factual answers. If the owner has not configured the information, the assistant says it will check with the host and creates an owner task.</p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <% ["Late checkout approval", "Missing towels", "Broken appliance", "Refund request", "Emergency help", "Unknown question"].each do |item| %>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="font-semibold text-slate-950"><%= item %></p>
+            <p class="mt-2 text-sm text-slate-500">Escalated to the owner when guest support needs judgment.</p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+    <div class="rounded-2xl bg-slate-950 p-8 text-white shadow-xl sm:p-10">
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 class="text-3xl font-semibold">Give guests better answers before they message you twice.</h2>
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-white/70">Start with one property, add your guide, and let Staywise handle the first response from WhatsApp.</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <%= link_to "Start free", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
+          <%= link_to "Sign in", login_path, class: "rounded-lg border border-white/20 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10" %>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>

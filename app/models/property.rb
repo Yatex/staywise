@@ -1,0 +1,68 @@
+class Property < ApplicationRecord
+  attribute :ai_enabled, :boolean, default: true
+
+  STATUSES = %w[active archived].freeze
+  COPYABLE_SETTING_ATTRIBUTES = %w[
+    check_in_time
+    checkout_time
+    wifi_name
+    wifi_password
+    house_rules
+    access_instructions
+    parking_instructions
+    emergency_information
+    owner_contact_instructions
+    ai_general_notes
+    ai_enabled
+    tags
+  ].freeze
+
+  belongs_to :account
+  has_many :knowledge_blocks, dependent: :destroy
+  has_many :recommendations, dependent: :destroy
+  has_many :faqs, dependent: :destroy
+  has_many :guests, dependent: :nullify
+  has_many :conversations, dependent: :destroy
+  has_many :alerts, dependent: :destroy
+
+  validates :name, presence: true
+  validates :status, inclusion: { in: STATUSES }
+  validate :account_property_limit, on: :create
+
+  before_validation :normalize_tags
+
+  scope :active, -> { where(status: "active") }
+  scope :tagged_with, ->(tag) { where("? = ANY(tags)", tag.to_s.downcase) }
+
+  def display_name
+    internal_nickname.presence || name
+  end
+
+  def tag_list
+    tags.join(", ")
+  end
+
+  def tag_list=(value)
+    self.tags = value.to_s.split(",").map { |tag| tag.strip.downcase }.compact_blank.uniq
+  end
+
+  def copyable_settings
+    attributes.slice(*COPYABLE_SETTING_ATTRIBUTES)
+  end
+
+  def whatsapp_reference
+    "Staywise property ##{id}"
+  end
+
+  private
+
+  def normalize_tags
+    self.tags = Array(tags).map { |tag| tag.to_s.strip.downcase }.compact_blank.uniq
+  end
+
+  def account_property_limit
+    return if account.blank? || account.can_add_property?
+
+    errors.add(:base, "Your current plan does not allow another property.")
+  end
+end
