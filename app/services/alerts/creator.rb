@@ -28,7 +28,7 @@ module Alerts
         property: @conversation.property,
         guest: @conversation.guest,
         alert_type: (@decision.alert_type.presence || "other").to_s,
-        title: @decision.alert_title.presence || "Guest needs owner attention",
+        title: @decision.alert_title.presence || "El huésped necesita atención del propietario",
         description: @decision.alert_description,
         priority: PRIORITY_BY_TYPE.fetch(@decision.alert_type.to_s, "medium"),
         ai_suggested_action: @decision.suggested_owner_action

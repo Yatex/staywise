@@ -13,11 +13,11 @@
       </div>
       <div>
         <%= form.label :category, class: label_class %>
-        <%= form.select :category, KnowledgeBlock::CATEGORIES.map { |category| [category.humanize, category] }, {}, class: field_class %>
+        <%= form.select :category, KnowledgeBlock::CATEGORIES.map { |category| [enum_label(category), category] }, {}, class: field_class %>
       </div>
       <div>
         <%= form.label :status, class: label_class %>
-        <%= form.select :status, KnowledgeBlock::STATUSES.map { |status| [status.humanize, status] }, {}, class: field_class %>
+        <%= form.select :status, KnowledgeBlock::STATUSES.map { |status| [enum_label(status), status] }, {}, class: field_class %>
       </div>
       <div class="md:col-span-2">
         <%= form.label :content, class: label_class %>
@@ -27,7 +27,7 @@
   </div>
 
   <div class="flex justify-end gap-3">
-    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
-    <%= form.submit "Save block", class: primary_button_class %>
+    <%= link_to "Cancelar", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Guardar bloque", class: primary_button_class %>
   </div>
 <% end %>

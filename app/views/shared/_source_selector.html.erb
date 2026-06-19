@@ -5,9 +5,9 @@
     <%= form_with url: url, method: :get, class: "mt-4 grid gap-3 md:grid-cols-[1fr_auto]" do %>
       <%= select_tag :source_id,
         options_for_select(sources.map { |source| [label.call(source), source.id] }, params[:source_id]),
-        include_blank: "Choose an existing item",
+        include_blank: "Elegir un elemento existente",
         class: field_class %>
-      <%= submit_tag "Use as template", class: secondary_button_class %>
+      <%= submit_tag "Usar como plantilla", class: secondary_button_class %>
     <% end %>
   </div>
 <% end %>

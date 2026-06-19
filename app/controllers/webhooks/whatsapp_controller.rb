@@ -7,10 +7,10 @@ module Webhooks
       result = Whatsapp::IncomingMessageHandler.new(params.to_unsafe_h).call
       render json: { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
     rescue Whatsapp::IncomingMessageHandler::MissingAccount
-      render json: { ok: false, error: "No Staywise account is configured for WhatsApp." }, status: :unprocessable_entity
+      render json: { ok: false, error: "No hay una cuenta de Staywise configurada para WhatsApp." }, status: :unprocessable_entity
     rescue StandardError => error
       Rails.logger.error("[whatsapp-webhook] #{error.class}: #{error.message}")
-      render json: { ok: false, error: "Webhook could not be processed." }, status: :internal_server_error
+      render json: { ok: false, error: "No se pudo procesar el webhook." }, status: :internal_server_error
     end
   end
 end

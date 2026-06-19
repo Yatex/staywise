@@ -14,7 +14,7 @@ class AlertsController < ApplicationController
     @alert = scoped_alerts.find(params[:id])
 
     if @alert.update(alert_params)
-      redirect_to alerts_path, notice: "Alert updated."
+      redirect_to alerts_path, notice: "Alerta actualizada."
     else
       render :show, status: :unprocessable_entity
     end

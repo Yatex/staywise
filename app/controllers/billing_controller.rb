@@ -20,7 +20,7 @@ class BillingController < ApplicationController
     if result[:url].present?
       redirect_to result[:url], allow_other_host: true
     else
-      redirect_to subscription_path, alert: result[:error] || "Stripe checkout is not configured yet."
+      redirect_to subscription_path, alert: result[:error] || "Stripe Checkout todavía no está configurado."
     end
   end
 
@@ -33,7 +33,7 @@ class BillingController < ApplicationController
     if result[:url].present?
       redirect_to result[:url], allow_other_host: true
     else
-      redirect_to subscription_path, alert: result[:error] || "Subscription portal is not configured yet."
+      redirect_to subscription_path, alert: result[:error] || "El portal de suscripción todavía no está configurado."
     end
   end
 end

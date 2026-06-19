@@ -1,10 +1,10 @@
 module Billing
   class Plans
     PLAN_DEFINITIONS = [
-      { id: "starter", name: "Starter", limit: "1 property", description: "For a single apartment or guest suite." },
-      { id: "growth", name: "Growth", limit: "Up to 5 properties", description: "For owners with a small portfolio." },
-      { id: "pro", name: "Pro", limit: "Up to 20 properties", description: "For property managers handling more volume." },
-      { id: "business", name: "Business", limit: "Custom", description: "For larger operations and custom support." }
+      { id: "starter", name: "Inicial", limit: "1 propiedad", description: "Para un apartamento o unidad de huéspedes." },
+      { id: "growth", name: "Crecimiento", limit: "Hasta 5 propiedades", description: "Para propietarios con un portafolio chico." },
+      { id: "pro", name: "Pro", limit: "Hasta 20 propiedades", description: "Para administradores con más volumen." },
+      { id: "business", name: "Empresa", limit: "Personalizado", description: "Para operaciones grandes y soporte a medida." }
     ].freeze
 
     def self.all

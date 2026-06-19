@@ -21,17 +21,17 @@ module Admin
       new_role = params[:role].to_s
 
       if @user.id == current_user.id && new_role != "admin"
-        redirect_to admin_users_path(query_params), alert: "You cannot remove your own admin role."
+        redirect_to admin_users_path(query_params), alert: "No podés quitar tu propio rol de administrador."
         return
       end
 
       unless User::ROLES.include?(new_role)
-        redirect_to admin_users_path(query_params), alert: "Choose a valid role."
+        redirect_to admin_users_path(query_params), alert: "Elegí un rol válido."
         return
       end
 
       if @user.update(role: new_role)
-        redirect_to admin_users_path(query_params), notice: "Updated #{@user.email} to #{new_role}."
+        redirect_to admin_users_path(query_params), notice: "Rol actualizado para #{@user.email}."
       else
         redirect_to admin_users_path(query_params), alert: @user.errors.full_messages.to_sentence
       end
@@ -42,7 +42,7 @@ module Admin
       end_date = parse_end_date(params[:end_date])
 
       unless Subscription::PLANS.include?(plan) && end_date.present?
-        redirect_to admin_users_path(query_params), alert: "Choose a plan and a valid end date."
+        redirect_to admin_users_path(query_params), alert: "Elegí un plan y una fecha final válida."
         return
       end
 
@@ -55,7 +55,7 @@ module Admin
       )
       subscription.save!
 
-      redirect_to admin_users_path(query_params), notice: "Extended #{@user.email}'s #{plan.humanize} plan until #{end_date.to_fs(:long)}."
+      redirect_to admin_users_path(query_params), notice: "Plan de #{@user.email} extendido hasta #{end_date.to_fs(:long)}."
     rescue ActiveRecord::RecordInvalid => error
       redirect_to admin_users_path(query_params), alert: error.record.errors.full_messages.to_sentence
     end

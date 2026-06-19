@@ -9,7 +9,7 @@ module Whatsapp
 
     def call
       parsed = InboundMessageParser.new(@params).call
-      raise ArgumentError, "Incoming WhatsApp message is blank." if parsed.body.blank?
+      raise ArgumentError, "El mensaje entrante de WhatsApp está vacío." if parsed.body.blank?
 
       account = resolve_account
       property = resolve_property(account, parsed)
@@ -46,13 +46,13 @@ module Whatsapp
         account.guests.find_by(phone_number: parsed.from)&.property ||
         account.properties.active.first ||
         account.properties.first ||
-        raise(ActiveRecord::RecordNotFound, "No property is available for WhatsApp routing.")
+        raise(ActiveRecord::RecordNotFound, "No hay una propiedad disponible para enrutar WhatsApp.")
     end
 
     def resolve_guest(account, property, parsed)
       account.guests.find_or_create_by!(phone_number: parsed.from) do |guest|
         guest.property = property
-        guest.name = "WhatsApp guest"
+        guest.name = "Huésped de WhatsApp"
       end.tap do |guest|
         guest.update!(property: property) if guest.property.blank?
       end

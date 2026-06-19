@@ -27,7 +27,7 @@ class PropertiesController < ApplicationController
     @property = current_account.properties.new(property_params)
 
     if @property.save
-      redirect_to @property, notice: "Property created."
+      redirect_to @property, notice: "Propiedad creada."
     else
       @source_properties = current_account.properties.order(:name)
       render :new, status: :unprocessable_entity
@@ -39,7 +39,7 @@ class PropertiesController < ApplicationController
 
   def update
     if @property.update(property_params)
-      redirect_to @property, notice: "Property updated."
+      redirect_to @property, notice: "Propiedad actualizada."
     else
       render :edit, status: :unprocessable_entity
     end
@@ -47,7 +47,7 @@ class PropertiesController < ApplicationController
 
   def destroy
     @property.update(status: "archived")
-    redirect_to properties_path, notice: "Property archived."
+    redirect_to properties_path, notice: "Propiedad archivada."
   end
 
   def copy_content
@@ -59,13 +59,13 @@ class PropertiesController < ApplicationController
     ).call
 
     if copied.blank?
-      redirect_to property_path(@property), alert: "Choose at least one content type to copy."
+      redirect_to property_path(@property), alert: "Elegí al menos un tipo de contenido para copiar."
       return
     end
 
-    redirect_to property_path(@property), notice: "Copied #{copied.map(&:humanize).to_sentence} from #{source.display_name}."
+    redirect_to property_path(@property), notice: "Contenido copiado desde #{source.display_name}."
   rescue ActiveRecord::RecordNotFound
-    redirect_to property_path(@property), alert: "Choose a property to copy from."
+    redirect_to property_path(@property), alert: "Elegí una propiedad desde donde copiar."
   end
 
   def whatsapp_qr

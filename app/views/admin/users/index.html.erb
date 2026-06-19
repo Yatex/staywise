@@ -1,34 +1,34 @@
-<% content_for :page_title, "Admin Users" %>
+<% content_for :page_title, "Admin Usuarios" %>
 
 <div class="space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <div>
-      <h2 class="text-xl font-semibold text-slate-950">Users</h2>
-      <p class="mt-1 text-sm text-slate-500"><%= @total_count %> users across Staywise.</p>
+      <h2 class="text-xl font-semibold text-slate-950">Usuarios</h2>
+      <p class="mt-1 text-sm text-slate-500"><%= @total_count %> usuarios en Staywise.</p>
     </div>
-    <%= link_to "Platform stats", admin_stats_path, class: secondary_button_class %>
+    <%= link_to "Estadísticas de plataforma", admin_stats_path, class: secondary_button_class %>
   </div>
 
   <%= form_with url: admin_users_path, method: :get, class: "#{card_class} grid gap-4 p-4 md:grid-cols-[1fr_150px_150px_150px_auto]" do |form| %>
     <div>
-      <%= form.label :q, "Search", class: label_class %>
-      <%= form.search_field :q, value: params[:q], class: field_class, placeholder: "Name or email" %>
+      <%= form.label :q, "Buscar", class: label_class %>
+      <%= form.search_field :q, value: params[:q], class: field_class, placeholder: "Nombre o email" %>
     </div>
     <div>
       <%= form.label :role, class: label_class %>
-      <%= form.select :role, [["All", ""]] + User::ROLES.map { |role| [role.humanize, role] }, { selected: params[:role] }, class: field_class %>
+      <%= form.select :role, [["Todos", ""]] + User::ROLES.map { |role| [enum_label(role), role] }, { selected: params[:role] }, class: field_class %>
     </div>
     <div>
       <%= form.label :plan, class: label_class %>
-      <%= form.select :plan, [["All", ""]] + Subscription::PLANS.map { |plan| [plan.humanize, plan] }, { selected: params[:plan] }, class: field_class %>
+      <%= form.select :plan, [["Todos", ""]] + Subscription::PLANS.map { |plan| [enum_label(plan), plan] }, { selected: params[:plan] }, class: field_class %>
     </div>
     <div>
       <%= form.label :status, class: label_class %>
-      <%= form.select :status, [["All", ""]] + Subscription::STATUSES.map { |status| [status.humanize, status] }, { selected: params[:status] }, class: field_class %>
+      <%= form.select :status, [["Todos", ""]] + Subscription::STATUSES.map { |status| [enum_label(status), status] }, { selected: params[:status] }, class: field_class %>
     </div>
     <div class="flex items-end gap-2">
-      <%= form.submit "Filter", class: primary_button_class %>
-      <%= link_to "Clear", admin_users_path, class: secondary_button_class %>
+      <%= form.submit "Filtrar", class: primary_button_class %>
+      <%= link_to "Limpiar", admin_users_path, class: secondary_button_class %>
     </div>
   <% end %>
 
@@ -37,12 +37,12 @@
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-            <th class="px-5 py-3">User</th>
-            <th class="px-5 py-3">Role</th>
-            <th class="px-5 py-3">Account</th>
-            <th class="px-5 py-3">Subscription</th>
-            <th class="px-5 py-3">Usage</th>
-            <th class="px-5 py-3 text-right">Actions</th>
+            <th class="px-5 py-3">Usuario</th>
+            <th class="px-5 py-3">Rol</th>
+            <th class="px-5 py-3">Cuenta</th>
+            <th class="px-5 py-3">Suscripción</th>
+            <th class="px-5 py-3">Uso</th>
+            <th class="px-5 py-3 text-right">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100 bg-white">
@@ -53,36 +53,36 @@
               <td class="px-5 py-4">
                 <p class="font-medium text-slate-950"><%= user.name %></p>
                 <p class="mt-1 text-xs text-slate-500"><%= user.email %></p>
-                <p class="mt-1 text-xs text-slate-400">Joined <%= user.created_at.to_date.to_fs(:long) %></p>
+                <p class="mt-1 text-xs text-slate-400">Alta <%= user.created_at.to_date.to_fs(:long) %></p>
               </td>
               <td class="px-5 py-4">
                 <%= form_with url: update_role_admin_user_path(user), method: :patch, class: "w-36" do |form| %>
                   <% %i[q role plan status page].each do |param_name| %>
                     <%= hidden_field_tag param_name, params[param_name] if params[param_name].present? %>
                   <% end %>
-                  <%= form.select :role, User::ROLES.map { |role| [role.humanize, role] }, { selected: user.role }, class: field_class, onchange: "this.form.requestSubmit()" %>
+                  <%= form.select :role, User::ROLES.map { |role| [enum_label(role), role] }, { selected: user.role }, class: field_class, onchange: "this.form.requestSubmit()" %>
                 <% end %>
               </td>
               <td class="px-5 py-4">
                 <p class="font-medium text-slate-900"><%= user.account.name %></p>
-                <p class="mt-1 text-xs text-slate-500"><%= user.account.properties.count %> properties</p>
+                <p class="mt-1 text-xs text-slate-500"><%= user.account.properties.count %> propiedades</p>
               </td>
               <td class="px-5 py-4">
                 <% if subscription.present? %>
                   <div class="flex flex-col gap-1">
                     <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-medium text-slate-900"><%= subscription.plan.humanize %></span>
-                      <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(subscription.status) %>"><%= subscription.status.humanize %></span>
+                      <span class="font-medium text-slate-900"><%= enum_label(subscription.plan) %></span>
+                      <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(subscription.status) %>"><%= enum_label(subscription.status) %></span>
                     </div>
-                    <p class="text-xs text-slate-500">Ends <%= subscription.current_period_end&.to_date&.to_fs(:long) || "not set" %></p>
+                    <p class="text-xs text-slate-500">Termina <%= subscription.current_period_end&.to_date&.to_fs(:long) || "sin configurar" %></p>
                   </div>
                 <% else %>
-                  <span class="text-slate-400">No subscription</span>
+                  <span class="text-slate-400">Sin suscripción</span>
                 <% end %>
               </td>
               <td class="px-5 py-4 text-slate-600">
-                <p><%= user.account.guests.count %> guests</p>
-                <p><%= Conversation.joins(:property).where(properties: { account_id: user.account_id }).count %> conversations</p>
+                <p><%= user.account.guests.count %> huéspedes</p>
+                <p><%= Conversation.joins(:property).where(properties: { account_id: user.account_id }).count %> conversaciones</p>
               </td>
               <td class="px-5 py-4">
                 <div class="flex justify-end">
@@ -90,9 +90,9 @@
                     <% %i[q role plan status page].each do |param_name| %>
                       <%= hidden_field_tag param_name, params[param_name] if params[param_name].present? %>
                     <% end %>
-                    <%= form.select :plan, Subscription::PLANS.map { |plan| [plan.humanize, plan] }, { selected: subscription&.plan || "starter" }, class: field_class %>
+                    <%= form.select :plan, Subscription::PLANS.map { |plan| [enum_label(plan), plan] }, { selected: subscription&.plan || "starter" }, class: field_class %>
                     <%= form.date_field :end_date, value: default_end_date, min: Date.current, class: field_class %>
-                    <%= form.submit "Extend", class: primary_button_class %>
+                    <%= form.submit "Extender", class: primary_button_class %>
                   <% end %>
                 </div>
               </td>
@@ -104,13 +104,13 @@
 
     <% if @total_pages > 1 %>
       <div class="flex items-center justify-between border-t border-slate-200 px-5 py-3">
-        <p class="text-xs text-slate-500">Page <%= @current_page %> of <%= @total_pages %></p>
+        <p class="text-xs text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
         <div class="flex gap-2">
           <% if @current_page > 1 %>
-            <%= link_to "Previous", admin_users_path(params.permit(:q, :role, :plan, :status).merge(page: @current_page - 1)), class: secondary_button_class %>
+            <%= link_to "Anterior", admin_users_path(params.permit(:q, :role, :plan, :status).merge(page: @current_page - 1)), class: secondary_button_class %>
           <% end %>
           <% if @current_page < @total_pages %>
-            <%= link_to "Next", admin_users_path(params.permit(:q, :role, :plan, :status).merge(page: @current_page + 1)), class: secondary_button_class %>
+            <%= link_to "Siguiente", admin_users_path(params.permit(:q, :role, :plan, :status).merge(page: @current_page + 1)), class: secondary_button_class %>
           <% end %>
         </div>
       </div>

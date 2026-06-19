@@ -35,7 +35,7 @@ class RecommendationsController < ApplicationController
     @recommendation = @property.recommendations.new(recommendation_params)
 
     if @recommendation.save
-      redirect_to property_path(@property), notice: "Recommendation saved."
+      redirect_to property_path(@property), notice: "Recomendación guardada."
     else
       render :new, status: :unprocessable_entity
     end
@@ -46,7 +46,7 @@ class RecommendationsController < ApplicationController
 
   def update
     if @recommendation.update(recommendation_params)
-      redirect_to property_path(@property), notice: "Recommendation updated."
+      redirect_to property_path(@property), notice: "Recomendación actualizada."
     else
       render :edit, status: :unprocessable_entity
     end
@@ -54,7 +54,7 @@ class RecommendationsController < ApplicationController
 
   def destroy
     @recommendation.destroy
-    redirect_to property_path(@property), notice: "Recommendation removed."
+    redirect_to property_path(@property), notice: "Recomendación eliminada."
   end
 
   private

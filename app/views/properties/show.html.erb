@@ -6,7 +6,7 @@
       <div>
         <div class="flex items-center gap-3">
           <h2 class="text-2xl font-semibold text-slate-950"><%= @property.display_name %></h2>
-          <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@property.status) %>"><%= @property.status.humanize %></span>
+          <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@property.status) %>"><%= enum_label(@property.status) %></span>
         </div>
         <% if @property.tags.any? %>
           <div class="mt-3 flex flex-wrap gap-2">
@@ -15,17 +15,17 @@
             <% end %>
           </div>
         <% end %>
-        <p class="mt-2 text-sm text-slate-500"><%= @property.address.presence || "Address not configured" %></p>
+        <p class="mt-2 text-sm text-slate-500"><%= @property.address.presence || "Dirección sin configurar" %></p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copy WhatsApp link</button>
-        <%= link_to "Edit property", edit_property_path(@property), class: secondary_button_class %>
-        <%= link_to "Add guide block", new_property_knowledge_block_path(@property), class: primary_button_class %>
+        <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
+        <%= link_to "Editar propiedad", edit_property_path(@property), class: secondary_button_class %>
+        <%= link_to "Agregar bloque de guía", new_property_knowledge_block_path(@property), class: primary_button_class %>
       </div>
     </div>
 
     <div class="mt-5 flex gap-2 overflow-x-auto border-t border-slate-100 pt-4">
-      <% [["Overview", "#overview"], ["Guest Guide", "#guest-guide"], ["Local Recommendations", "#recommendations"], ["FAQs", "#faqs"], ["WhatsApp QR", "#whatsapp-qr"], ["Alerts", "#alerts"], ["Conversations", "#conversations"], ["Settings", "#settings"]].each do |label, href| %>
+      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
       <% end %>
     </div>
@@ -33,39 +33,39 @@
 
   <section id="whatsapp-qr" class="grid gap-6 xl:grid-cols-[320px_1fr]">
     <div class="<%= card_class %> p-5">
-      <h3 class="text-base font-semibold text-slate-950">Property WhatsApp QR</h3>
-      <p class="mt-1 text-sm text-slate-500">Guests scan this to ask questions about this property.</p>
+      <h3 class="text-base font-semibold text-slate-950">QR de WhatsApp de la propiedad</h3>
+      <p class="mt-1 text-sm text-slate-500">Los huéspedes lo escanean para hacer preguntas sobre esta propiedad.</p>
       <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-        <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} WhatsApp QR", class: "aspect-square w-full rounded-lg bg-slate-50" %>
+        <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} QR de WhatsApp", class: "aspect-square w-full rounded-lg bg-slate-50" %>
       </div>
       <div class="mt-4 flex flex-wrap gap-2" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(@property, format: :svg) %>">
-        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copy link</button>
-        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copy QR</button>
-        <%= link_to "Download QR", whatsapp_qr_property_path(@property, format: :svg, download: 1), class: primary_button_class %>
+        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link</button>
+        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
+        <%= link_to "Descargar QR", whatsapp_qr_property_path(@property, format: :svg, download: 1), class: primary_button_class %>
       </div>
     </div>
 
     <div class="<%= card_class %> p-5">
-      <h3 class="text-base font-semibold text-slate-950">Reuse content from another property</h3>
-      <p class="mt-1 text-sm text-slate-500">Copy guides, FAQs, recommendations, stay details, or tags into this property.</p>
+      <h3 class="text-base font-semibold text-slate-950">Reutilizar contenido de otra propiedad</h3>
+      <p class="mt-1 text-sm text-slate-500">Copiá guías, FAQs, recomendaciones, datos de estadía o etiquetas a esta propiedad.</p>
       <% if @source_properties.any? %>
         <%= form_with url: copy_content_property_path(@property), method: :post, class: "mt-4 space-y-4" do %>
           <div>
-            <%= label_tag :source_property_id, "Copy from", class: label_class %>
-            <%= select_tag :source_property_id, options_from_collection_for_select(@source_properties, :id, :display_name), include_blank: "Choose property", class: field_class %>
+            <%= label_tag :source_property_id, "Copiar desde", class: label_class %>
+            <%= select_tag :source_property_id, options_from_collection_for_select(@source_properties, :id, :display_name), include_blank: "Elegir propiedad", class: field_class %>
           </div>
           <div class="grid gap-3 sm:grid-cols-2">
-            <% [["guides", "Guest guide blocks"], ["recommendations", "Recommendations"], ["faqs", "FAQs"], ["settings", "Stay details and AI notes"], ["tags", "Tags"]].each do |value, label| %>
+            <% [["guides", "Bloques de guía del huésped"], ["recommendations", "Recomendaciones"], ["faqs", "FAQs"], ["settings", "Datos de estadía y notas de IA"], ["tags", "Etiquetas"]].each do |value, label| %>
               <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
                 <%= check_box_tag "content_types[]", value, value.in?(%w[guides recommendations faqs]), class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
                 <%= label %>
               </label>
             <% end %>
           </div>
-          <%= submit_tag "Copy selected content", class: primary_button_class %>
+          <%= submit_tag "Copiar contenido seleccionado", class: primary_button_class %>
         <% end %>
       <% else %>
-        <p class="mt-4 text-sm text-slate-500">Create another property first to reuse content here.</p>
+        <p class="mt-4 text-sm text-slate-500">Primero creá otra propiedad para reutilizar contenido acá.</p>
       <% end %>
     </div>
   </section>
@@ -73,18 +73,18 @@
   <section id="overview" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
     <div class="<%= card_class %> p-4">
       <p class="text-sm text-slate-500">Check-in</p>
-      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.check_in_time.presence || "Not set" %></p>
+      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.check_in_time.presence || "Sin configurar" %></p>
     </div>
     <div class="<%= card_class %> p-4">
       <p class="text-sm text-slate-500">Checkout</p>
-      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.checkout_time.presence || "Not set" %></p>
+      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.checkout_time.presence || "Sin configurar" %></p>
     </div>
     <div class="<%= card_class %> p-4">
       <p class="text-sm text-slate-500">WiFi</p>
-      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.wifi_name.presence || "Not set" %></p>
+      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.wifi_name.presence || "Sin configurar" %></p>
     </div>
     <div class="<%= card_class %> p-4">
-      <p class="text-sm text-slate-500">Open alerts</p>
+      <p class="text-sm text-slate-500">Alertas abiertas</p>
       <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.alerts.open.count %></p>
     </div>
   </section>
@@ -92,10 +92,10 @@
   <section id="guest-guide" class="<%= card_class %> overflow-hidden">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <div>
-        <h3 class="text-base font-semibold text-slate-950">Guest Guide</h3>
-        <p class="text-sm text-slate-500">Structured blocks the AI can use for factual answers.</p>
+        <h3 class="text-base font-semibold text-slate-950">Guía del huésped</h3>
+        <p class="text-sm text-slate-500">Bloques estructurados que la IA puede usar para responder con datos confiables.</p>
       </div>
-      <%= link_to "Add block", new_property_knowledge_block_path(@property), class: secondary_button_class %>
+      <%= link_to "Agregar bloque", new_property_knowledge_block_path(@property), class: secondary_button_class %>
     </div>
     <div class="divide-y divide-slate-100">
       <% @knowledge_blocks.each do |block| %>
@@ -103,18 +103,18 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= block.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= block.category.humanize %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= enum_label(block.category) %></p>
             </div>
             <div class="flex items-center gap-2">
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(block.status) %>"><%= block.status.humanize %></span>
-              <%= link_to "Edit", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(block.status) %>"><%= enum_label(block.status) %></span>
+              <%= link_to "Editar", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
             </div>
           </div>
           <p class="mt-3 whitespace-pre-line text-sm text-slate-600"><%= truncate(block.content, length: 260) %></p>
         </div>
       <% end %>
       <% if @knowledge_blocks.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No guide blocks yet.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay bloques de guía.</p>
       <% end %>
     </div>
   </section>
@@ -122,10 +122,10 @@
   <section id="recommendations" class="<%= card_class %> overflow-hidden">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <div>
-        <h3 class="text-base font-semibold text-slate-950">Local Recommendations</h3>
-        <p class="text-sm text-slate-500">Host-approved places for food, essentials, transport, and visits.</p>
+        <h3 class="text-base font-semibold text-slate-950">Recomendaciones locales</h3>
+        <p class="text-sm text-slate-500">Lugares aprobados por el anfitrión para comida, básicos, transporte y visitas.</p>
       </div>
-      <%= link_to "Add place", new_property_recommendation_path(@property), class: secondary_button_class %>
+      <%= link_to "Agregar lugar", new_property_recommendation_path(@property), class: secondary_button_class %>
     </div>
     <div class="grid gap-4 p-5 md:grid-cols-2">
       <% @recommendations.each do |recommendation| %>
@@ -133,15 +133,15 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= recommendation.name %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= recommendation.category.humanize %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= enum_label(recommendation.category) %></p>
             </div>
-            <%= link_to "Edit", edit_property_recommendation_path(@property, recommendation), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+            <%= link_to "Editar", edit_property_recommendation_path(@property, recommendation), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
           </div>
-          <p class="mt-3 text-sm text-slate-600"><%= recommendation.description.presence || recommendation.owner_note.presence || recommendation.address.presence || "No details yet." %></p>
+          <p class="mt-3 text-sm text-slate-600"><%= recommendation.description.presence || recommendation.owner_note.presence || recommendation.address.presence || "Sin detalles todavía." %></p>
         </div>
       <% end %>
       <% if @recommendations.blank? %>
-        <p class="text-sm text-slate-500">No recommendations configured.</p>
+        <p class="text-sm text-slate-500">No hay recomendaciones configuradas.</p>
       <% end %>
     </div>
   </section>
@@ -150,30 +150,30 @@
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <div>
         <h3 class="text-base font-semibold text-slate-950">FAQs</h3>
-        <p class="text-sm text-slate-500">Reusable answers for common guest questions.</p>
+        <p class="text-sm text-slate-500">Respuestas reutilizables para preguntas frecuentes de huéspedes.</p>
       </div>
-      <%= link_to "Add FAQ", new_property_faq_path(@property), class: secondary_button_class %>
+      <%= link_to "Agregar FAQ", new_property_faq_path(@property), class: secondary_button_class %>
     </div>
     <div class="divide-y divide-slate-100">
       <% @faqs.each do |faq| %>
         <div class="px-5 py-4">
           <div class="flex items-start justify-between gap-4">
             <p class="font-medium text-slate-950"><%= faq.question %></p>
-            <%= link_to "Edit", edit_property_faq_path(@property, faq), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+            <%= link_to "Editar", edit_property_faq_path(@property, faq), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
           </div>
           <p class="mt-2 text-sm text-slate-600"><%= faq.answer %></p>
         </div>
       <% end %>
       <% if @faqs.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No FAQs yet.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay FAQs.</p>
       <% end %>
     </div>
   </section>
 
   <section id="alerts" class="<%= card_class %> overflow-hidden">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h3 class="text-base font-semibold text-slate-950">Alerts</h3>
-      <%= link_to "View all alerts", alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      <h3 class="text-base font-semibold text-slate-950">Alertas</h3>
+      <%= link_to "Ver todas las alertas", alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
     </div>
     <div class="divide-y divide-slate-100">
       <% @alerts.each do |alert| %>
@@ -181,22 +181,22 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= alert.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Unknown guest" %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Huésped desconocido" %></p>
             </div>
-            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= alert.priority.humanize %></span>
+            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>
           </div>
         <% end %>
       <% end %>
       <% if @alerts.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No open alerts for this property.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay alertas abiertas para esta propiedad.</p>
       <% end %>
     </div>
   </section>
 
   <section id="conversations" class="<%= card_class %> overflow-hidden">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h3 class="text-base font-semibold text-slate-950">Conversations</h3>
-      <%= link_to "View all", conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      <h3 class="text-base font-semibold text-slate-950">Conversaciones</h3>
+      <%= link_to "Ver todo", conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
     </div>
     <div class="divide-y divide-slate-100">
       <% @conversations.each do |conversation| %>
@@ -204,14 +204,14 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
-              <p class="mt-1 text-sm text-slate-500">Last message <%= conversation.last_message_at&.to_fs(:short) || "not yet" %></p>
+              <p class="mt-1 text-sm text-slate-500">Último mensaje <%= conversation.last_message_at&.to_fs(:short) || "todavía no" %></p>
             </div>
-            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= conversation.status.humanize %></span>
+            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
           </div>
         <% end %>
       <% end %>
       <% if @conversations.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No conversations yet.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay conversaciones.</p>
       <% end %>
     </div>
   </section>
@@ -219,10 +219,10 @@
   <section id="settings" class="<%= card_class %> p-5">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h3 class="text-base font-semibold text-slate-950">Settings</h3>
-        <p class="mt-1 text-sm text-slate-500">Archive the property from the edit screen or update AI notes above.</p>
+        <h3 class="text-base font-semibold text-slate-950">Configuración</h3>
+        <p class="mt-1 text-sm text-slate-500">Archivá la propiedad desde la pantalla de edición o actualizá las notas de IA arriba.</p>
       </div>
-      <%= link_to "Edit settings", edit_property_path(@property), class: secondary_button_class %>
+      <%= link_to "Editar configuración", edit_property_path(@property), class: secondary_button_class %>
     </div>
   </section>
 </div>

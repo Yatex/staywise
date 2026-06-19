@@ -20,7 +20,7 @@ class FaqsController < ApplicationController
     @faq = @property.faqs.new(faq_params)
 
     if @faq.save
-      redirect_to property_path(@property), notice: "FAQ saved."
+      redirect_to property_path(@property), notice: "FAQ guardada."
     else
       render :new, status: :unprocessable_entity
     end
@@ -31,7 +31,7 @@ class FaqsController < ApplicationController
 
   def update
     if @faq.update(faq_params)
-      redirect_to property_path(@property), notice: "FAQ updated."
+      redirect_to property_path(@property), notice: "FAQ actualizada."
     else
       render :edit, status: :unprocessable_entity
     end
@@ -39,7 +39,7 @@ class FaqsController < ApplicationController
 
   def destroy
     @faq.destroy
-    redirect_to property_path(@property), notice: "FAQ removed."
+    redirect_to property_path(@property), notice: "FAQ eliminada."
   end
 
   private

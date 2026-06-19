@@ -1,31 +1,47 @@
-# Files in the config/locales directory are used for internationalization and
-# are automatically loaded by Rails. If you want to use locales other than
-# English, add the necessary files in this directory.
-#
-# To use the locales, use `I18n.t`:
-#
-#     I18n.t "hello"
-#
-# In views, this is aliased to just `t`:
-#
-#     <%= t("hello") %>
-#
-# To use a different locale, set it with `I18n.locale`:
-#
-#     I18n.locale = :es
-#
-# This would use the information in config/locales/es.yml.
-#
-# To learn more about the API, please read the Rails Internationalization guide
-# at https://guides.rubyonrails.org/i18n.html.
-#
-# Be aware that YAML interprets the following case-insensitive strings as
-# booleans: `true`, `false`, `on`, `off`, `yes`, `no`. Therefore, these strings
-# must be quoted to be interpreted as strings. For example:
-#
-#     en:
-#       "yes": yup
-#       enabled: "ON"
-
 en:
   hello: "Hello world"
+  activerecord:
+    attributes:
+      account:
+        name: "Name"
+        default_ai_instructions: "Default AI instructions"
+        ai_tone: "AI tone"
+        languages_supported: "Available languages"
+        unsure_behavior: "When unsure"
+        late_checkout_policy: "Late checkout policy"
+        emergency_contact_behavior: "Emergency behavior"
+        whatsapp_enabled: "WhatsApp enabled"
+        email_alerts_enabled: "Email alerts enabled"
+      property:
+        name: "Property name"
+        internal_nickname: "Internal nickname"
+        address: "Address"
+        tag_list: "Tags"
+        check_in_time: "Check-in time"
+        checkout_time: "Checkout time"
+        access_instructions: "Access instructions"
+        parking_instructions: "Parking instructions"
+        house_rules: "House rules"
+        emergency_information: "Emergency information"
+        owner_contact_instructions: "Owner contact instructions"
+      knowledge_block:
+        title: "Title"
+        category: "Category"
+        status: "Status"
+        content: "Content"
+      recommendation:
+        name: "Name"
+        category: "Category"
+        description: "Description"
+        address: "Address"
+        distance_or_walking_time: "Distance or walking time"
+        phone_number: "Phone number"
+        owner_note: "Owner note"
+      faq:
+        question: "Question"
+        answer: "Answer"
+        category: "Category"
+        active: "Active"
+      user:
+        name: "Name"
+        email: "Email"

@@ -11,8 +11,8 @@ module Billing
 
     def call
       subscription = @account.active_subscription
-      return { error: "No Stripe customer is linked yet." } if subscription&.stripe_customer_id.blank?
-      return { error: "STRIPE_SECRET_KEY is not configured." } if stripe_secret.blank?
+      return { error: "Todavía no hay un cliente de Stripe asociado." } if subscription&.stripe_customer_id.blank?
+      return { error: "STRIPE_SECRET_KEY no está configurada." } if stripe_secret.blank?
 
       response = post_to_stripe(subscription.stripe_customer_id)
       body = JSON.parse(response.body) rescue {}
@@ -20,7 +20,7 @@ module Billing
       if response.is_a?(Net::HTTPSuccess)
         { url: body["url"] }
       else
-        { error: body.dig("error", "message") || "Stripe portal failed." }
+        { error: body.dig("error", "message") || "No se pudo abrir el portal de Stripe." }
       end
     end
 

@@ -36,6 +36,6 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     assert decision.escalation_required
     assert_equal :late_checkout_request, decision.alert_type
-    assert_includes decision.response_text, "host"
+    assert_includes decision.response_text, "anfitrión"
   end
 end

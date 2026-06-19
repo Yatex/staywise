@@ -5,7 +5,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :success
-    assert_includes @response.body, "Staywise answers guest questions"
+    assert_includes @response.body, "Dejá de responder siempre lo mismo"
     assert_includes @response.body, signup_path
   end
 

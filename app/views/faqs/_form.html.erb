@@ -22,14 +22,14 @@
         </div>
         <label class="mt-8 flex items-center gap-2 text-sm font-medium text-slate-700">
           <%= form.check_box :active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-          Active
+          Activa
         </label>
       </div>
     </div>
   </div>
 
   <div class="flex justify-end gap-3">
-    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
-    <%= form.submit "Save FAQ", class: primary_button_class %>
+    <%= link_to "Cancelar", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Guardar FAQ", class: primary_button_class %>
   </div>
 <% end %>

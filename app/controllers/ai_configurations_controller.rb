@@ -16,7 +16,7 @@ class AIConfigurationsController < ApplicationController
     @account = current_account
 
     if @account.update(ai_configuration_params)
-      redirect_to ai_configuration_path, notice: "AI configuration updated."
+      redirect_to ai_configuration_path, notice: "Configuración de IA actualizada."
     else
       show
       render :show, status: :unprocessable_entity

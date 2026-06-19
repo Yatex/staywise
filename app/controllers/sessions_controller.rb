@@ -9,15 +9,15 @@ class SessionsController < ApplicationController
 
     if user&.authenticate(params[:password])
       sign_in(user)
-      redirect_to dashboard_path, notice: "Signed in."
+      redirect_to dashboard_path, notice: "Sesión iniciada."
     else
-      flash.now[:alert] = "Email or password is incorrect."
+      flash.now[:alert] = "El email o la contraseña son incorrectos."
       render :new, status: :unprocessable_entity
     end
   end
 
   def destroy
     sign_out
-    redirect_to login_path, notice: "Signed out."
+    redirect_to login_path, notice: "Sesión cerrada."
   end
 end

@@ -1,0 +1,89 @@
+es:
+  hello: "Hola"
+  date:
+    formats:
+      long: "%d/%m/%Y"
+      short: "%d/%m/%Y"
+  time:
+    formats:
+      short: "%d/%m/%Y %H:%M"
+  support:
+    array:
+      words_connector: ", "
+      two_words_connector: " y "
+      last_word_connector: " y "
+  errors:
+    format: "%{attribute} %{message}"
+    messages:
+      blank: "no puede estar vacío"
+      taken: "ya está en uso"
+      invalid: "no es válido"
+      too_short: "es demasiado corto"
+      inclusion: "no está incluido en la lista"
+  activerecord:
+    models:
+      account: "Cuenta"
+      property: "Propiedad"
+      knowledge_block: "Bloque de guía"
+      recommendation: "Recomendación"
+      faq: "FAQ"
+      guest: "Huésped"
+      conversation: "Conversación"
+      alert: "Alerta"
+      subscription: "Suscripción"
+      user: "Usuario"
+    attributes:
+      account:
+        name: "Nombre"
+        default_ai_instructions: "Instrucciones predeterminadas de IA"
+        ai_tone: "Tono de IA"
+        languages_supported: "Idiomas disponibles"
+        unsure_behavior: "Cuando no está segura"
+        late_checkout_policy: "Política de late checkout"
+        emergency_contact_behavior: "Comportamiento ante emergencias"
+        whatsapp_enabled: "WhatsApp activo"
+        email_alerts_enabled: "Alertas por email activas"
+      property:
+        name: "Nombre de la propiedad"
+        internal_nickname: "Nombre interno"
+        address: "Dirección"
+        tag_list: "Etiquetas"
+        check_in_time: "Hora de check-in"
+        checkout_time: "Hora de checkout"
+        wifi_name: "Nombre de WiFi"
+        wifi_password: "Contraseña de WiFi"
+        access_instructions: "Instrucciones de acceso"
+        parking_instructions: "Instrucciones de estacionamiento"
+        house_rules: "Reglas de la casa"
+        emergency_information: "Información de emergencia"
+        owner_contact_instructions: "Instrucciones para contactar al propietario"
+        ai_general_notes: "Notas generales para la IA"
+        status: "Estado"
+      knowledge_block:
+        title: "Título"
+        category: "Categoría"
+        status: "Estado"
+        content: "Contenido"
+      recommendation:
+        name: "Nombre"
+        category: "Categoría"
+        description: "Descripción"
+        address: "Dirección"
+        distance_or_walking_time: "Distancia o tiempo caminando"
+        google_maps_url: "URL de Google Maps"
+        website_url: "Sitio web"
+        phone_number: "Teléfono"
+        owner_note: "Nota del propietario"
+      faq:
+        question: "Pregunta"
+        answer: "Respuesta"
+        category: "Categoría"
+        active: "Activa"
+      alert:
+        status: "Estado"
+        priority: "Prioridad"
+      user:
+        name: "Nombre"
+        email: "Email"
+        password: "Contraseña"
+        password_confirmation: "Confirmar contraseña"

@@ -36,7 +36,7 @@ module Whatsapp
     end
 
     def fallback_svg
-      escaped_link = ERB::Util.html_escape(@deep_link || "WhatsApp number not configured")
+      escaped_link = ERB::Util.html_escape(@deep_link || "Número de WhatsApp no configurado")
       escaped_name = ERB::Util.html_escape(@property.display_name)
 
       <<~SVG

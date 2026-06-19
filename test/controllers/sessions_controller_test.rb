@@ -5,7 +5,7 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     post login_path, params: { email: "missing@staywise.test", password: "wrong-password" }
 
     assert_response :unprocessable_entity
-    assert_includes @response.body, "Email or password is incorrect."
+    assert_includes @response.body, "El email o la contraseña son incorrectos."
     assert_includes @response.body, 'data-controller="dismissable"'
     assert_includes @response.body, 'data-dismissable-timeout-value="3500"'
   end

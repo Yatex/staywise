@@ -15,7 +15,7 @@ module Whatsapp
     end
 
     def message_text
-      "Hi, I have a question about #{@property.display_name}. #{@property.whatsapp_reference}"
+      "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
     end
 
     private

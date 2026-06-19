@@ -20,6 +20,79 @@ module ApplicationHelper
     end
   end
 
+  def enum_label(value)
+    translations = {
+      "active" => "Activo",
+      "archived" => "Archivado",
+      "trialing" => "En prueba",
+      "resolved" => "Resuelto",
+      "dismissed" => "Descartado",
+      "urgent" => "Urgente",
+      "high" => "Alta",
+      "medium" => "Media",
+      "low" => "Baja",
+      "escalated" => "Escalado",
+      "past_due" => "Pago vencido",
+      "open" => "Abierta",
+      "in_progress" => "En progreso",
+      "closed" => "Cerrada",
+      "paused" => "Pausada",
+      "inactive" => "Inactivo",
+      "draft" => "Borrador",
+      "incomplete" => "Incompleta",
+      "canceled" => "Cancelada",
+      "owner" => "Propietario",
+      "admin" => "Administrador",
+      "member" => "Miembro",
+      "guest" => "Huésped",
+      "ai" => "IA",
+      "starter" => "Inicial",
+      "growth" => "Crecimiento",
+      "pro" => "Pro",
+      "business" => "Empresa",
+      "concise" => "Conciso",
+      "warm" => "Cálido",
+      "detailed" => "Detallado",
+      "whatsapp" => "WhatsApp",
+      "check_in" => "Check-in",
+      "checkout" => "Checkout",
+      "wifi" => "WiFi",
+      "house_rules" => "Reglas de la casa",
+      "amenities" => "Comodidades",
+      "building_access" => "Acceso al edificio",
+      "transportation" => "Transporte",
+      "emergencies" => "Emergencias",
+      "custom_notes" => "Notas personalizadas",
+      "restaurant" => "Restaurante",
+      "cafe" => "Café",
+      "supermarket" => "Supermercado",
+      "pharmacy" => "Farmacia",
+      "attraction" => "Atracción",
+      "transport" => "Transporte",
+      "other" => "Otro",
+      "late_checkout_request" => "Solicitud de late checkout",
+      "missing_item" => "Objeto faltante",
+      "maintenance_issue" => "Problema de mantenimiento",
+      "emergency" => "Emergencia",
+      "complaint" => "Queja",
+      "owner_approval_required" => "Requiere aprobación del propietario",
+      "unknown_question" => "Pregunta sin configurar",
+      "send_whatsapp_replies" => "Enviar respuestas por WhatsApp",
+      "create_alerts" => "Crear alertas",
+      "send_urgent_emails" => "Enviar emails urgentes"
+    }
+
+    translations.fetch(value.to_s, value.to_s.humanize)
+  end
+
+  def language_label(value)
+    { "en" => "Inglés", "es" => "Español" }.fetch(value.to_s, "Español")
+  end
+
+  def language_options
+    [["Español", "es"], ["Inglés", "en"]]
+  end
+
   def card_class
     "rounded-xl border border-slate-200 bg-white shadow-sm"
   end

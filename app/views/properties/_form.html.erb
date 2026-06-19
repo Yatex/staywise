@@ -6,10 +6,10 @@
   <% end %>
 
   <section class="<%= card_class %> p-5">
-    <h2 class="text-base font-semibold text-slate-950">Property basics</h2>
+    <h2 class="text-base font-semibold text-slate-950">Propiedad basics</h2>
     <div class="mt-4 grid gap-4 md:grid-cols-2">
       <div>
-        <%= form.label :name, "Property name", class: label_class %>
+        <%= form.label :name, "Propiedad name", class: label_class %>
         <%= form.text_field :name, class: field_class, required: true %>
       </div>
       <div>
@@ -21,9 +21,9 @@
         <%= form.text_field :address, class: field_class %>
       </div>
       <div class="md:col-span-2">
-        <%= form.label :tag_list, "Tags", class: label_class %>
-        <%= form.text_field :tag_list, value: property.tag_list, class: field_class, placeholder: "beachfront, family, premium" %>
-        <p class="mt-2 text-xs text-slate-500">Separate tags with commas. Tags are used for grouping and filtering properties.</p>
+        <%= form.label :tag_list, "Etiquetas", class: label_class %>
+        <%= form.text_field :tag_list, value: property.tag_list, class: field_class, placeholder: "playa, familiar, premium" %>
+        <p class="mt-2 text-xs text-slate-500">Separate tags with commas. Etiquetas are used for grouping and filtering propiedades.</p>
       </div>
       <div>
         <%= form.label :check_in_time, class: label_class %>
@@ -37,14 +37,14 @@
   </section>
 
   <section class="<%= card_class %> p-5">
-    <h2 class="text-base font-semibold text-slate-950">Guest essentials</h2>
+    <h2 class="text-base font-semibold text-slate-950">Información esencial para huéspedes</h2>
     <div class="mt-4 grid gap-4 md:grid-cols-2">
       <div>
-        <%= form.label :wifi_name, "WiFi name", class: label_class %>
+        <%= form.label :wifi_name, "Nombre de WiFi", class: label_class %>
         <%= form.text_field :wifi_name, class: field_class %>
       </div>
       <div>
-        <%= form.label :wifi_password, "WiFi password", class: label_class %>
+        <%= form.label :wifi_password, "Contraseña de WiFi", class: label_class %>
         <%= form.text_field :wifi_password, class: field_class %>
       </div>
       <div>
@@ -68,18 +68,18 @@
         <%= form.text_area :owner_contact_instructions, rows: 5, class: field_class %>
       </div>
       <div>
-        <%= form.label :ai_general_notes, "General notes for the AI", class: label_class %>
+        <%= form.label :ai_general_notes, "Notas generales para la IA", class: label_class %>
         <%= form.text_area :ai_general_notes, rows: 5, class: field_class %>
       </div>
       <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
         <%= form.check_box :ai_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-        Enable AI replies for this property
+        Activar respuestas de IA para esta propiedad
       </label>
     </div>
   </section>
 
   <div class="flex items-center justify-end gap-3">
-    <%= link_to "Cancel", property.persisted? ? property_path(property) : properties_path, class: secondary_button_class %>
-    <%= form.submit property.persisted? ? "Save changes" : "Create property", class: primary_button_class %>
+    <%= link_to "Cancelar", property.persisted? ? property_path(property) : properties_path, class: secondary_button_class %>
+    <%= form.submit property.persisted? ? "Guardar cambios" : "Crear propiedad", class: primary_button_class %>
   </div>
 <% end %>

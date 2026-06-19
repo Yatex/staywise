@@ -13,7 +13,7 @@
       </div>
       <div>
         <%= form.label :category, class: label_class %>
-        <%= form.select :category, Recommendation::CATEGORIES.map { |category| [category.humanize, category] }, {}, class: field_class %>
+        <%= form.select :category, Recommendation::CATEGORIES.map { |category| [enum_label(category), category] }, {}, class: field_class %>
       </div>
       <div class="md:col-span-2">
         <%= form.label :description, class: label_class %>
@@ -24,8 +24,8 @@
         <%= form.text_field :address, class: field_class %>
       </div>
       <div>
-        <%= form.label :distance_or_walking_time, "Distance or walking time", class: label_class %>
-        <%= form.text_field :distance_or_walking_time, class: field_class, placeholder: "5 min walk" %>
+        <%= form.label :distance_or_walking_time, "Distancia o tiempo caminando", class: label_class %>
+        <%= form.text_field :distance_or_walking_time, class: field_class, placeholder: "5 min caminando" %>
       </div>
       <div>
         <%= form.label :google_maps_url, "Google Maps URL", class: label_class %>
@@ -40,14 +40,14 @@
         <%= form.text_field :phone_number, class: field_class %>
       </div>
       <div class="md:col-span-2">
-        <%= form.label :owner_note, "Owner note / why recommended", class: label_class %>
+        <%= form.label :owner_note, "Nota del propietario / por qué se recomienda", class: label_class %>
         <%= form.text_area :owner_note, rows: 4, class: field_class %>
       </div>
     </div>
   </div>
 
   <div class="flex justify-end gap-3">
-    <%= link_to "Cancel", property_path(property), class: secondary_button_class %>
-    <%= form.submit "Save recommendation", class: primary_button_class %>
+    <%= link_to "Cancelar", property_path(property), class: secondary_button_class %>
+    <%= form.submit "Guardar recomendación", class: primary_button_class %>
   </div>
 <% end %>

@@ -24,7 +24,7 @@
                 <h1 class="text-lg font-semibold text-slate-950"><%= content_for(:page_title).presence || "Staywise" %></h1>
               </div>
               <div class="flex items-center gap-3">
-                <%= link_to "New property", new_property_path, class: secondary_button_class %>
+                <%= link_to "Nueva propiedad", new_property_path, class: secondary_button_class %>
                 <details class="relative">
                   <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white">
@@ -43,12 +43,12 @@
                       <p class="mt-1 truncate text-xs text-slate-500"><%= current_user.email %></p>
                     </div>
                     <nav class="p-2">
-                      <%= link_to "AI Assistant", ai_configuration_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
-                      <%= link_to "Subscriptions", subscription_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
-                      <%= link_to "Settings", settings_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to "Asistente IA", ai_configuration_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to "Suscripciones", subscription_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to "Configuración", settings_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
                     </nav>
                     <div class="border-t border-slate-100 p-2">
-                      <%= button_to "Sign out", logout_path, method: :delete, class: "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= button_to "Cerrar sesión", logout_path, method: :delete, class: "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-950" %>
                     </div>
                   </div>
                 </details>

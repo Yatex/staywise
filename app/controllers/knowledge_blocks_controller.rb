@@ -20,7 +20,7 @@ class KnowledgeBlocksController < ApplicationController
     @knowledge_block = @property.knowledge_blocks.new(knowledge_block_params)
 
     if @knowledge_block.save
-      redirect_to property_path(@property), notice: "Knowledge block saved."
+      redirect_to property_path(@property), notice: "Bloque de guía guardado."
     else
       render :new, status: :unprocessable_entity
     end
@@ -31,7 +31,7 @@ class KnowledgeBlocksController < ApplicationController
 
   def update
     if @knowledge_block.update(knowledge_block_params)
-      redirect_to property_path(@property), notice: "Knowledge block updated."
+      redirect_to property_path(@property), notice: "Bloque de guía actualizado."
     else
       render :edit, status: :unprocessable_entity
     end
@@ -39,7 +39,7 @@ class KnowledgeBlocksController < ApplicationController
 
   def destroy
     @knowledge_block.destroy
-    redirect_to property_path(@property), notice: "Knowledge block removed."
+    redirect_to property_path(@property), notice: "Bloque de guía eliminado."
   end
 
   private

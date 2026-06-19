@@ -1,7 +1,7 @@
 class Account < ApplicationRecord
   AI_RESPONSE_STYLES = %w[concise warm detailed].freeze
   AI_CHANNELS = %w[whatsapp].freeze
-  AI_LANGUAGES = %w[auto en es pt].freeze
+  AI_LANGUAGES = %w[en es].freeze
   DEFAULT_ESCALATION_RULES = {
     "late_checkout_request" => true,
     "missing_item" => true,
@@ -57,6 +57,8 @@ class Account < ApplicationRecord
   def normalize_ai_configuration
     self.ai_escalation_rules = DEFAULT_ESCALATION_RULES.merge((ai_escalation_rules || {}).deep_stringify_keys)
     self.ai_automation_settings = DEFAULT_AUTOMATION_SETTINGS.merge((ai_automation_settings || {}).deep_stringify_keys)
+    self.ai_preferred_language = "es" unless AI_LANGUAGES.include?(ai_preferred_language.to_s)
+    self.languages_supported = "Español, Inglés"
   end
 
   def assign_slug

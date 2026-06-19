@@ -1,30 +1,30 @@
-<% content_for :page_title, "Subscriptions" %>
+<% content_for :page_title, "Suscripciones" %>
 
 <div class="space-y-6">
   <section class="<%= card_class %> p-5">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h2 class="text-xl font-semibold text-slate-950">Subscription</h2>
-        <p class="mt-1 text-sm text-slate-500">Stripe subscriptions, Checkout, and Customer Portal are wired with env-driven price IDs.</p>
+        <h2 class="text-xl font-semibold text-slate-950">Suscripción</h2>
+        <p class="mt-1 text-sm text-slate-500">Las suscripciones de Stripe, Checkout y Customer Portal usan IDs de precio desde variables de entorno.</p>
       </div>
-      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@subscription&.status) %>"><%= @subscription&.status&.humanize || "Incomplete" %></span>
+      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@subscription&.status) %>"><%= (@subscription ? enum_label(@subscription.status) : nil) || "Incompleta" %></span>
     </div>
     <div class="mt-5 grid gap-4 sm:grid-cols-3">
       <div class="rounded-lg bg-slate-50 p-4">
-        <p class="text-sm text-slate-500">Current plan</p>
-        <p class="mt-2 text-lg font-semibold text-slate-950"><%= @subscription&.plan&.humanize || "Starter" %></p>
+        <p class="text-sm text-slate-500">Plan actual</p>
+        <p class="mt-2 text-lg font-semibold text-slate-950"><%= (@subscription ? enum_label(@subscription.plan) : nil) || "Inicial" %></p>
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
-        <p class="text-sm text-slate-500">Property limit</p>
-        <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.property_limit || "Custom" %></p>
+        <p class="text-sm text-slate-500">Límite de propiedades</p>
+        <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.property_limit || "Ilimitado" %></p>
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
-        <p class="text-sm text-slate-500">Properties used</p>
+        <p class="text-sm text-slate-500">Propiedades usadas</p>
         <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.properties.count %></p>
       </div>
     </div>
     <div class="mt-5">
-      <%= button_to "Open subscription portal", portal_subscription_path, method: :post, class: secondary_button_class %>
+      <%= button_to "Abrir portal de suscripción", portal_subscription_path, method: :post, class: secondary_button_class %>
     </div>
   </section>
 
@@ -35,7 +35,7 @@
         <p class="mt-2 text-sm text-slate-500"><%= plan[:description] %></p>
         <p class="mt-4 text-sm font-semibold text-slate-700"><%= plan[:limit] %></p>
         <div class="mt-6">
-          <%= button_to "Choose #{plan[:name]}", checkout_subscription_path(plan: plan[:id]), method: :post, class: "#{primary_button_class} w-full" %>
+          <%= button_to "Elegir #{plan[:name]}", checkout_subscription_path(plan: plan[:id]), method: :post, class: "#{primary_button_class} w-full" %>
         </div>
       </div>
     <% end %>

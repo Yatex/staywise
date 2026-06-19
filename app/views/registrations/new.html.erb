@@ -1,11 +1,11 @@
-<% content_for :page_title, "Create your Staywise account" %>
+<% content_for :page_title, "Crear tu cuenta de Staywise" %>
 
 <section class="w-full max-w-md">
   <div class="<%= card_class %> p-6">
     <div class="mb-6">
       <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">S</div>
-      <h1 class="text-2xl font-semibold text-slate-950">Create your Staywise account</h1>
-      <p class="mt-2 text-sm text-slate-500">Set up the owner dashboard for your short-term rental guest assistant.</p>
+      <h1 class="text-2xl font-semibold text-slate-950">Crear tu cuenta de Staywise</h1>
+      <p class="mt-2 text-sm text-slate-500">Configurá el panel del propietario para tu asistente de huéspedes de alquiler temporal.</p>
     </div>
 
     <% if @signup_error.present? %>
@@ -14,11 +14,11 @@
 
     <%= form_with scope: :registration, url: signup_path, class: "space-y-4" do |form| %>
       <div>
-        <%= form.label :account_name, "Organization name", class: label_class %>
+        <%= form.label :account_name, "Nombre de la organización", class: label_class %>
         <%= form.text_field :account_name, value: @account.name, class: field_class, required: true %>
       </div>
       <div>
-        <%= form.label :name, "Your name", class: label_class %>
+        <%= form.label :name, "Tu nombre", class: label_class %>
         <%= form.text_field :name, value: @user.name, class: field_class, required: true %>
       </div>
       <div>
@@ -33,9 +33,9 @@
         <%= form.label :password_confirmation, class: label_class %>
         <%= form.password_field :password_confirmation, class: field_class, required: true, minlength: 8 %>
       </div>
-      <%= form.submit "Create account", class: "#{primary_button_class} w-full" %>
+      <%= form.submit "Crear cuenta", class: "#{primary_button_class} w-full" %>
     <% end %>
 
-    <p class="mt-5 text-center text-sm text-slate-500">Already have an account? <%= link_to "Sign in", login_path, class: "font-semibold text-slate-950" %></p>
+    <p class="mt-5 text-center text-sm text-slate-500">¿Ya tenés cuenta? <%= link_to "Ingresar", login_path, class: "font-semibold text-slate-950" %></p>
   </div>
 </section>

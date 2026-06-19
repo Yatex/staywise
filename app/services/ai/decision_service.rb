@@ -68,9 +68,9 @@ module AI
     end
 
     def alert_decision(alert_type, body)
-      title = alert_type.to_s.humanize
+      title = alert_title_for(alert_type)
       DecisionResult.from_hash(
-        response_text: "I will check this with your host and get back to you shortly.",
+        response_text: "Voy a consultarlo con tu anfitrión y te respondo en breve.",
         should_reply: true,
         confidence: 0.92,
         escalation_required: true,
@@ -95,13 +95,13 @@ module AI
         end
 
         DecisionResult.from_hash(
-          response_text: "Here are a few host-recommended options:\n#{lines.join("\n")}",
+          response_text: "Estas son algunas opciones recomendadas por el anfitrión:\n#{lines.join("\n")}",
           should_reply: true,
           confidence: 0.74,
           escalation_required: false
         )
       else
-        unknown_decision("Guest asked for a local recommendation, but none are configured.")
+        unknown_decision("El huésped pidió una recomendación local, pero no hay ninguna configurada.")
       end
     end
 
@@ -112,7 +112,7 @@ module AI
       block = payload[:knowledge_blocks].find { |item| relevant?(text, [item["title"], item["category"], item["content"]].join(" ")) }
       return answer_decision(block["content"], 0.71) if block
 
-      unknown_decision("The AI could not find owner-provided information for: #{payload[:guest_message]}")
+      unknown_decision("La IA no encontró información cargada por el propietario para: #{payload[:guest_message]}")
     end
 
     def relevant?(message, source)
@@ -134,26 +134,38 @@ module AI
 
     def unknown_decision(description)
       DecisionResult.from_hash(
-        response_text: "I do not have that information yet. I will check with your host and get back to you shortly.",
+        response_text: "Todavía no tengo esa información. Voy a consultarlo con tu anfitrión y te respondo en breve.",
         should_reply: true,
         confidence: 0.28,
         escalation_required: true,
         alert_type: "unknown_question",
-        alert_title: "Question needs host input",
+        alert_title: "La pregunta necesita respuesta del anfitrión",
         alert_description: description,
-        suggested_owner_action: "Add the answer to this property's guest guide or FAQ, then reply to the guest."
+        suggested_owner_action: "Agregá la respuesta a la guía del huésped o a las FAQs de esta propiedad y luego respondé al huésped."
       )
     end
 
     def suggested_action_for(alert_type)
       {
-        late_checkout_request: "Confirm availability and whether a fee applies before approving.",
-        missing_item: "Coordinate replacement items and let the guest know the timing.",
-        maintenance_issue: "Assess urgency, contact maintenance, and update the guest.",
-        emergency: "Contact the guest immediately and share emergency instructions.",
-        complaint: "Review the issue, acknowledge the complaint, and decide on next steps.",
-        owner_approval_required: "Review the request before the AI or owner confirms anything."
-      }.fetch(alert_type, "Review and respond from the conversation.")
+        late_checkout_request: "Confirmá disponibilidad y si aplica un costo antes de aprobar.",
+        missing_item: "Coordiná el reemplazo y avisale al huésped cuándo se resuelve.",
+        maintenance_issue: "Evaluá la urgencia, contactá mantenimiento y actualizá al huésped.",
+        emergency: "Contactá al huésped de inmediato y compartí instrucciones de emergencia.",
+        complaint: "Revisá el problema, acusá recibo de la queja y definí los próximos pasos.",
+        owner_approval_required: "Revisá la solicitud antes de que la IA o el propietario confirmen algo."
+      }.fetch(alert_type, "Revisá y respondé desde la conversación.")
+    end
+
+    def alert_title_for(alert_type)
+      {
+        late_checkout_request: "Solicitud de late checkout",
+        missing_item: "Objeto faltante",
+        maintenance_issue: "Problema de mantenimiento",
+        emergency: "Emergencia",
+        complaint: "Queja",
+        owner_approval_required: "Requiere aprobación del propietario",
+        unknown_question: "Pregunta sin configurar"
+      }.fetch(alert_type, alert_type.to_s.humanize)
     end
   end
 end

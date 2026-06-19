@@ -12,9 +12,9 @@ module Billing
     end
 
     def call
-      return { error: "Unknown plan." } unless Subscription::PLANS.include?(@plan)
-      return { error: "STRIPE_SECRET_KEY is not configured." } if stripe_secret.blank?
-      return { error: "#{price_env} is not configured." } if price_id.blank?
+      return { error: "Plan desconocido." } unless Subscription::PLANS.include?(@plan)
+      return { error: "STRIPE_SECRET_KEY no está configurada." } if stripe_secret.blank?
+      return { error: "#{price_env} no está configurada." } if price_id.blank?
 
       response = post_to_stripe
       body = JSON.parse(response.body) rescue {}
@@ -22,7 +22,7 @@ module Billing
       if response.is_a?(Net::HTTPSuccess)
         { url: body["url"] }
       else
-        { error: body.dig("error", "message") || "Stripe checkout failed." }
+        { error: body.dig("error", "message") || "No se pudo iniciar Checkout de Stripe." }
       end
     end
 

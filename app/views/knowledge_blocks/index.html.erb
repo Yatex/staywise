@@ -1,12 +1,12 @@
-<% content_for :page_title, "#{@property.display_name} guide" %>
+<% content_for :page_title, "Guía de #{@property.display_name}" %>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <div>
-      <%= link_to "Back to property", property_path(@property), class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
-      <h2 class="mt-3 text-xl font-semibold text-slate-950">Guest Guide</h2>
+      <%= link_to "Volver a la propiedad", property_path(@property), class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+      <h2 class="mt-3 text-xl font-semibold text-slate-950">Guía del huésped</h2>
     </div>
-    <%= link_to "Add block", new_property_knowledge_block_path(@property), class: primary_button_class %>
+    <%= link_to "Agregar bloque", new_property_knowledge_block_path(@property), class: primary_button_class %>
   </div>
 
   <div class="<%= card_class %> divide-y divide-slate-100 overflow-hidden">
@@ -15,9 +15,9 @@
         <div class="flex items-start justify-between gap-4">
           <div>
             <p class="font-medium text-slate-950"><%= block.title %></p>
-            <p class="mt-1 text-sm text-slate-500"><%= block.category.humanize %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= enum_label(block.category) %></p>
           </div>
-          <%= link_to "Edit", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+          <%= link_to "Editar", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
         </div>
       </div>
     <% end %>

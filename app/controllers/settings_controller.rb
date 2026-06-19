@@ -13,7 +13,7 @@ class SettingsController < ApplicationController
       @user.update!(user_params) if params[:user].present?
     end
 
-    redirect_to settings_path, notice: "Settings updated."
+    redirect_to settings_path, notice: "Configuración actualizada."
   rescue ActiveRecord::RecordInvalid => error
     @settings_error = error.record.errors.full_messages.to_sentence
     render :show, status: :unprocessable_entity

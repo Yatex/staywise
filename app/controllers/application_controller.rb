@@ -33,6 +33,6 @@ class ApplicationController < ActionController::Base
   def ensure_property_limit!
     return if current_account.can_add_property?
 
-    redirect_to subscription_path, alert: "Your current plan has reached its property limit."
+    redirect_to subscription_path, alert: "Tu plan actual alcanzó el límite de propiedades."
   end
 end

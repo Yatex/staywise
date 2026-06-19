@@ -1,76 +1,105 @@
-<main class="min-h-screen bg-slate-50">
+<main class="min-h-screen overflow-x-hidden bg-stone-50 text-slate-950">
   <section class="relative min-h-[92vh] overflow-hidden bg-slate-950 text-white">
     <img
-      src="https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1800&q=80"
-      alt="Short-term rental apartment interior"
-      class="absolute inset-0 h-full w-full object-cover opacity-45"
+      src="https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1800&q=80"
+      alt="Apartamento preparado para recibir huéspedes de alquiler temporal"
+      class="absolute inset-0 h-full w-full object-cover opacity-52"
     >
-    <div class="absolute inset-0 bg-slate-950/55"></div>
+    <div class="absolute inset-0 bg-gradient-to-br from-slate-950/92 via-slate-950/68 to-emerald-950/35"></div>
 
-    <header class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
+    <header class="relative z-10 mx-0 flex w-full max-w-[390px] items-center justify-between px-5 py-5 sm:mx-auto sm:max-w-7xl sm:px-8">
       <%= link_to root_path, class: "flex items-center gap-3" do %>
-        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sm font-bold text-slate-950">S</span>
-        <span class="text-base font-semibold">Staywise</span>
+        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-sm font-bold text-slate-950">S</span>
+        <span class="hidden text-base font-semibold sm:inline">Staywise</span>
       <% end %>
-      <nav class="flex items-center gap-2">
-        <%= link_to "Sign in", login_path, class: "rounded-lg px-3 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 hover:text-white" %>
-        <%= link_to "Start free", signup_path, class: "rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
+      <nav class="hidden items-center gap-2 sm:flex">
+        <%= link_to "Ingresar", login_path, class: "rounded-lg px-3 py-2 text-sm font-semibold text-white/82 transition hover:bg-white/10 hover:text-white" %>
+        <%= link_to "Crear gratis", signup_path, class: "hidden rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-stone-100 sm:inline-flex" %>
       </nav>
     </header>
 
-    <div class="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:pb-20 lg:pt-16">
-      <div class="max-w-2xl">
-        <p class="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-sm font-medium text-white/80 backdrop-blur">AI guest support for Airbnb hosts</p>
-        <h1 class="mt-6 max-w-3xl text-5xl font-semibold leading-tight tracking-normal text-white sm:text-6xl">Staywise answers guest questions from your property guide.</h1>
-        <p class="mt-6 max-w-xl text-lg leading-8 text-white/78">Owners configure each apartment once. Guests ask through WhatsApp. The assistant replies with approved information and creates alerts when the host needs to decide.</p>
+    <div class="relative z-10 mx-0 grid w-full max-w-[390px] gap-8 overflow-hidden px-5 pb-14 pt-8 sm:mx-auto sm:max-w-7xl sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-end lg:overflow-visible lg:pb-16 lg:pt-14">
+      <div class="min-w-0 w-full max-w-[350px] sm:max-w-2xl">
+        <p class="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-sm font-medium text-white/82 backdrop-blur">Guía digital con IA para propietarios de Airbnb</p>
+        <h1 class="mt-6 max-w-3xl text-3xl font-semibold leading-tight tracking-normal text-white sm:text-6xl">Dejá de responder siempre lo mismo a tus huéspedes.</h1>
+        <p class="mt-6 max-w-xl text-lg leading-8 text-white/80">Creá una guía automática para cada alojamiento con normas, horarios, WiFi, check-in, emergencias y recomendaciones locales. Tus huéspedes la abren por link, QR o WhatsApp.</p>
         <div class="mt-8 flex flex-wrap gap-3">
-          <%= link_to "Create your account", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
-          <%= link_to "See how it works", "#workflow", class: "rounded-lg border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15" %>
+          <%= link_to "Crear mi guía gratis", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-stone-100" %>
+          <%= link_to "Ver cómo funciona", "#workflow", class: "rounded-lg border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15" %>
+        </div>
+        <div class="mt-8 grid max-w-xl grid-cols-3 gap-2 text-sm text-white/78 sm:gap-3">
+          <div class="border-l border-white/20 pl-3">
+            <p class="text-2xl font-semibold text-white">2 min</p>
+            <p class="mt-1">para dejar una guía lista</p>
+          </div>
+          <div class="border-l border-white/20 pl-3">
+            <p class="text-2xl font-semibold text-white">1 link</p>
+            <p class="mt-1">para cada propiedad</p>
+          </div>
+          <div class="border-l border-white/20 pl-3">
+            <p class="text-2xl font-semibold text-white">24/7</p>
+            <p class="mt-1">respuestas sin perseguirte</p>
+          </div>
         </div>
       </div>
 
-      <div class="relative min-h-[460px] lg:min-h-[560px]" aria-label="Staywise product preview">
-        <div class="absolute left-0 top-10 w-[76%] rounded-2xl border border-white/15 bg-white/95 p-4 text-slate-950 shadow-2xl backdrop-blur">
-          <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+      <div class="relative min-h-0 min-w-0 w-full max-w-[350px] sm:max-w-none lg:min-h-[600px]" aria-label="Vista previa de Staywise para propietarios y huéspedes">
+        <div class="relative min-w-0 w-full rounded-lg border border-white/14 bg-white p-4 text-slate-950 shadow-2xl lg:absolute lg:left-0 lg:top-3 lg:w-[78%]">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Rambla Studio</p>
-              <p class="mt-1 text-lg font-semibold">Guest guide</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Rambla Studio</p>
+              <p class="mt-1 text-xl font-semibold">Guía del huésped</p>
+              <p class="mt-1 text-sm text-slate-500">Lista para compartir por QR, link o WhatsApp.</p>
             </div>
-            <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">AI ready</span>
+            <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">Publicada</span>
           </div>
+
           <div class="mt-4 grid gap-3 sm:grid-cols-2">
-            <% [["Check-in", "Keypad and lockbox steps"], ["WiFi", "Network and password"], ["House rules", "Quiet hours and smoking"], ["Local tips", "Cafes, pharmacies, transport"]].each do |title, body| %>
-              <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <% [
+              ["Check-in", "Cerradura, código y llegada"],
+              ["WiFi", "Red, clave y soporte"],
+              ["Normas", "Ruido, visitas y tabaco"],
+              ["Emergencias", "Hospital, farmacia y contacto"]
+            ].each do |title, body| %>
+              <div class="rounded-lg border border-slate-200 bg-stone-50 p-4">
                 <p class="text-sm font-semibold text-slate-950"><%= title %></p>
-                <p class="mt-2 text-sm text-slate-500"><%= body %></p>
+                <p class="mt-2 text-sm leading-5 text-slate-500"><%= body %></p>
               </div>
             <% end %>
           </div>
-          <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-            <p class="text-sm font-semibold text-slate-950">Open alerts</p>
-            <div class="mt-3 flex items-start justify-between gap-4 rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200">
-              <div>
-                <p class="text-sm font-medium text-amber-700">Late checkout request</p>
-                <p class="mt-1 text-xs text-amber-700/80">Guest needs host approval.</p>
-              </div>
-              <span class="rounded-full bg-white px-2 py-1 text-xs font-semibold text-amber-700">Medium</span>
+
+          <div class="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-950 p-4 text-white">
+            <p class="text-sm font-semibold">Recomendaciones cercanas</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <% ["Café", "Restaurantes", "Supermercado", "Transporte", "Mascotas"].each do |tag| %>
+                <span class="max-w-full truncate rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/84 ring-1 ring-white/10"><%= tag %></span>
+              <% end %>
             </div>
           </div>
         </div>
 
-        <div class="absolute bottom-0 right-0 w-[54%] min-w-[260px] rounded-[2rem] border border-white/20 bg-slate-900 p-3 shadow-2xl">
-          <div class="rounded-[1.5rem] bg-slate-50 p-4">
-            <div class="flex items-center gap-2 border-b border-slate-200 pb-3">
-              <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
-              <p class="text-sm font-semibold text-slate-900">WhatsApp guest</p>
+        <div class="relative ml-auto mt-4 w-full min-w-0 rounded-lg border border-white/20 bg-slate-900 p-3 shadow-2xl sm:w-[82%] lg:absolute lg:bottom-0 lg:right-0 lg:mt-0 lg:w-[56%] lg:min-w-[270px] lg:rounded-[1.75rem]">
+          <div class="rounded-lg bg-stone-50 p-4 lg:rounded-[1.25rem]">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+              <p class="text-sm font-semibold text-slate-900">WhatsApp del huésped</p>
+              <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
             </div>
             <div class="mt-4 space-y-3">
-              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">What is the WiFi password?</div>
-              <div class="ml-auto max-w-[88%] rounded-2xl bg-emerald-600 p-3 text-sm text-white shadow-sm">The WiFi network is Staywise Guest. The password is welcome-home.</div>
-              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">Can I check out later?</div>
-              <div class="ml-auto max-w-[88%] rounded-2xl bg-slate-900 p-3 text-sm text-white shadow-sm">I will check this with your host and get back to you shortly.</div>
+              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">¿Cuál es la clave del WiFi?</div>
+              <div class="ml-auto max-w-[88%] rounded-2xl bg-emerald-700 p-3 text-sm text-white shadow-sm">La red es Staywise Huésped y la clave está en tu guía.</div>
+              <div class="max-w-[88%] rounded-2xl bg-white p-3 text-sm text-slate-700 shadow-sm">¿Podemos salir una hora más tarde?</div>
+              <div class="ml-auto max-w-[88%] rounded-2xl bg-slate-900 p-3 text-sm text-white shadow-sm">Lo consulto con el propietario y te aviso enseguida.</div>
             </div>
           </div>
+        </div>
+
+        <div class="absolute right-8 top-0 hidden w-28 rounded-lg border border-white/20 bg-white/95 p-3 text-center text-slate-950 shadow-xl sm:block">
+          <div class="grid grid-cols-4 gap-1">
+            <% 32.times do |index| %>
+              <span class="h-2 w-2 rounded-sm <%= index.even? || [3, 7, 18, 24, 29].include?(index) ? "bg-slate-950" : "bg-slate-200" %>"></span>
+            <% end %>
+          </div>
+          <p class="mt-3 text-xs font-semibold">QR de la propiedad</p>
         </div>
       </div>
     </div>
@@ -78,16 +107,17 @@
 
   <section id="workflow" class="mx-auto max-w-7xl px-5 py-16 sm:px-8">
     <div class="max-w-3xl">
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-400">Core loop</p>
-      <h2 class="mt-3 text-3xl font-semibold text-slate-950">One dashboard for every answer guests keep asking for.</h2>
+      <p class="text-sm font-semibold uppercase tracking-wide text-emerald-700">Listo en minutos</p>
+      <h2 class="mt-3 text-3xl font-semibold text-slate-950">Tu alojamiento preparado antes del check-in.</h2>
+      <p class="mt-4 text-base leading-7 text-slate-600">Staywise convierte la información de cada propiedad en una guía clara y en respuestas automáticas para las preguntas que más se repiten.</p>
     </div>
     <div class="mt-8 grid gap-4 md:grid-cols-3">
       <% [
-        ["Configure each property", "Add check-in steps, WiFi, rules, emergency info, FAQs, and local recommendations."],
-        ["Guests ask on WhatsApp", "Each property gets a QR and link so guests can start a conversation without another app."],
-        ["AI replies or escalates", "Staywise answers from approved content and creates alerts for refunds, emergencies, late checkout, or missing facts."]
+        ["Cargá tu propiedad", "Dirección, horario, reglas, instrucciones de llegada, WiFi y datos de emergencia."],
+        ["Revisá la guía generada", "Usá contenido base para normas, categorías y recomendaciones; editá solo lo que quieras ajustar."],
+        ["Compartí y dejá que trabaje", "Cada alojamiento tiene QR y enlace. La IA responde por WhatsApp o escala cuando necesitás decidir."]
       ].each_with_index do |(title, body), index| %>
-        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= index + 1 %></span>
           <h3 class="mt-5 text-lg font-semibold text-slate-950"><%= title %></h3>
           <p class="mt-3 text-sm leading-6 text-slate-500"><%= body %></p>
@@ -97,17 +127,73 @@
   </section>
 
   <section class="border-y border-slate-200 bg-white">
+    <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
+      <div>
+        <p class="text-sm font-semibold uppercase tracking-wide text-emerald-700">Contenido que sí se lee</p>
+        <h2 class="mt-3 text-3xl font-semibold text-slate-950">Una guía por propiedad, con todo lo que el huésped busca.</h2>
+        <p class="mt-4 text-sm leading-6 text-slate-500">Sin PDFs perdidos ni mensajes larguísimos. Tus instrucciones quedan ordenadas por tema y disponibles desde el teléfono del huésped.</p>
+        <%= link_to "Crear mi guía gratis", signup_path, class: "mt-6 inline-flex rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800" %>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <% [
+          ["Manual del alojamiento", "Cómo usar electrodomésticos, calefacción, TV y lavarropas."],
+          ["Normas de uso", "Ruido, visitas, fiestas, tabaco, mascotas y horarios."],
+          ["Check-in y checkout", "Llegada, cerraduras, llaves, depósito y salida."],
+          ["WiFi y servicios", "Red, clave, soporte y servicios incluidos."],
+          ["Zona y transporte", "Bares, cafeterías, supermercados, parking y movilidad."],
+          ["Seguridad", "Farmacia, hospital, emergencias y contactos importantes."]
+        ].each do |title, body| %>
+          <article class="rounded-lg border border-slate-200 bg-stone-50 p-4">
+            <h3 class="text-sm font-semibold text-slate-950"><%= title %></h3>
+            <p class="mt-2 text-sm leading-6 text-slate-500"><%= body %></p>
+          </article>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+    <div class="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-start">
+      <div>
+        <p class="text-sm font-semibold uppercase tracking-wide text-emerald-700">Para propietarios con una o muchas unidades</p>
+        <h2 class="mt-3 text-3xl font-semibold text-slate-950">Menos mensajes repetidos. Más control operativo.</h2>
+        <p class="mt-4 text-sm leading-6 text-slate-500">Gestioná cada alojamiento por separado, reutilizá información cuando corresponde y dejá que Staywise mantenga el primer nivel de soporte bajo control.</p>
+      </div>
+
+      <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div class="grid grid-cols-2 border-b border-slate-200 bg-slate-950 text-sm font-semibold text-white">
+          <p class="p-4">Lo que te quita</p>
+          <p class="p-4">Lo que te aporta</p>
+        </div>
+        <% [
+          ["Mensajes repetidos a toda hora", "Un enlace con respuestas claras"],
+          ["Dudas antes y durante la estadía", "Huéspedes informados desde el primer día"],
+          ["Explicar normas una y otra vez", "Reglas visibles y fáciles de consultar"],
+          ["PDFs, notas y mensajes largos", "Guía digital siempre actualizada"],
+          ["Decisiones mezcladas con preguntas simples", "Alertas solo cuando hace falta tu criterio"]
+        ].each do |pain, gain| %>
+          <div class="grid grid-cols-2 border-b border-slate-200 last:border-b-0">
+            <p class="p-4 text-sm leading-6 text-slate-500"><%= pain %></p>
+            <p class="p-4 text-sm font-medium leading-6 text-slate-900"><%= gain %></p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-y border-slate-200 bg-slate-950 text-white">
     <div class="mx-auto grid max-w-7xl gap-8 px-5 py-16 sm:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
       <div>
-        <p class="text-sm font-semibold uppercase tracking-wide text-slate-400">Built for hospitality</p>
-        <h2 class="mt-3 text-3xl font-semibold text-slate-950">Helpful answers without invented policies.</h2>
-        <p class="mt-4 text-sm leading-6 text-slate-500">Staywise is strict about factual answers. If the owner has not configured the information, the assistant says it will check with the host and creates an owner task.</p>
+        <p class="text-sm font-semibold uppercase tracking-wide text-emerald-300">Más que una guía estática</p>
+        <h2 class="mt-3 text-3xl font-semibold">Cuando la respuesta requiere criterio, Staywise no inventa.</h2>
+        <p class="mt-4 text-sm leading-6 text-white/70">La IA responde desde la información aprobada del propietario. Si falta un dato, hay una emergencia o el huésped pide una excepción, crea una alerta para que decidas tú.</p>
       </div>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <% ["Late checkout approval", "Missing towels", "Broken appliance", "Refund request", "Emergency help", "Unknown question"].each do |item| %>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p class="font-semibold text-slate-950"><%= item %></p>
-            <p class="mt-2 text-sm text-slate-500">Escalated to the owner when guest support needs judgment.</p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <% ["Late checkout", "Reembolso", "Emergencia", "Mantenimiento", "Objeto faltante", "Pregunta sin configurar"].each do |item| %>
+          <div class="rounded-lg border border-white/10 bg-white/8 p-4">
+            <p class="font-semibold text-white"><%= item %></p>
+            <p class="mt-2 text-sm leading-6 text-white/62">Se deriva al propietario con contexto de la conversación.</p>
           </div>
         <% end %>
       </div>
@@ -115,15 +201,30 @@
   </section>
 
   <section class="mx-auto max-w-7xl px-5 py-16 sm:px-8">
-    <div class="rounded-2xl bg-slate-950 p-8 text-white shadow-xl sm:p-10">
+    <div class="grid gap-4 md:grid-cols-3">
+      <% [
+        ["Antes tenía notas y mensajes largos", "Ahora mando un solo enlace por WhatsApp y el huésped llega con todo claro."],
+        ["Me preguntaban lo mismo cada semana", "Las respuestas simples salen de la guía y yo intervengo solo si hay una decisión."],
+        ["Gestiono varias propiedades", "Cada alojamiento tiene su propio QR, contenido y recomendaciones locales."]
+      ].each do |title, body| %>
+        <article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="text-lg font-semibold text-slate-950"><%= title %></h3>
+          <p class="mt-3 text-sm leading-6 text-slate-500"><%= body %></p>
+        </article>
+      <% end %>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-7xl px-5 pb-16 sm:px-8">
+    <div class="bg-emerald-700 p-8 text-white shadow-xl sm:p-10">
       <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 class="text-3xl font-semibold">Give guests better answers before they message you twice.</h2>
-          <p class="mt-3 max-w-2xl text-sm leading-6 text-white/70">Start with one property, add your guide, and let Staywise handle the first response from WhatsApp.</p>
+          <h2 class="text-3xl font-semibold">Convertí cada alojamiento en una guía lista para compartir.</h2>
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-emerald-50">Empezá con una propiedad, publicá tu guía y dejá que Staywise responda lo repetido antes de que llegue a tu teléfono.</p>
         </div>
         <div class="flex flex-wrap gap-3">
-          <%= link_to "Start free", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100" %>
-          <%= link_to "Sign in", login_path, class: "rounded-lg border border-white/20 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10" %>
+          <%= link_to "Crear gratis", signup_path, class: "rounded-lg bg-white px-5 py-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50" %>
+          <%= link_to "Ingresar", login_path, class: "rounded-lg border border-white/30 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10" %>
         </div>
       </div>
     </div>

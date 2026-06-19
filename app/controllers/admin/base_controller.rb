@@ -7,7 +7,7 @@ module Admin
     def require_admin!
       return if current_user&.admin_like?
 
-      redirect_to dashboard_path, alert: "Only admins can access that section."
+      redirect_to dashboard_path, alert: "Solo los administradores pueden acceder a esa sección."
     end
   end
 end
