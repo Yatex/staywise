@@ -21,7 +21,9 @@ module Whatsapp
     private
 
     def whatsapp_number
-      raw_number = ENV["TWILIO_WHATSAPP_FROM"].presence || ENV["WHATSAPP_FROM_NUMBER"].presence || "+15551234567"
+      raw_number = ENV["TWILIO_WHATSAPP_FROM"].presence || ENV["WHATSAPP_FROM_NUMBER"].presence
+      return if raw_number.blank?
+
       raw_number.to_s.gsub(/\Awhatsapp:/, "").gsub(/[^\d]/, "")
     end
   end

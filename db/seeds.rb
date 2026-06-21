@@ -292,3 +292,15 @@ upsert_alert(
   priority: "low",
   ai_suggested_action: "Agregar una etiqueta impresa pequeña dentro del placard de lavado."
 )
+
+upsert_alert(
+  cordon,
+  "Duda nueva: licuadora en cocina",
+  guest: martin,
+  conversation: martin_thread,
+  alert_type: "unknown_question",
+  description: "¿Hay licuadora en la cocina?",
+  status: "open",
+  priority: "medium",
+  ai_suggested_action: "Si no requiere una acción física, guardá la respuesta como FAQ para que la IA pueda responderla la próxima vez."
+)

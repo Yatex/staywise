@@ -64,6 +64,7 @@ es:
         category: "Categoría"
         status: "Estado"
         content: "Contenido"
+        youtube_url: "Link de YouTube"
       recommendation:
         name: "Nombre"
         category: "Categoría"

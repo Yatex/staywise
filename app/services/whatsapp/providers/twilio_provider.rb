@@ -17,11 +17,14 @@ module Whatsapp
           "Body" => body
         )
 
-        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) do |http|
           http.request(request)
         end
 
         response.is_a?(Net::HTTPSuccess)
+      rescue StandardError => error
+        Rails.logger.error("[twilio-provider] #{error.class}: #{error.message}")
+        false
       end
 
       private

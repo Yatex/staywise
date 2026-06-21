@@ -10,7 +10,7 @@ class KnowledgeBlocksController < ApplicationController
   def new
     source = source_knowledge_blocks.find_by(id: params[:source_id])
     @knowledge_block = if source
-      @property.knowledge_blocks.new(source.attributes.slice("title", "category", "content", "status"))
+      @property.knowledge_blocks.new(source.attributes.slice("title", "category", "content", "status", "youtube_url"))
     else
       @property.knowledge_blocks.new(status: "active")
     end
@@ -64,6 +64,6 @@ class KnowledgeBlocksController < ApplicationController
   end
 
   def knowledge_block_params
-    params.require(:knowledge_block).permit(:title, :category, :content, :status)
+    params.require(:knowledge_block).permit(:title, :category, :content, :status, :youtube_url)
   end
 end

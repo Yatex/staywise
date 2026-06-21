@@ -3,6 +3,8 @@ require "openssl"
 
 module Billing
   class WebhookHandler
+    SIGNATURE_TOLERANCE = 5.minutes
+
     def initialize(payload:, signature:)
       @payload = payload
       @signature = signature
@@ -32,12 +34,13 @@ module Billing
 
     def valid_signature?
       secret = ENV["STRIPE_WEBHOOK_SECRET"]
-      return true if secret.blank?
+      return false if secret.blank?
       return false if @signature.blank?
 
       timestamp = @signature[/t=(\d+)/, 1]
       signatures = @signature.scan(/v1=([a-f0-9]+)/).flatten
       return false if timestamp.blank? || signatures.blank?
+      return false if signature_expired?(timestamp)
 
       signed_payload = "#{timestamp}.#{@payload}"
       expected = OpenSSL::HMAC.hexdigest("SHA256", secret, signed_payload)
@@ -55,13 +58,43 @@ module Billing
       event_type = event.fetch("type")
       return unless event_type.in?(%w[checkout.session.completed customer.subscription.updated customer.subscription.deleted])
 
-      subscription = account.subscriptions.order(created_at: :desc).first_or_initialize
-      subscription.plan = object.dig("metadata", "plan").presence || subscription.plan || "starter"
+      subscription = subscription_record(account, object, event_type)
+      subscription.plan = plan_for(object) || subscription.plan || "starter"
       subscription.status = normalized_status(object["status"], event_type)
       subscription.stripe_customer_id = object["customer"] if object["customer"].present?
-      subscription.stripe_subscription_id = object["subscription"] || object["id"] if (object["subscription"] || object["id"]).present?
+      subscription.stripe_subscription_id = stripe_subscription_id(object, event_type) if stripe_subscription_id(object, event_type).present?
       subscription.current_period_end = Time.at(object["current_period_end"]) if object["current_period_end"].present?
       subscription.save!
+    end
+
+    def subscription_record(account, object, event_type)
+      stripe_subscription_id = stripe_subscription_id(object, event_type)
+      if stripe_subscription_id.present?
+        existing = account.subscriptions.find_by(stripe_subscription_id: stripe_subscription_id)
+        return existing if existing
+      end
+
+      account.subscriptions.order(created_at: :desc).first_or_initialize
+    end
+
+    def plan_for(object)
+      object.dig("metadata", "plan").presence || Plans.plan_for_price_id(price_id_for(object))
+    end
+
+    def price_id_for(object)
+      object.dig("items", "data", 0, "price", "id") ||
+        object.dig("lines", "data", 0, "price", "id")
+    end
+
+    def stripe_subscription_id(object, event_type)
+      return object["subscription"] if event_type == "checkout.session.completed"
+
+      object["id"]
+    end
+
+    def signature_expired?(timestamp)
+      signed_at = Time.at(timestamp.to_i)
+      signed_at < SIGNATURE_TOLERANCE.ago || signed_at > SIGNATURE_TOLERANCE.from_now
     end
 
     def normalized_status(status, event_type)

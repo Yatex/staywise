@@ -17,6 +17,7 @@ class KnowledgeBlock < ApplicationRecord
   validates :title, :content, presence: true
   validates :category, inclusion: { in: CATEGORIES }
   validates :status, inclusion: { in: STATUSES }
+  validates :youtube_url, format: { with: /\Ahttps?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i, message: "debe ser un link de YouTube válido" }, allow_blank: true
 
   scope :active, -> { where(status: "active") }
 end

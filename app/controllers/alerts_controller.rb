@@ -20,6 +20,16 @@ class AlertsController < ApplicationController
     end
   end
 
+  def answer_question
+    @alert = scoped_alerts.unknown_questions.open.includes(:property).find(params[:id])
+    faq = @alert.property.faqs.create!(question: answer_question_params[:question], answer: answer_question_params[:answer], category: "custom_notes", active: true)
+    @alert.update!(status: "resolved", ai_suggested_action: "Respondida y guardada como FAQ ##{faq.id}.")
+
+    redirect_to property_path(@alert.property, anchor: "new-questions"), notice: "Duda guardada como FAQ. La IA podrá usar esta respuesta la próxima vez."
+  rescue ActiveRecord::RecordInvalid => error
+    redirect_to property_path(@alert.property, anchor: "new-questions"), alert: error.record.errors.full_messages.to_sentence
+  end
+
   private
 
   def scoped_alerts
@@ -28,5 +38,9 @@ class AlertsController < ApplicationController
 
   def alert_params
     params.require(:alert).permit(:status, :priority)
+  end
+
+  def answer_question_params
+    params.require(:faq).permit(:question, :answer)
   end
 end

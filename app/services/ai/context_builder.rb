@@ -72,7 +72,7 @@ module AI
 
     def knowledge_blocks_payload
       @property.knowledge_blocks.active.order(:category, :title).map do |block|
-        block.slice(:title, :category, :content, :status)
+        block.slice(:title, :category, :content, :status, :youtube_url)
       end
     end
 

@@ -18,14 +18,16 @@
         <p class="mt-2 text-sm text-slate-500"><%= @property.address.presence || "Dirección sin configurar" %></p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
+        <% if @whatsapp_link.present? %>
+          <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
+        <% end %>
         <%= link_to "Editar propiedad", edit_property_path(@property), class: secondary_button_class %>
         <%= link_to "Agregar bloque de guía", new_property_knowledge_block_path(@property), class: primary_button_class %>
       </div>
     </div>
 
-    <div class="mt-5 flex gap-2 overflow-x-auto border-t border-slate-100 pt-4">
-      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
+    <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Dudas nuevas", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
       <% end %>
     </div>
@@ -35,14 +37,20 @@
     <div class="<%= card_class %> p-5">
       <h3 class="text-base font-semibold text-slate-950">QR de WhatsApp de la propiedad</h3>
       <p class="mt-1 text-sm text-slate-500">Los huéspedes lo escanean para hacer preguntas sobre esta propiedad.</p>
-      <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-        <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} QR de WhatsApp", class: "aspect-square w-full rounded-lg bg-slate-50" %>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-2" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(@property, format: :svg) %>">
-        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link</button>
-        <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
-        <%= link_to "Descargar QR", whatsapp_qr_property_path(@property, format: :svg, download: 1), class: primary_button_class %>
-      </div>
+      <% if @whatsapp_link.present? %>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} QR de WhatsApp", class: "aspect-square w-full rounded-lg bg-slate-50" %>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(@property, format: :svg) %>">
+          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link</button>
+          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
+          <%= link_to "Descargar QR", whatsapp_qr_property_path(@property, format: :svg, download: 1), class: primary_button_class %>
+        </div>
+      <% else %>
+        <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Configurá TWILIO_WHATSAPP_FROM o WHATSAPP_FROM_NUMBER para generar links y QR reales.
+        </div>
+      <% end %>
     </div>
 
     <div class="<%= card_class %> p-5">
@@ -84,8 +92,8 @@
       <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.wifi_name.presence || "Sin configurar" %></p>
     </div>
     <div class="<%= card_class %> p-4">
-      <p class="text-sm text-slate-500">Alertas abiertas</p>
-      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.alerts.open.count %></p>
+      <p class="text-sm text-slate-500">Dudas nuevas</p>
+      <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.alerts.unknown_questions.open.count %></p>
     </div>
   </section>
 
@@ -111,6 +119,9 @@
             </div>
           </div>
           <p class="mt-3 whitespace-pre-line text-sm text-slate-600"><%= truncate(block.content, length: 260) %></p>
+          <% if block.youtube_url.present? %>
+            <p class="mt-3 text-sm"><%= link_to "Video de YouTube", block.youtube_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %></p>
+          <% end %>
         </div>
       <% end %>
       <% if @knowledge_blocks.blank? %>
@@ -166,6 +177,44 @@
       <% end %>
       <% if @faqs.blank? %>
         <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay FAQs.</p>
+      <% end %>
+    </div>
+  </section>
+
+  <section id="new-questions" class="<%= card_class %> overflow-hidden">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <h3 class="text-base font-semibold text-slate-950">Dudas nuevas</h3>
+      <p class="mt-1 text-sm text-slate-500">Preguntas que la IA no supo responder. Si no requieren una acción física, guardá la respuesta como FAQ para que la IA la use la próxima vez.</p>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <% @new_questions.each do |alert| %>
+        <div class="px-5 py-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="font-medium text-slate-950"><%= alert.description.presence || alert.title %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Huésped desconocido" %> · <%= alert.created_at.to_fs(:short) %></p>
+            </div>
+            <% if alert.conversation.present? %>
+              <%= link_to "Ver conversación", conversation_path(alert.conversation), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+            <% end %>
+          </div>
+          <%= form_with url: answer_question_alert_path(alert), method: :post, class: "mt-4 grid gap-3" do |form| %>
+            <div>
+              <%= label_tag "faq_question_#{alert.id}", "Pregunta", class: label_class %>
+              <%= text_area_tag "faq[question]", alert.description.presence || alert.title, id: "faq_question_#{alert.id}", rows: 2, class: field_class, required: true %>
+            </div>
+            <div>
+              <%= label_tag "faq_answer_#{alert.id}", "Respuesta reusable", class: label_class %>
+              <%= text_area_tag "faq[answer]", nil, id: "faq_answer_#{alert.id}", rows: 4, class: field_class, required: true, placeholder: "Escribí la respuesta que la IA podrá reutilizar para esta propiedad." %>
+            </div>
+            <div class="flex justify-end">
+              <%= form.submit "Guardar como FAQ", class: primary_button_class %>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+      <% if @new_questions.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay dudas nuevas para enseñar en esta propiedad.</p>
       <% end %>
     </div>
   </section>

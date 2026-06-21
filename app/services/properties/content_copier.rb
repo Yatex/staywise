@@ -37,7 +37,7 @@ module Properties
 
     def copy_guides
       @source.knowledge_blocks.find_each do |block|
-        @target.knowledge_blocks.create!(block.attributes.slice("title", "category", "content", "status"))
+        @target.knowledge_blocks.create!(block.attributes.slice("title", "category", "content", "status", "youtube_url"))
       end
     end
 

@@ -6,75 +6,125 @@
   <% end %>
 
   <section class="<%= card_class %> p-5">
-    <h2 class="text-base font-semibold text-slate-950">Propiedad basics</h2>
-    <div class="mt-4 grid gap-4 md:grid-cols-2">
-      <div>
-        <%= form.label :name, "Propiedad name", class: label_class %>
-        <%= form.text_field :name, class: field_class, required: true %>
-      </div>
-      <div>
-        <%= form.label :internal_nickname, class: label_class %>
-        <%= form.text_field :internal_nickname, class: field_class %>
-      </div>
-      <div class="md:col-span-2">
-        <%= form.label :address, class: label_class %>
-        <%= form.text_field :address, class: field_class %>
-      </div>
-      <div class="md:col-span-2">
-        <%= form.label :tag_list, "Etiquetas", class: label_class %>
-        <%= form.text_field :tag_list, value: property.tag_list, class: field_class, placeholder: "playa, familiar, premium" %>
-        <p class="mt-2 text-xs text-slate-500">Separate tags with commas. Etiquetas are used for grouping and filtering propiedades.</p>
-      </div>
-      <div>
-        <%= form.label :check_in_time, class: label_class %>
-        <%= form.text_field :check_in_time, class: field_class, placeholder: "3:00 PM" %>
-      </div>
-      <div>
-        <%= form.label :checkout_time, class: label_class %>
-        <%= form.text_field :checkout_time, class: field_class, placeholder: "11:00 AM" %>
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">1</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Datos básicos</h2>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= form.label :name, "Nombre de la propiedad", class: label_class %>
+            <%= form.text_field :name, class: field_class, required: true %>
+          </div>
+          <div>
+            <%= form.label :internal_nickname, "Alias interno", class: label_class %>
+            <%= form.text_field :internal_nickname, class: field_class %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :address, "Dirección", class: label_class %>
+            <%= form.text_field :address, class: field_class %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :tag_list, "Etiquetas", class: label_class %>
+            <%= form.text_field :tag_list, value: property.tag_list, class: field_class, placeholder: "playa, familiar, premium" %>
+            <p class="mt-2 text-xs text-slate-500">Separá etiquetas con comas para agrupar y filtrar propiedades.</p>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
   <section class="<%= card_class %> p-5">
-    <h2 class="text-base font-semibold text-slate-950">Información esencial para huéspedes</h2>
-    <div class="mt-4 grid gap-4 md:grid-cols-2">
-      <div>
-        <%= form.label :wifi_name, "Nombre de WiFi", class: label_class %>
-        <%= form.text_field :wifi_name, class: field_class %>
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">2</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Llegada y check-in</h2>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= form.label :check_in_time, "Horario de check-in", class: label_class %>
+            <%= form.text_field :check_in_time, class: field_class, placeholder: "15:00" %>
+          </div>
+          <div>
+            <%= form.label :access_instructions, "Instrucciones de acceso", class: label_class %>
+            <%= form.text_area :access_instructions, rows: 5, class: field_class, placeholder: "Portón, código, caja de llaves, piso, referencias de entrada." %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :parking_instructions, "Estacionamiento", class: label_class %>
+            <%= form.text_area :parking_instructions, rows: 4, class: field_class, placeholder: "Cochera incluida, parking cercano, reglas del edificio o dónde no estacionar." %>
+          </div>
+        </div>
       </div>
-      <div>
-        <%= form.label :wifi_password, "Contraseña de WiFi", class: label_class %>
-        <%= form.text_field :wifi_password, class: field_class %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">3</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Durante la estadía</h2>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= form.label :wifi_name, "Nombre de WiFi", class: label_class %>
+            <%= form.text_field :wifi_name, class: field_class %>
+          </div>
+          <div>
+            <%= form.label :wifi_password, "Contraseña de WiFi", class: label_class %>
+            <%= form.text_field :wifi_password, class: field_class %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :ai_general_notes, "Notas útiles para responder durante la estadía", class: label_class %>
+            <%= form.text_area :ai_general_notes, rows: 5, class: field_class, placeholder: "Electrodomésticos, calefacción, TV, lavarropas, amenities, recomendaciones internas." %>
+          </div>
+        </div>
       </div>
-      <div>
-        <%= form.label :access_instructions, class: label_class %>
-        <%= form.text_area :access_instructions, rows: 5, class: field_class %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">4</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Reglas, seguridad y escalamiento</h2>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= form.label :house_rules, "Reglas de la casa", class: label_class %>
+            <%= form.text_area :house_rules, rows: 5, class: field_class, placeholder: "Ruido, visitas, fiestas, mascotas, fumar, horarios del edificio." %>
+          </div>
+          <div>
+            <%= form.label :emergency_information, "Información de emergencia", class: label_class %>
+            <%= form.text_area :emergency_information, rows: 5, class: field_class, placeholder: "Hospital, farmacia, botiquín, extintor, contactos importantes." %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :owner_contact_instructions, "Cuándo consultar al propietario", class: label_class %>
+            <%= form.text_area :owner_contact_instructions, rows: 4, class: field_class, placeholder: "Late checkout, reembolsos, daños, emergencias, mantenimiento o permisos especiales." %>
+          </div>
+        </div>
       </div>
-      <div>
-        <%= form.label :parking_instructions, class: label_class %>
-        <%= form.text_area :parking_instructions, rows: 5, class: field_class %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">5</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Checkout</h2>
+        <div class="mt-4">
+          <%= form.label :checkout_time, "Horario de checkout", class: label_class %>
+          <%= form.text_field :checkout_time, class: field_class, placeholder: "11:00" %>
+        </div>
       </div>
-      <div>
-        <%= form.label :house_rules, class: label_class %>
-        <%= form.text_area :house_rules, rows: 5, class: field_class %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">IA de esta propiedad</h2>
+        <label class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+          <%= form.check_box :ai_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Activar respuestas de IA para esta propiedad
+        </label>
       </div>
-      <div>
-        <%= form.label :emergency_information, class: label_class %>
-        <%= form.text_area :emergency_information, rows: 5, class: field_class %>
-      </div>
-      <div>
-        <%= form.label :owner_contact_instructions, class: label_class %>
-        <%= form.text_area :owner_contact_instructions, rows: 5, class: field_class %>
-      </div>
-      <div>
-        <%= form.label :ai_general_notes, "Notas generales para la IA", class: label_class %>
-        <%= form.text_area :ai_general_notes, rows: 5, class: field_class %>
-      </div>
-      <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
-        <%= form.check_box :ai_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-        Activar respuestas de IA para esta propiedad
-      </label>
     </div>
   </section>
 

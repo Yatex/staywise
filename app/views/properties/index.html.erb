@@ -57,15 +57,19 @@
             <p class="text-xs text-slate-500">Lugares</p>
           </div>
           <div class="rounded-lg bg-slate-50 p-3">
-            <p class="text-lg font-semibold text-slate-950"><%= property.alerts.open.count %></p>
+            <p class="text-lg font-semibold text-slate-950"><%= property.alerts.operational.open.count %></p>
             <p class="text-xs text-slate-500">Alertas</p>
           </div>
         </div>
         <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4" data-controller="clipboard" data-clipboard-text-value="<%= whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(property, format: :svg) %>">
           <%= link_to "Abrir", property_path(property), class: primary_button_class %>
-          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
-          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
-          <%= link_to "Descargar QR", whatsapp_qr_property_path(property, format: :svg, download: 1), class: secondary_button_class %>
+          <% if whatsapp_link.present? %>
+            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
+            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
+            <%= link_to "Descargar QR", whatsapp_qr_property_path(property, format: :svg, download: 1), class: secondary_button_class %>
+          <% else %>
+            <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">WhatsApp sin configurar</span>
+          <% end %>
         </div>
       </article>
     <% end %>

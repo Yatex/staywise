@@ -23,6 +23,11 @@
         <%= form.label :content, class: label_class %>
         <%= form.text_area :content, rows: 10, class: field_class, required: true %>
       </div>
+      <div class="md:col-span-2">
+        <%= form.label :youtube_url, "Link de YouTube opcional", class: label_class %>
+        <%= form.url_field :youtube_url, class: field_class, placeholder: "https://www.youtube.com/watch?v=..." %>
+        <p class="mt-2 text-xs text-slate-500">Si el dueño quiere explicar algo con video, la IA puede compartir este link junto con la respuesta.</p>
+      </div>
     </div>
   </div>
 

@@ -11,7 +11,7 @@ module Whatsapp
       parsed = InboundMessageParser.new(@params).call
       raise ArgumentError, "El mensaje entrante de WhatsApp está vacío." if parsed.body.blank?
 
-      account = resolve_account
+      account = resolve_account(parsed)
       property = resolve_property(account, parsed)
       guest = resolve_guest(account, property, parsed)
       conversation = resolve_conversation(guest, property)
@@ -37,7 +37,12 @@ module Whatsapp
 
     private
 
-    def resolve_account
+    def resolve_account(parsed)
+      if parsed.property_id.present?
+        property = Property.includes(:account).find_by(id: parsed.property_id)
+        return property.account if property.present?
+      end
+
       Account.find_by(id: ENV["DEFAULT_ACCOUNT_ID"]) || Account.first || raise(MissingAccount)
     end
 
@@ -69,8 +74,11 @@ module Whatsapp
       return false unless decision.should_reply
       return false if decision.response_text.blank?
 
+      delivered = @provider.send_message(to: guest.phone_number, body: decision.response_text)
+      return false unless delivered
+
       conversation.messages.create!(sender: "ai", channel: "whatsapp", body: decision.response_text, metadata: decision.to_h)
-      @provider.send_message(to: guest.phone_number, body: decision.response_text)
+      true
     end
   end
 end

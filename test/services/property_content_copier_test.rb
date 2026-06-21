@@ -16,7 +16,8 @@ class PropertyContentCopierTest < ActiveSupport::TestCase
       title: "WiFi",
       category: "wifi",
       content: "Network is Source WiFi.",
-      status: "active"
+      status: "active",
+      youtube_url: "https://www.youtube.com/watch?v=sourcewifi"
     )
     @source.recommendations.create!(
       name: "Source Cafe",
@@ -41,6 +42,7 @@ class PropertyContentCopierTest < ActiveSupport::TestCase
     assert_equal "2:00 PM", @target.reload.check_in_time
     assert_equal %w[beach premium], @target.tags
     assert_equal "WiFi", @target.knowledge_blocks.first.title
+    assert_equal "https://www.youtube.com/watch?v=sourcewifi", @target.knowledge_blocks.first.youtube_url
     assert_equal "Source Cafe", @target.recommendations.first.name
     assert_equal "Where is parking?", @target.faqs.first.question
   end

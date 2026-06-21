@@ -30,7 +30,9 @@ Rails.application.routes.draw do
 
   resources :recommendations, only: [:index]
   resources :conversations, only: [:index, :show]
-  resources :alerts, only: [:index, :show, :update]
+  resources :alerts, only: [:index, :show, :update] do
+    post :answer_question, on: :member
+  end
   resources :guests, only: [:index, :show]
 
   resource :subscription, path: "subscriptions", only: [:show], controller: :billing do

@@ -19,5 +19,11 @@ module Billing
         "business" => "STRIPE_PRICE_BUSINESS"
       }.fetch(plan)
     end
+
+    def self.plan_for_price_id(price_id)
+      return if price_id.blank?
+
+      Subscription::PLANS.find { |plan| ENV[price_env_for(plan)] == price_id }
+    end
   end
 end

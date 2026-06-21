@@ -22,6 +22,9 @@ module Billing
       else
         { error: body.dig("error", "message") || "No se pudo abrir el portal de Stripe." }
       end
+    rescue StandardError => error
+      Rails.logger.error("[stripe-portal] #{error.class}: #{error.message}")
+      { error: "No se pudo abrir el portal de Stripe." }
     end
 
     private
@@ -32,7 +35,7 @@ module Billing
       request.basic_auth(stripe_secret, "")
       request.set_form_data("customer" => customer_id, "return_url" => @return_url)
 
-      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) { |http| http.request(request) }
     end
 
     def stripe_secret

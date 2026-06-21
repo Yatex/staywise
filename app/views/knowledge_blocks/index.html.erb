@@ -16,6 +16,9 @@
           <div>
             <p class="font-medium text-slate-950"><%= block.title %></p>
             <p class="mt-1 text-sm text-slate-500"><%= enum_label(block.category) %></p>
+            <% if block.youtube_url.present? %>
+              <p class="mt-2 text-sm"><%= link_to "Video de YouTube", block.youtube_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %></p>
+            <% end %>
           </div>
           <%= link_to "Editar", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
         </div>

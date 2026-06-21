@@ -23,6 +23,8 @@ class Alert < ApplicationRecord
 
   scope :open, -> { where(status: %w[open in_progress]) }
   scope :urgent, -> { where(priority: "urgent") }
+  scope :unknown_questions, -> { where(alert_type: "unknown_question") }
+  scope :operational, -> { where.not(alert_type: "unknown_question") }
 
   before_save :set_resolved_at
 

@@ -29,6 +29,7 @@ en:
         category: "Category"
         status: "Status"
         content: "Content"
+        youtube_url: "YouTube link"
       recommendation:
         name: "Name"
         category: "Category"

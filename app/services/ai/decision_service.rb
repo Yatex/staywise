@@ -110,9 +110,9 @@ module AI
       return answer_decision(faq["answer"], 0.83) if faq
 
       block = payload[:knowledge_blocks].find { |item| relevant?(text, [item["title"], item["category"], item["content"]].join(" ")) }
-      return answer_decision(block["content"], 0.71) if block
+      return answer_decision(block["content"], 0.71, video_url: block["youtube_url"]) if block
 
-      unknown_decision("La IA no encontró información cargada por el propietario para: #{payload[:guest_message]}")
+      unknown_decision(payload[:guest_message])
     end
 
     def relevant?(message, source)
@@ -123,9 +123,11 @@ module AI
       words.any? { |word| source_text.include?(word) }
     end
 
-    def answer_decision(answer, confidence)
+    def answer_decision(answer, confidence, video_url: nil)
+      response_text = [answer, ("Video: #{video_url}" if video_url.present?)].compact.join("\n\n")
+
       DecisionResult.from_hash(
-        response_text: answer,
+        response_text: response_text,
         should_reply: true,
         confidence: confidence,
         escalation_required: false
