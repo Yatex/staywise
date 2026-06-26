@@ -9,6 +9,7 @@ WORKDIR /rails
 
 # Set production environment
 ENV RAILS_ENV="production" \
+    BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \
     BUNDLE_WITHOUT="development"
 
@@ -23,10 +24,7 @@ RUN apt-get update -qq && \
 # Install application gems
 COPY Gemfile Gemfile.lock ./
 RUN gem install bundler -v "$(awk '/BUNDLED WITH/{getline; print $1}' Gemfile.lock)" && \
-    (bundle lock --remove-platform arm64-darwin || true) && \
-    (bundle lock --remove-platform arm64-darwin-21 || true) && \
-    bundle lock --add-platform x86_64-linux && \
-    BUNDLE_DEPLOYMENT=1 bundle install && \
+    bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     bundle exec bootsnap precompile --gemfile
 
