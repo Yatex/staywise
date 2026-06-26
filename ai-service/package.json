@@ -1,5 +1,5 @@
 {
-  "name": "staywise-ai-service",
+  "name": "ayla-manager-ai-service",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.0",
     "ai": "^5.0.0",
     "tsx": "^4.20.0",
     "zod": "^3.25.0"

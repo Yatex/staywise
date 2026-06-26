@@ -115,9 +115,40 @@
     </div>
   </section>
 
+  <% unless property.persisted? %>
+    <section class="<%= card_class %> p-5">
+      <div class="flex items-start gap-4">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-base font-semibold text-slate-950">Preguntas frecuentes iniciales</h2>
+          <div class="mt-4 space-y-4">
+            <% Array(@initial_faqs).each_with_index do |faq, index| %>
+              <div class="rounded-lg border border-slate-200 p-4">
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <%= label_tag "property_initial_faqs_#{index}_question", "Pregunta", class: label_class %>
+                    <%= text_field_tag "property[initial_faqs][][question]", faq["question"], id: "property_initial_faqs_#{index}_question", class: field_class, placeholder: "¿A qué hora es el checkout?" %>
+                  </div>
+                  <div>
+                    <%= label_tag "property_initial_faqs_#{index}_category", "Categoría", class: label_class %>
+                    <%= text_field_tag "property[initial_faqs][][category]", faq["category"], id: "property_initial_faqs_#{index}_category", class: field_class, placeholder: "checkout, acceso, amenities" %>
+                  </div>
+                  <div class="md:col-span-2">
+                    <%= label_tag "property_initial_faqs_#{index}_answer", "Respuesta", class: label_class %>
+                    <%= text_area_tag "property[initial_faqs][][answer]", faq["answer"], id: "property_initial_faqs_#{index}_answer", rows: 3, class: field_class, placeholder: "El checkout es a las 11:00. Dejás las llaves sobre la mesa." %>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </section>
+  <% end %>
+
   <section class="<%= card_class %> p-5">
     <div class="flex items-start gap-4">
-      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= property.persisted? ? "6" : "7" %></span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">IA de esta propiedad</h2>
         <label class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">

@@ -51,7 +51,7 @@ class Property < ApplicationRecord
   end
 
   def whatsapp_reference
-    "Staywise property ##{id}"
+    "Ayla property ##{id}"
   end
 
   private

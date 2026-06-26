@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="ayla-favicon" x1="9" y1="7" x2="54" y2="57" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#0f172a"/>
+  <path d="M32 13 51 50h-8l-4-8H25l-4 8h-8l19-37Zm-4 22h8l-4-8-4 8Z" fill="url(#ayla-favicon)"/>
+  <path d="M21 30 32 19l11 11" fill="none" stroke="#ecfeff" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

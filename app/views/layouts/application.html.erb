@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Staywise</title>
+    <title><%= content_for(:page_title).presence || "Ayla Manager" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= favicon_link_tag "ayla-favicon.svg", type: "image/svg+xml" %>
+    <link rel="apple-touch-icon" type="image/png" href="/apple-touch-icon.png">
     <%= stylesheet_link_tag "tailwind", "data-turbo-track": "reload" %>
 
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
@@ -21,7 +23,7 @@
             <div class="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= current_account.name %></p>
-                <h1 class="text-lg font-semibold text-slate-950"><%= content_for(:page_title).presence || "Staywise" %></h1>
+                <h1 class="text-lg font-semibold text-slate-950"><%= content_for(:page_title).presence || "Ayla Manager" %></h1>
               </div>
               <div class="flex items-center gap-3">
                 <%= link_to "Nueva propiedad", new_property_path, class: secondary_button_class %>

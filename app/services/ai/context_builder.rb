@@ -8,15 +8,21 @@ module AI
     end
 
     def call
+      registry = SourceRegistry.new(conversation: @conversation)
+      authorization = ReservationAuthorization.new(guest: @guest, property: @property)
+
       {
         guest_message: @guest_message.body,
         guest: guest_payload,
         property: property_payload,
+        reservation: {
+          status: authorization.reservation_status,
+          sensitive_access_authorized: authorization.sensitive_access_authorized?
+        },
         owner_instructions: owner_instructions_payload,
-        knowledge_blocks: knowledge_blocks_payload,
-        faqs: faqs_payload,
-        recommendations: recommendations_payload,
-        conversation_history: conversation_history_payload
+        conversation_history: conversation_history_payload,
+        safety_rules: safety_rules,
+        tool_context: registry.tool_context
       }
     end
 
@@ -24,84 +30,38 @@ module AI
 
     def guest_payload
       {
-        name: @guest.name,
-        phone_number: @guest.phone_number,
-        language: @guest.language,
-        reservation_reference: @guest.reservation_reference,
-        check_in_date: @guest.check_in_date,
-        checkout_date: @guest.checkout_date
+        language: @guest.language
       }
     end
 
     def property_payload
-      @property.slice(
-        :name,
-        :address,
-        :internal_nickname,
-        :check_in_time,
-        :checkout_time,
-        :wifi_name,
-        :wifi_password,
-        :house_rules,
-        :access_instructions,
-        :parking_instructions,
-        :emergency_information,
-        :owner_contact_instructions,
-        :ai_general_notes,
-        :ai_enabled
-      )
+      @property.slice(:name)
     end
 
     def owner_instructions_payload
       account = @property.account
       account.slice(
-        :default_ai_instructions,
         :ai_tone,
         :ai_goal,
         :ai_response_style,
         :ai_preferred_language,
-        :ai_default_channel,
-        :languages_supported,
-        :unsure_behavior,
-        :late_checkout_policy,
-        :emergency_contact_behavior,
-        :ai_escalation_rules,
-        :ai_automation_settings
+        :ai_default_channel
       ).merge(ai_active: account.ai_active?)
     end
 
-    def knowledge_blocks_payload
-      @property.knowledge_blocks.active.order(:category, :title).map do |block|
-        block.slice(:title, :category, :content, :status, :youtube_url)
-      end
-    end
-
-    def faqs_payload
-      @property.faqs.active.order(:category, :question).map do |faq|
-        faq.slice(:question, :answer, :category)
-      end
-    end
-
-    def recommendations_payload
-      @property.recommendations.order(:category, :name).map do |recommendation|
-        recommendation.slice(
-          :name,
-          :category,
-          :description,
-          :address,
-          :google_maps_url,
-          :website_url,
-          :phone_number,
-          :owner_note,
-          :distance_or_walking_time
-        )
-      end
-    end
-
     def conversation_history_payload
-      @conversation.messages.order(created_at: :desc).limit(12).reverse.map do |message|
+      @conversation.messages.order(created_at: :desc).limit(4).reverse.map do |message|
         message.slice(:sender, :body, :channel, :created_at)
       end
+    end
+
+    def safety_rules
+      [
+        "Return only structured JSON matching the decision contract.",
+        "Do not answer without evidence from a provided tool result.",
+        "Never approve early check-in, late checkout, refunds, discounts, compensation, booking changes, or access outside permitted hours.",
+        "If evidence is missing or approval is needed, escalate with a concise acknowledgement."
+      ]
     end
   end
 end

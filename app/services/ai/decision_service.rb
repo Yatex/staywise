@@ -24,7 +24,32 @@ module AI
 
     def call
       payload = ContextBuilder.new(conversation: @conversation, guest_message: @guest_message).call
-      remote_decision(payload) || local_decision(payload)
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      if SafetyConfig.safe_router_enabled?
+        routed = DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).call
+        if routed
+          audit("deterministic", routed, started_at)
+          return routed
+        end
+      end
+
+      if (decision = remote_decision(payload))
+        validation = DecisionValidator.new(conversation: @conversation, decision: decision, source: "ai").call
+        if validation.valid?
+          audit("remote_ai", decision, started_at, validator_result: "accepted")
+          return decision
+        end
+
+        Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
+        fallback = safe_escalation("AI decision rejected: #{validation.reasons.join(", ")}")
+        audit("remote_ai_rejected", fallback, started_at, validator_result: "rejected", rejection_reason: validation.reasons.join(", "))
+        return fallback
+      end
+
+      fallback = local_decision(payload)
+      audit("local_fallback", fallback, started_at)
+      fallback
     end
 
     private
@@ -49,16 +74,56 @@ module AI
     end
 
     def local_decision(payload)
+      return conservative_local_decision if SafetyConfig.conservative_fallback_enabled?
+
+      legacy_local_decision(payload)
+    end
+
+    def conservative_local_decision
+      registry = SourceRegistry.new(conversation: @conversation)
+      faq = registry.exact_faq_for(@guest_message.body)
+
+      if faq
+        source = registry.faq_source(faq)
+        return DecisionResult.from_hash(
+          outcome: "reply",
+          response_text: faq.answer,
+          should_reply: true,
+          confidence: 0.98,
+          evidence: [source.slice("source_type", "source_id").merge("claim" => "Exact FAQ question match.")]
+        )
+      end
+
+      safe_escalation("AI service unavailable and no exact FAQ match was found.")
+    end
+
+    def safe_escalation(description)
+      DecisionResult.from_hash(
+        outcome: "escalate",
+        response_text: "Thanks for your message. I'm checking this with the host and will get back to you shortly.",
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: {
+          required: true,
+          category: "unknown",
+          urgency: "medium",
+          summary: description
+        },
+        alert_type: "unknown_question",
+        alert_title: "La pregunta necesita respuesta del anfitrión",
+        alert_description: @guest_message.body,
+        suggested_owner_action: "Revisá la consulta antes de responder. Si es información reusable, agregala como FAQ o bloque de guía."
+      )
+    end
+
+    def legacy_local_decision(payload)
       text = payload[:guest_message].to_s.downcase
       alert_type = detected_alert_type(text)
 
       return alert_decision(alert_type, payload[:guest_message]) if alert_type
 
-      if recommendation_question?(text)
-        recommendation_decision(payload)
-      else
-        knowledge_decision(payload, text)
-      end
+      safe_escalation("AI service unavailable.")
     end
 
     def detected_alert_type(text)
@@ -145,6 +210,28 @@ module AI
         alert_description: description,
         suggested_owner_action: "Agregá la respuesta a la guía del huésped o a las FAQs de esta propiedad y luego respondé al huésped."
       )
+    end
+
+    def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil)
+      latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      payload = {
+        message_id: @guest_message.id,
+        conversation_id: @conversation.id,
+        guest_id: @conversation.guest_id,
+        property_id: @property.id,
+        route: route,
+        outcome: decision.outcome,
+        alert_type: decision.alert_type,
+        evidence_ids: decision.evidence.map { |item| item["source_id"] },
+        validator_result: validator_result,
+        rejection_reason: rejection_reason,
+        replied_candidate: decision.should_reply,
+        escalation_required: decision.escalation_required,
+        latency_ms: latency_ms,
+        model: ENV["AI_MODEL"]
+      }.compact
+
+      Rails.logger.info("[ai-audit] #{payload.to_json}")
     end
 
     def suggested_action_for(alert_type)

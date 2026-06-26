@@ -64,7 +64,7 @@ class Account < ApplicationRecord
   def assign_slug
     return if slug.present?
 
-    base = name.to_s.parameterize.presence || "staywise"
+    base = name.to_s.parameterize.presence || "ayla-manager"
     candidate = base
     counter = 2
 

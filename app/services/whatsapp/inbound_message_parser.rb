@@ -13,7 +13,7 @@ module Whatsapp
         from: normalized_phone(value("From", "from", "phone_number")),
         to: normalized_phone(value("To", "to")),
         body: body,
-        property_id: value("PropertyId", "property_id") || body[/Staywise property #(\d+)/i, 1],
+        property_id: value("PropertyId", "property_id") || body[/(?:Ayla|Staywise) property #(\d+)/i, 1],
         metadata: @params.except("controller", "action")
       )
     end

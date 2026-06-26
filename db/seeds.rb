@@ -1,6 +1,6 @@
 account = Account.find_or_create_by!(slug: "demo-stays") do |record|
   record.name = "Demo Stays"
-  record.default_ai_instructions = "Sé breve, cálida y factual. Respondé solo con información configurada en Staywise."
+  record.default_ai_instructions = "Sé breve, cálida y factual. Respondé solo con información configurada en Ayla Manager."
   record.ai_tone = "Amigable y práctico"
   record.languages_supported = "Español, Inglés"
   record.unsure_behavior = "Decile al huésped que vas a consultar con el anfitrión y creá una alerta."
@@ -9,7 +9,7 @@ account = Account.find_or_create_by!(slug: "demo-stays") do |record|
 end
 account.update!(
   name: "Demo Stays",
-  default_ai_instructions: "Sé breve, cálida y factual. Respondé solo con información configurada en Staywise.",
+  default_ai_instructions: "Sé breve, cálida y factual. Respondé solo con información configurada en Ayla Manager.",
   ai_tone: "Amigable y práctico",
   languages_supported: "Español, Inglés",
   unsure_behavior: "Decile al huésped que vas a consultar con el anfitrión y creá una alerta.",
@@ -17,7 +17,7 @@ account.update!(
   ai_preferred_language: "es"
 )
 
-user = account.users.find_or_initialize_by(email: "owner@staywise.test")
+user = account.users.find_or_initialize_by(email: "owner@ayla.test")
 user.name = "Propietaria Demo"
 if user.new_record?
   user.password = "password123"
@@ -26,18 +26,18 @@ end
 user.role = "owner"
 user.save!
 
-admin_account = Account.find_or_create_by!(slug: "staywise-admin") do |record|
-  record.name = "Administrador Staywise"
-  record.default_ai_instructions = "Cuenta interna de administración de Staywise."
+admin_account = Account.find_or_create_by!(slug: "ayla-admin") do |record|
+  record.name = "Administrador Ayla"
+  record.default_ai_instructions = "Cuenta interna de administración de Ayla Manager."
 end
 admin_account.update!(
-  name: "Administrador Staywise",
-  default_ai_instructions: "Cuenta interna de administración de Staywise.",
+  name: "Administrador Ayla",
+  default_ai_instructions: "Cuenta interna de administración de Ayla Manager.",
   ai_preferred_language: "es"
 )
 
-admin_user = admin_account.users.find_or_initialize_by(email: "admin@staywise.test")
-admin_user.name = "Administrador Staywise"
+admin_user = admin_account.users.find_or_initialize_by(email: "admin@ayla.test")
+admin_user.name = "Administrador Ayla"
 if admin_user.new_record?
   admin_user.password = "password123"
   admin_user.password_confirmation = "password123"
@@ -119,7 +119,7 @@ rambla = upsert_property(
   address: "Rambla, Montevideo",
   check_in_time: "3:00 PM",
   checkout_time: "11:00 AM",
-  wifi_name: "Staywise Guest",
+  wifi_name: "Ayla Guest",
   wifi_password: "welcome-home",
   house_rules: "No se permite fumar dentro. El horario de silencio es de 22:00 a 8:00. Cerrá las puertas del balcón al salir.",
   access_instructions: "Usá el teclado en la entrada del edificio y luego subí en ascensor al piso 6. La caja de llaves está junto a la puerta del apartamento.",
@@ -171,7 +171,7 @@ pocitos = upsert_property(
 
 [
   [rambla, "Pasos de check-in", "check_in", "El check-in empieza a las 15:00. El código del teclado del edificio y los datos de la caja de llaves se envían el día de llegada."],
-  [rambla, "WiFi", "wifi", "Red: Staywise Guest. Contraseña: welcome-home."],
+  [rambla, "WiFi", "wifi", "Red: Ayla Guest. Contraseña: welcome-home."],
   [rambla, "Balcón y ventanas", "house_rules", "Cerrar puertas del balcón y ventanas antes de salir porque el viento del río puede ser fuerte."],
   [rambla, "Cómo moverse", "transportation", "La parada de bus sobre la Rambla conecta con Ciudad Vieja, Pocitos y Tres Cruces. Para apps de transporte, el mejor punto de encuentro es la esquina."],
   [cordon, "Cerradura inteligente", "building_access", "Tocá el teclado, ingresá el código temporal y presioná el botón de confirmación. El código vence al checkout."],

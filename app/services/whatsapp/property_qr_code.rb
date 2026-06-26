@@ -40,10 +40,10 @@ module Whatsapp
       escaped_name = ERB::Util.html_escape(@property.display_name)
 
       <<~SVG
-        <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Staywise WhatsApp QR">
+        <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ayla WhatsApp QR">
           <rect width="512" height="512" rx="28" fill="#f8fafc"/>
           <rect x="40" y="40" width="432" height="432" rx="20" fill="#ffffff" stroke="#cbd5e1"/>
-          <text x="256" y="224" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">Staywise</text>
+          <text x="256" y="224" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">Ayla</text>
           <text x="256" y="264" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#475569">#{escaped_name}</text>
           <text x="256" y="308" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#64748b">#{escaped_link}</text>
         </svg>

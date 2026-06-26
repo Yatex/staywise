@@ -7,9 +7,9 @@ module Webhooks
       return head :unauthorized unless valid_twilio_request?
 
       result = Whatsapp::IncomingMessageHandler.new(params.to_unsafe_h).call
-      render json: { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
-    rescue Whatsapp::IncomingMessageHandler::MissingAccount
-      render json: { ok: false, error: "No hay una cuenta de Staywise configurada para WhatsApp." }, status: :unprocessable_entity
+      response = { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
+      response[:error] = result[:error] if result[:error].present?
+      render json: response
     rescue StandardError => error
       Rails.logger.error("[whatsapp-webhook] #{error.class}: #{error.message}")
       render json: { ok: false, error: "No se pudo procesar el webhook." }, status: :internal_server_error

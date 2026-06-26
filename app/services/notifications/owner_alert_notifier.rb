@@ -12,7 +12,7 @@ module Notifications
       @alert.property.account.users.find_each do |user|
         EmailService.deliver(
           to: user.email,
-          subject: "[Staywise] Alerta urgente de huésped: #{@alert.title}",
+          subject: "[Ayla] Alerta urgente de huésped: #{@alert.title}",
           html: email_html
         )
       end

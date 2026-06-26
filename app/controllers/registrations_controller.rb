@@ -19,7 +19,7 @@ class RegistrationsController < ApplicationController
     end
 
     sign_in(@user)
-    redirect_to dashboard_path, notice: "Bienvenido a Staywise."
+    redirect_to dashboard_path, notice: "Bienvenido a Ayla Manager."
   rescue ActiveRecord::RecordInvalid => error
     @account ||= Account.new(name: registration_params[:account_name])
     @user ||= User.new(email: registration_params[:email], name: registration_params[:name])

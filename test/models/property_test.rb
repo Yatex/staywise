@@ -1,15 +1,15 @@
 require "test_helper"
 
 class PropertyTest < ActiveSupport::TestCase
-  test "starter plan limits account to one property" do
+  test "starter plan limits account to three properties" do
     account = Account.create!(name: "Starter Stays")
     account.subscriptions.create!(plan: "starter", status: "trialing")
-    account.properties.create!(name: "First Apartment")
+    3.times { |index| account.properties.create!(name: "Apartment #{index + 1}") }
 
-    second_property = account.properties.new(name: "Second Apartment")
+    fourth_property = account.properties.new(name: "Fourth Apartment")
 
-    assert_not second_property.valid?
-    assert_includes second_property.errors.full_messages.to_sentence, "current plan"
+    assert_not fourth_property.valid?
+    assert_includes fourth_property.errors.full_messages.to_sentence, "current plan"
   end
 
   test "normalizes comma separated tags" do

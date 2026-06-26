@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Ayla</title>
+  <desc id="desc">Ayla A-shaped home mark.</desc>
+  <defs>
+    <linearGradient id="ayla-mark" x1="18" y1="14" x2="105" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#0f172a"/>
+  <path d="M64 26 101 96H85l-7.6-15.7H50.4L43 96H27L64 26Zm-7.8 41.7h15.7L64 51.5l-7.8 16.2Z" fill="url(#ayla-mark)"/>
+  <path d="M43 58.5 64 38l21 20.5" fill="none" stroke="#ecfeff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M51 83.5h26" fill="none" stroke="#ecfeff" stroke-width="6" stroke-linecap="round"/>
+</svg>

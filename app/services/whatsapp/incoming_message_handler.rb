@@ -1,6 +1,6 @@
 module Whatsapp
   class IncomingMessageHandler
-    class MissingAccount < StandardError; end
+    MISSING_PROPERTY_CONTEXT_REPLY = "I need the property details before I can answer safely. Please scan the property QR code again or open the property link and send your message from there.".freeze
 
     def initialize(params, provider: ProviderFactory.build)
       @params = params
@@ -11,8 +11,10 @@ module Whatsapp
       parsed = InboundMessageParser.new(@params).call
       raise ArgumentError, "El mensaje entrante de WhatsApp está vacío." if parsed.body.blank?
 
-      account = resolve_account(parsed)
-      property = resolve_property(account, parsed)
+      property = resolve_property(parsed)
+      return missing_property_context(parsed) if property.blank?
+
+      account = property.account
       guest = resolve_guest(account, property, parsed)
       conversation = resolve_conversation(guest, property)
       guest_message = conversation.messages.create!(
@@ -37,21 +39,13 @@ module Whatsapp
 
     private
 
-    def resolve_account(parsed)
+    def resolve_property(parsed)
       if parsed.property_id.present?
         property = Property.includes(:account).find_by(id: parsed.property_id)
-        return property.account if property.present?
+        return property if property.present?
       end
 
-      Account.find_by(id: ENV["DEFAULT_ACCOUNT_ID"]) || Account.first || raise(MissingAccount)
-    end
-
-    def resolve_property(account, parsed)
-      account.properties.find_by(id: parsed.property_id) ||
-        account.guests.find_by(phone_number: parsed.from)&.property ||
-        account.properties.active.first ||
-        account.properties.first ||
-        raise(ActiveRecord::RecordNotFound, "No hay una propiedad disponible para enrutar WhatsApp.")
+      Guest.includes(:property).find_by(phone_number: parsed.from)&.property
     end
 
     def resolve_guest(account, property, parsed)
@@ -79,6 +73,19 @@ module Whatsapp
 
       conversation.messages.create!(sender: "ai", channel: "whatsapp", body: decision.response_text, metadata: decision.to_h)
       true
+    end
+
+    def missing_property_context(parsed)
+      replied = @provider.send_message(to: parsed.from, body: MISSING_PROPERTY_CONTEXT_REPLY)
+      Rails.logger.info("[whatsapp-routing] missing_property_context from=#{parsed.from} replied=#{replied}")
+      {
+        conversation: nil,
+        message: nil,
+        decision: nil,
+        alert: nil,
+        replied: replied,
+        error: "missing_property_context"
+      }
     end
   end
 end

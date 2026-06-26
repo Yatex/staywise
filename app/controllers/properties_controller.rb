@@ -1,4 +1,6 @@
 class PropertiesController < ApplicationController
+  INITIAL_FAQ_ROWS = 3
+
   before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr]
   before_action :ensure_property_limit!, only: [:new, :create]
 
@@ -21,13 +23,21 @@ class PropertiesController < ApplicationController
   def new
     @source_properties = current_account.properties.order(:name)
     @property = current_account.properties.new
+    @initial_faqs = blank_initial_faqs
     apply_property_template if params[:copy_from_id].present?
   end
 
   def create
     @property = current_account.properties.new(property_params)
+    @initial_faqs = initial_faq_params
 
-    if @property.save
+    if invalid_initial_faqs?
+      @source_properties = current_account.properties.order(:name)
+      render :new, status: :unprocessable_entity
+      return
+    end
+
+    if save_property_with_initial_faqs
       redirect_to @property, notice: "Propiedad creada."
     else
       @source_properties = current_account.properties.order(:name)
@@ -130,5 +140,56 @@ class PropertiesController < ApplicationController
       :tag_list,
       :ai_enabled
     )
+  end
+
+  def initial_faq_params
+    permitted = params
+      .fetch(:property, ActionController::Parameters.new)
+      .permit(initial_faqs: [:question, :answer, :category])
+
+    rows = Array(permitted[:initial_faqs]).map do |row|
+      row.to_h.slice("question", "answer", "category")
+    end
+
+    (rows + blank_initial_faqs).first(INITIAL_FAQ_ROWS)
+  end
+
+  def blank_initial_faqs
+    Array.new(INITIAL_FAQ_ROWS) { { "question" => "", "answer" => "", "category" => "" } }
+  end
+
+  def completed_initial_faqs
+    @initial_faqs.select do |row|
+      row["question"].present? || row["answer"].present? || row["category"].present?
+    end
+  end
+
+  def invalid_initial_faqs?
+    invalid = completed_initial_faqs.any? do |row|
+      row["question"].blank? || row["answer"].blank?
+    end
+
+    @property.errors.add(:base, "Completá pregunta y respuesta en cada FAQ inicial.") if invalid
+    invalid
+  end
+
+  def save_property_with_initial_faqs
+    saved = false
+
+    Property.transaction do
+      saved = @property.save
+      raise ActiveRecord::Rollback unless saved
+
+      completed_initial_faqs.each do |row|
+        @property.faqs.create!(
+          question: row["question"],
+          answer: row["answer"],
+          category: row["category"],
+          active: true
+        )
+      end
+    end
+
+    saved
   end
 end
