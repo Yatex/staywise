@@ -1,7 +1,7 @@
 # syntax = docker/dockerfile:1
 
-# Make sure RUBY_VERSION matches the Ruby version in .ruby-version and Gemfile
-ARG RUBY_VERSION=3.0.3
+# Production uses a newer patchline so RubyGems can resolve modern native gems.
+ARG RUBY_VERSION=3.2.2
 FROM registry.docker.com/library/ruby:$RUBY_VERSION-slim as base
 
 # Rails app lives here
@@ -23,8 +23,7 @@ RUN apt-get update -qq && \
 
 # Install application gems
 COPY Gemfile Gemfile.lock ./
-RUN gem update --system 3.5.23 && \
-    gem install bundler -v "$(awk '/BUNDLED WITH/{getline; print $1}' Gemfile.lock)" && \
+RUN gem install bundler -v "$(awk '/BUNDLED WITH/{getline; print $1}' Gemfile.lock)" && \
     bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     bundle exec bootsnap precompile --gemfile
