@@ -93,6 +93,25 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "urgent", alert.priority
   end
 
+  test "default qr intro gets ai greeting without creating alert" do
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15550000008",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    conversation = result.fetch(:conversation)
+
+    assert result.fetch(:replied)
+    assert_nil result.fetch(:alert)
+    assert_equal 0, conversation.alerts.count
+    assert_equal "ask_clarifying_question", result.fetch(:decision).outcome
+    assert_includes conversation.messages.where(sender: "ai").last.body, "¿En qué puedo ayudarte?"
+  end
+
   test "asks unknown guests to scan property qr instead of using a default property" do
     result = Whatsapp::IncomingMessageHandler.new(
       {

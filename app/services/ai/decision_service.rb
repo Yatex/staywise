@@ -20,6 +20,8 @@ module AI
       @conversation = conversation
       @guest_message = guest_message
       @property = conversation.property
+      @guest_language = LanguageHelper.detect(guest_message.body, fallback: conversation.guest.language)
+      conversation.guest.update_column(:language, @guest_language) if @guest_language.present? && conversation.guest.language != @guest_language
     end
 
     def call
@@ -100,7 +102,7 @@ module AI
     def safe_escalation(description)
       DecisionResult.from_hash(
         outcome: "escalate",
-        response_text: "Thanks for your message. I'm checking this with the host and will get back to you shortly.",
+        response_text: guest_safe_ack,
         should_reply: true,
         confidence: 1.0,
         evidence: [],
@@ -135,7 +137,7 @@ module AI
     def alert_decision(alert_type, body)
       title = alert_title_for(alert_type)
       DecisionResult.from_hash(
-        response_text: "Voy a consultarlo con tu anfitrión y te respondo en breve.",
+        response_text: guest_safe_ack(body),
         should_reply: true,
         confidence: 0.92,
         escalation_required: true,
@@ -201,7 +203,7 @@ module AI
 
     def unknown_decision(description)
       DecisionResult.from_hash(
-        response_text: "Todavía no tengo esa información. Voy a consultarlo con tu anfitrión y te respondo en breve.",
+        response_text: guest_safe_ack(description),
         should_reply: true,
         confidence: 0.28,
         escalation_required: true,
@@ -232,6 +234,10 @@ module AI
       }.compact
 
       Rails.logger.info("[ai-audit] #{payload.to_json}")
+    end
+
+    def guest_safe_ack(text = @guest_message.body)
+      LanguageHelper.safe_ack_for(text, fallback_language: @guest_language)
     end
 
     def suggested_action_for(alert_type)

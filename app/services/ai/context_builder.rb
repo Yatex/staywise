@@ -13,6 +13,8 @@ module AI
 
       {
         guest_message: @guest_message.body,
+        guest_language: LanguageHelper.detect(@guest_message.body, fallback: @guest.language),
+        owner_language: LanguageHelper.owner_language(@property.account),
         guest: guest_payload,
         property: property_payload,
         reservation: {
@@ -30,7 +32,7 @@ module AI
 
     def guest_payload
       {
-        language: @guest.language
+        language: LanguageHelper.detect(@guest_message.body, fallback: @guest.language)
       }
     end
 
@@ -59,6 +61,7 @@ module AI
       [
         "Return only structured JSON matching the decision contract.",
         "Do not answer without evidence from a provided tool result.",
+        "If the guest only greets, sends the default QR/link message, or has not asked a real property question, ask how you can help without creating an owner alert.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, booking changes, or access outside permitted hours.",
         "If evidence is missing or approval is needed, escalate with a concise acknowledgement."
       ]

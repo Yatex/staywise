@@ -1,7 +1,5 @@
 module AI
   class DeterministicRouter
-    SAFE_ACK = "Thanks for your message. I'm checking this with the host and will get back to you shortly.".freeze
-
     EMERGENCY_PHRASES = [
       "emergency", "fire", "smoke", "gas leak", "flood", "police", "ambulance", "medical emergency",
       "incendio", "humo", "fuga de gas", "inundación", "policía", "policia", "ambulancia", "emergencia médica", "emergencia medica"
@@ -14,20 +12,57 @@ module AI
       @registry = SourceRegistry.new(conversation: conversation)
       @authorization = ReservationAuthorization.new(guest: conversation.guest, property: @property)
       @text = guest_message.body.to_s.downcase
+      @guest_language = LanguageHelper.detect(guest_message.body, fallback: conversation.guest.language)
+      conversation.guest.update_column(:language, @guest_language) if @guest_language.present? && conversation.guest.language != @guest_language
     end
 
     def call
-      emergency_decision || sensitive_request_decision || sensitive_fact_decision || exact_fact_decision
+      intro_decision || emergency_decision || sensitive_request_decision || sensitive_fact_decision || exact_fact_decision
     end
 
     private
+
+    def intro_decision
+      return unless intro_message?
+
+      decision(
+        outcome: "ask_clarifying_question",
+        response_text: LanguageHelper.intro_reply_for(@property, @guest_message.body, fallback_language: @guest_language),
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { "required" => false, "category" => nil, "urgency" => nil, "summary" => nil },
+        alert_type: nil,
+        alert_title: nil,
+        alert_description: nil,
+        suggested_owner_action: nil,
+        audit: { "route" => "deterministic_intro" }
+      )
+    end
+
+    def intro_message?
+      text = @guest_message.body.to_s.gsub(/(?:Ayla|Staywise) property #\d+/i, "")
+      [@property.display_name, @property.name].compact_blank.uniq.each do |name|
+        text = text.gsub(name.to_s, "")
+      end
+
+      text = text
+        .downcase
+        .gsub(/[[:punct:]¿?¡!]+/, " ")
+        .squish
+
+      return true if text.blank?
+
+      normalized = text.gsub(/\b(hola|hello|hi|hey|buenas|buenos dias|buenos días|buenas tardes|buenas noches|tengo|una|un|consulta|sobre|del|de|la|el|para|por|favor|gracias)\b/i, " ").squish
+      normalized.blank?
+    end
 
     def emergency_decision
       phrase = EMERGENCY_PHRASES.find { |candidate| @text.include?(candidate) }
       return unless phrase
 
       source = @registry.property_fact("emergency_information")
-      message = source&.fetch("value", nil).presence || "If anyone is in immediate danger, please contact local emergency services now. I am also notifying the host."
+      message = source&.fetch("value", nil).presence || LanguageHelper.emergency_ack_for(@guest_message.body, fallback_language: @guest_language)
       decision(
         outcome: "escalate",
         response_text: message,
@@ -81,7 +116,7 @@ module AI
       unless @authorization.sensitive_access_authorized?
         return decision(
           outcome: "escalate",
-          response_text: SAFE_ACK,
+          response_text: safe_ack,
           confidence: 1.0,
           evidence: [],
           escalation: escalation("access", "medium", "Guest requested sensitive #{field} without an authorized reservation window."),
@@ -125,7 +160,7 @@ module AI
 
       decision(
         outcome: type ? "propose_action" : "escalate",
-        response_text: SAFE_ACK,
+        response_text: safe_ack,
         confidence: 1.0,
         evidence: [],
         escalation: escalation(category, category.in?(%w[maintenance complaint]) ? "high" : "medium", summary),
@@ -141,7 +176,7 @@ module AI
     def unknown_escalation(summary)
       decision(
         outcome: "escalate",
-        response_text: SAFE_ACK,
+        response_text: safe_ack,
         confidence: 1.0,
         evidence: [],
         escalation: escalation("unknown", "medium", summary),
@@ -155,6 +190,10 @@ module AI
 
     def decision(attributes)
       DecisionResult.from_hash(attributes)
+    end
+
+    def safe_ack
+      LanguageHelper.safe_ack_for(@guest_message.body, fallback_language: @guest_language)
     end
 
     def evidence_for(source, claim)

@@ -109,6 +109,34 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["faq:#{@property.faqs.last.id}"], answered_decision.evidence.map { |item| item["source_id"] }
   end
 
+  test "default qr intro asks how to help without alerting owner" do
+    message = @conversation.messages.create!(
+      sender: "guest",
+      body: "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}",
+      channel: "whatsapp"
+    )
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "ask_clarifying_question", decision.outcome
+    assert_not decision.escalation_required
+    assert_nil decision.alert_type
+    assert_includes decision.response_text, "¿En qué puedo ayudarte?"
+  end
+
+  test "guest fallback reply uses guest language while owner alert stays spanish" do
+    message = @conversation.messages.create!(sender: "guest", body: "游泳池在哪里？", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert decision.escalation_required
+    assert_equal "unknown_question", decision.alert_type
+    assert_includes decision.response_text, "房东"
+    assert_equal "La pregunta necesita respuesta del anfitrión", decision.alert_title
+    assert_equal "Revisá la consulta antes de responder. Si es información reusable, agregala como FAQ o bloque de guía.", decision.suggested_owner_action
+    assert_equal "zh", @guest.reload.language
+  end
+
   test "ai reply without evidence is rejected and falls back safely" do
     decision = AI::DecisionResult.from_hash(
       outcome: "reply",

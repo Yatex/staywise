@@ -112,10 +112,14 @@ const server = createServer(async (request, response) => {
         "You are Ayla, an AI guest assistant for short-term rentals.",
         "Answer only from the provided tool results.",
         "Every reply must cite one or more evidence items from those tool results.",
+        "If the guest only greets, sends the default QR/link message, or has not asked a substantive property question, respond with a friendly clarifying question. This does not require evidence.",
         "Do not invent source IDs, property facts, rules, prices, availability, refunds, or policies.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
         "If information is missing or approval is needed, escalate or propose an action requiring approval.",
-        "Keep replies friendly, helpful, concise, and in the guest language when possible.",
+        "Guest-facing response_text must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
+        "Owner-facing fields alert_title, alert_description, suggested_owner_action, and escalation.summary must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
+        "Never use owner-facing Spanish as the guest reply when the guest wrote in another language.",
+        "Keep replies friendly, helpful, and concise.",
       ].join("\n"),
       prompt: JSON.stringify({
         base_context: safeBaseContext(payload),
@@ -187,10 +191,11 @@ function gatewayConfigured() {
 }
 
 function fallbackDecision(payload: any) {
+  const guestText = payload?.guest_message || "";
+  const ownerLanguage = payload?.owner_language || payload?.owner_instructions?.ai_preferred_language || "es";
   return {
     outcome: "escalate",
-    response_text:
-      "Thanks for your message. I'm checking this with the host and will get back to you shortly.",
+    response_text: safeAckFor(guestText, payload?.guest_language),
     should_reply: true,
     confidence: 0.25,
     evidence: [],
@@ -198,20 +203,30 @@ function fallbackDecision(payload: any) {
       required: true,
       category: "unknown",
       urgency: "medium",
-      summary: payload?.guest_message || "The guest asked a question the AI service could not answer.",
+      summary: ownerText(
+        ownerLanguage,
+        "El huésped hizo una pregunta que el servicio de IA no pudo responder.",
+        "The guest asked a question the AI service could not answer.",
+      ),
     },
     proposed_action: null,
     escalation_required: true,
     alert_type: "unknown_question",
-    alert_title: "Pregunta pendiente del anfitrión",
-    alert_description: payload?.guest_message || "El huésped hizo una pregunta que la IA no pudo responder.",
-    suggested_owner_action: "Agregá la respuesta a la guía o FAQ de la propiedad y luego respondé al huésped.",
+    alert_title: ownerText(ownerLanguage, "Pregunta pendiente del anfitrión", "Question pending host response"),
+    alert_description: payload?.guest_message || ownerText(ownerLanguage, "El huésped hizo una pregunta que la IA no pudo responder.", "The guest asked a question the AI could not answer."),
+    suggested_owner_action: ownerText(
+      ownerLanguage,
+      "Agregá la respuesta a la guía o FAQ de la propiedad y luego respondé al huésped.",
+      "Add the answer to the property guide or FAQ, then reply to the guest.",
+    ),
   };
 }
 
 function safeBaseContext(payload: any) {
   return {
     guest_message: payload?.guest_message,
+    guest_language: payload?.guest_language,
+    owner_language: payload?.owner_language,
     guest: payload?.guest,
     property: payload?.property,
     reservation: payload?.reservation,
@@ -219,6 +234,63 @@ function safeBaseContext(payload: any) {
     conversation_history: payload?.conversation_history,
     safety_rules: payload?.safety_rules,
   };
+}
+
+function safeAckFor(text: string, language?: string) {
+  const detected = normalizeLanguage(language) || detectLanguage(text);
+
+  switch (detected) {
+    case "es":
+      return "Gracias por tu mensaje. Lo estoy consultando con el anfitrión y te responderé en breve.";
+    case "fr":
+      return "Merci pour votre message. Je vérifie cela avec l'hôte et je vous répondrai bientôt.";
+    case "de":
+      return "Danke für deine Nachricht. Ich kläre das mit dem Gastgeber und melde mich in Kürze.";
+    case "pt":
+      return "Obrigado pela mensagem. Vou verificar isso com o anfitrião e respondo em breve.";
+    case "it":
+      return "Grazie per il messaggio. Verifico con l'host e ti rispondo a breve.";
+    case "zh":
+      return "谢谢你的消息。我会向房东确认，并尽快回复你。";
+    case "ja":
+      return "メッセージありがとうございます。ホストに確認して、できるだけ早く返信します。";
+    case "ko":
+      return "메시지 감사합니다. 호스트에게 확인한 뒤 곧 답변드리겠습니다.";
+    case "ar":
+      return "شكرًا على رسالتك. سأتحقق من ذلك مع المضيف وأرد عليك قريبًا.";
+    case "he":
+      return "תודה על ההודעה. אבדוק זאת מול המארח ואחזור אליך בקרוב.";
+    case "ru":
+      return "Спасибо за сообщение. Я уточню это у хозяина и скоро отвечу.";
+    default:
+      return "Thanks for your message. I'm checking this with the host and will get back to you shortly.";
+  }
+}
+
+function detectLanguage(text: string) {
+  if (/[\u4E00-\u9FFF]/u.test(text)) return "zh";
+  if (/[\u3040-\u30FF]/u.test(text)) return "ja";
+  if (/[\uAC00-\uD7AF]/u.test(text)) return "ko";
+  if (/[\u0600-\u06FF]/u.test(text)) return "ar";
+  if (/[\u0590-\u05FF]/u.test(text)) return "he";
+  if (/[\u0400-\u04FF]/u.test(text)) return "ru";
+
+  const normalized = text.toLowerCase();
+  if (/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|salida|entrada|contraseña|contrasena|anfitri[oó]n)\b/u.test(normalized)) return "es";
+  if (/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/u.test(normalized)) return "fr";
+  if (/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/u.test(normalized)) return "de";
+  if (/\b(olá|ola|obrigado|obrigada|onde|quando|como|posso|anfitrião|anfitriao)\b/u.test(normalized)) return "pt";
+  if (/\b(ciao|grazie|dove|quando|come|posso|host|proprietario)\b/u.test(normalized)) return "it";
+
+  return "en";
+}
+
+function normalizeLanguage(language?: string) {
+  return language?.split(/[-_]/)[0] || undefined;
+}
+
+function ownerText(language: string, spanish: string, english: string) {
+  return normalizeLanguage(language) === "en" ? english : spanish;
 }
 
 async function collectToolResults(payload: any) {
