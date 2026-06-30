@@ -37,11 +37,12 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, "Volver a propiedades"
     assert_not_includes @response.body, "Agregá los datos principales"
     assert_includes @response.body, "Preguntas frecuentes iniciales"
+    assert_includes @response.body, "Agregar FAQ"
   end
 
   test "creates property with initial faqs" do
     assert_difference -> { @account.properties.count }, 1 do
-      assert_difference -> { Faq.count }, 2 do
+      assert_difference -> { Faq.count }, 5 do
         post properties_path, params: {
           property: {
             name: "FAQ Apartment",
@@ -57,6 +58,21 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
                 category: "checkout"
               },
               {
+                question: "Is there parking?",
+                answer: "Street parking is available.",
+                category: "parking"
+              },
+              {
+                question: "Can I bring a pet?",
+                answer: "Pets need owner approval.",
+                category: "rules"
+              },
+              {
+                question: "Where is the trash room?",
+                answer: "It is next to the elevator on level -1.",
+                category: "building"
+              },
+              {
                 question: "",
                 answer: "",
                 category: ""
@@ -70,7 +86,13 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     property = @account.properties.order(:created_at).last
 
     assert_redirected_to property_path(property)
-    assert_equal ["What time is checkout?", "Where do I leave the keys?"], property.faqs.order(:id).pluck(:question)
+    assert_equal [
+      "What time is checkout?",
+      "Where do I leave the keys?",
+      "Is there parking?",
+      "Can I bring a pet?",
+      "Where is the trash room?"
+    ], property.faqs.order(:id).pluck(:question)
   end
 
   test "does not create property when an initial faq is incomplete" do

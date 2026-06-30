@@ -1,5 +1,5 @@
 class PropertiesController < ApplicationController
-  INITIAL_FAQ_ROWS = 3
+  INITIAL_FAQ_DEFAULT_ROWS = 3
 
   before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr]
   before_action :ensure_property_limit!, only: [:new, :create]
@@ -151,11 +151,11 @@ class PropertiesController < ApplicationController
       row.to_h.slice("question", "answer", "category")
     end
 
-    (rows + blank_initial_faqs).first(INITIAL_FAQ_ROWS)
+    rows.presence || blank_initial_faqs
   end
 
   def blank_initial_faqs
-    Array.new(INITIAL_FAQ_ROWS) { { "question" => "", "answer" => "", "category" => "" } }
+    Array.new(INITIAL_FAQ_DEFAULT_ROWS) { { "question" => "", "answer" => "", "category" => "" } }
   end
 
   def completed_initial_faqs
