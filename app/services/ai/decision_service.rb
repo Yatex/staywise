@@ -68,6 +68,7 @@ module AI
       )
 
       unless response.is_a?(Net::HTTPSuccess)
+        fallback_decision = decision_from_error_response(response)
         ErrorReporter.report(
           source: "ai_service",
           severity: "warning",
@@ -76,7 +77,7 @@ module AI
           message: "AI service responded with status #{response.code}",
           context: ai_context.merge(status: response.code, response_body: response.body.to_s.first(1_000))
         )
-        return
+        return fallback_decision
       end
 
       DecisionResult.from_hash(JSON.parse(response.body))
@@ -258,6 +259,15 @@ module AI
         guest_id: @conversation.guest_id,
         message_id: @guest_message.id
       }.compact
+    end
+
+    def decision_from_error_response(response)
+      parsed = JSON.parse(response.body)
+      return unless parsed.is_a?(Hash) && parsed["outcome"].present?
+
+      DecisionResult.from_hash(parsed)
+    rescue JSON::ParserError
+      nil
     end
 
     def suggested_action_for(alert_type)

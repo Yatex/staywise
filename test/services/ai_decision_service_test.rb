@@ -162,6 +162,42 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "zh", @guest.reload.language
   end
 
+  test "uses fallback decision from non-success ai service response" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    message = @conversation.messages.create!(sender: "guest", body: "Quisiera saber si hay piscina", channel: "whatsapp")
+    response = Struct.new(:code, :body).new(
+      "500",
+      {
+        outcome: "escalate",
+        response_text: "Gracias por tu mensaje. Lo estoy consultando con el anfitrión y te responderé en breve.",
+        should_reply: true,
+        confidence: 0.25,
+        evidence: [],
+        escalation: { required: true, category: "unknown", urgency: "medium", summary: "El huésped hizo una pregunta que el servicio de IA no pudo responder." },
+        proposed_action: nil,
+        escalation_required: true,
+        alert_type: "unknown_question",
+        alert_title: "Pregunta pendiente del anfitrión",
+        alert_description: "Quisiera saber si hay piscina",
+        suggested_owner_action: "Agregá la respuesta a la guía o FAQ de la propiedad y luego respondé al huésped."
+      }.to_json
+    )
+
+    original_post = Net::HTTP.method(:post)
+    Net::HTTP.define_singleton_method(:post) { |_uri, _body, _headers| response }
+
+    begin
+      decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+      assert_equal "escalate", decision.outcome
+      assert_equal "unknown_question", decision.alert_type
+      assert_includes decision.response_text, "Gracias por tu mensaje"
+      assert_not_includes decision.response_text, "Thanks for your message"
+    ensure
+      Net::HTTP.define_singleton_method(:post, original_post)
+    end
+  end
+
   test "ai reply without evidence is rejected and falls back safely" do
     decision = AI::DecisionResult.from_hash(
       outcome: "reply",

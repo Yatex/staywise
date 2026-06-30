@@ -94,9 +94,11 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  let payload: any = {};
+
   try {
     const body = await readBody(request);
-    const payload = JSON.parse(body || "{}");
+    payload = JSON.parse(body || "{}");
 
     if (!gatewayConfigured()) {
       sendJson(response, 200, fallbackDecision(payload));
@@ -139,9 +141,12 @@ const server = createServer(async (request, response) => {
     });
   } catch (error) {
     console.error("[ai-service]", error);
-    sendJson(response, 500, {
-      error: "AI decision failed",
-      ...fallbackDecision({ guest_message: "No se pudo procesar la consulta del huésped." }),
+    sendJson(response, 200, {
+      ...fallbackDecision(payload),
+      audit: {
+        fallback: true,
+        error: error instanceof Error ? error.message : String(error),
+      },
     });
   }
 });
@@ -276,7 +281,7 @@ function detectLanguage(text: string) {
   if (/[\u0400-\u04FF]/u.test(text)) return "ru";
 
   const normalized = text.toLowerCase();
-  if (/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|salida|entrada|contraseña|contrasena|anfitri[oó]n)\b/u.test(normalized)) return "es";
+  if (/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n)\b/u.test(normalized)) return "es";
   if (/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/u.test(normalized)) return "fr";
   if (/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/u.test(normalized)) return "de";
   if (/\b(olá|ola|obrigado|obrigada|onde|quando|como|posso|anfitrião|anfitriao)\b/u.test(normalized)) return "pt";
