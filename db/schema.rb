@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_19_180000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_30_225438) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -138,6 +138,24 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_19_180000) do
     t.index ["sender"], name: "index_messages_on_sender"
   end
 
+  create_table "operational_errors", force: :cascade do |t|
+    t.bigint "account_id"
+    t.bigint "property_id"
+    t.string "source", null: false
+    t.string "severity", default: "error", null: false
+    t.string "error_class"
+    t.text "message", null: false
+    t.jsonb "context", default: {}, null: false
+    t.datetime "resolved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_operational_errors_on_account_id"
+    t.index ["property_id"], name: "index_operational_errors_on_property_id"
+    t.index ["resolved_at"], name: "index_operational_errors_on_resolved_at"
+    t.index ["severity", "created_at"], name: "index_operational_errors_on_severity_and_created_at"
+    t.index ["source", "created_at"], name: "index_operational_errors_on_source_and_created_at"
+  end
+
   create_table "properties", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", null: false
@@ -218,6 +236,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_19_180000) do
   add_foreign_key "guests", "properties"
   add_foreign_key "knowledge_blocks", "properties"
   add_foreign_key "messages", "conversations"
+  add_foreign_key "operational_errors", "accounts"
+  add_foreign_key "operational_errors", "properties"
   add_foreign_key "properties", "accounts"
   add_foreign_key "recommendations", "properties"
   add_foreign_key "subscriptions", "accounts"

@@ -67,11 +67,22 @@ module AI
         "Authorization" => "Bearer #{ENV.fetch("AI_SERVICE_TOKEN", "")}"
       )
 
-      return unless response.is_a?(Net::HTTPSuccess)
+      unless response.is_a?(Net::HTTPSuccess)
+        ErrorReporter.report(
+          source: "ai_service",
+          severity: "warning",
+          account: @property.account,
+          property: @property,
+          message: "AI service responded with status #{response.code}",
+          context: ai_context.merge(status: response.code, response_body: response.body.to_s.first(1_000))
+        )
+        return
+      end
 
       DecisionResult.from_hash(JSON.parse(response.body))
     rescue StandardError => error
       Rails.logger.warn("[ai-decision] remote fallback: #{error.class}: #{error.message}")
+      ErrorReporter.report(error, source: "ai_service", severity: "warning", account: @property.account, property: @property, context: ai_context)
       nil
     end
 
@@ -238,6 +249,15 @@ module AI
 
     def guest_safe_ack(text = @guest_message.body)
       LanguageHelper.safe_ack_for(text, fallback_language: @guest_language)
+    end
+
+    def ai_context
+      {
+        ai_service_url: ENV["AI_SERVICE_URL"],
+        conversation_id: @conversation.id,
+        guest_id: @conversation.guest_id,
+        message_id: @guest_message.id
+      }.compact
     end
 
     def suggested_action_for(alert_type)

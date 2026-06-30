@@ -20,10 +20,18 @@ module Billing
       if response.is_a?(Net::HTTPSuccess)
         { url: body["url"] }
       else
+        ErrorReporter.report(
+          source: "stripe_portal",
+          severity: "error",
+          account: @account,
+          message: body.dig("error", "message") || "Stripe portal failed with status #{response.code}",
+          context: stripe_context(subscription).merge(status: response.code, response_body: response.body.to_s.first(1_000))
+        )
         { error: body.dig("error", "message") || "No se pudo abrir el portal de Stripe." }
       end
     rescue StandardError => error
       Rails.logger.error("[stripe-portal] #{error.class}: #{error.message}")
+      ErrorReporter.report(error, source: "stripe_portal", severity: "critical", account: @account, context: stripe_context(subscription))
       { error: "No se pudo abrir el portal de Stripe." }
     end
 
@@ -40,6 +48,13 @@ module Billing
 
     def stripe_secret
       ENV["STRIPE_SECRET_KEY"]
+    end
+
+    def stripe_context(subscription)
+      {
+        account_id: @account.id,
+        stripe_customer_id: subscription&.stripe_customer_id
+      }.compact
     end
   end
 end

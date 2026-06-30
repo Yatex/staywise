@@ -22,10 +22,18 @@ module Billing
       if response.is_a?(Net::HTTPSuccess)
         { url: body["url"] }
       else
+        ErrorReporter.report(
+          source: "stripe_checkout",
+          severity: "error",
+          account: @account,
+          message: body.dig("error", "message") || "Stripe checkout failed with status #{response.code}",
+          context: stripe_context.merge(status: response.code, response_body: response.body.to_s.first(1_000))
+        )
         { error: body.dig("error", "message") || "No se pudo iniciar Checkout de Stripe." }
       end
     rescue StandardError => error
       Rails.logger.error("[stripe-checkout] #{error.class}: #{error.message}")
+      ErrorReporter.report(error, source: "stripe_checkout", severity: "critical", account: @account, context: stripe_context)
       { error: "No se pudo iniciar Checkout de Stripe." }
     end
 
@@ -78,6 +86,15 @@ module Billing
 
     def stripe_customer_id
       @account.active_subscription&.stripe_customer_id
+    end
+
+    def stripe_context
+      {
+        account_id: @account.id,
+        plan: @plan,
+        price_env: price_env,
+        stripe_customer_id: stripe_customer_id
+      }.compact
     end
   end
 end

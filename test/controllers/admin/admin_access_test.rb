@@ -21,6 +21,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       password: "password123",
       password_confirmation: "password123"
     )
+    @property = @owner_account.properties.create!(name: "Owner Apartment")
   end
 
   test "normal users cannot access admin sections" do
@@ -29,9 +30,13 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_users_path
 
     assert_redirected_to dashboard_path
+
+    get admin_errors_path
+
+    assert_redirected_to dashboard_path
   end
 
-  test "admins can access users and stats sections" do
+  test "admins can access users stats and errors sections" do
     sign_in_as(@admin)
 
     get admin_users_path
@@ -39,6 +44,31 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_stats_path
     assert_response :success
+
+    get admin_errors_path
+    assert_response :success
+  end
+
+  test "admin can inspect and resolve operational errors" do
+    error = OperationalError.create!(
+      account: @owner_account,
+      property: @property,
+      source: "whatsapp_webhook",
+      severity: "critical",
+      error_class: "RuntimeError",
+      message: "Webhook failed",
+      context: { "from" => "whatsapp:+15550000001" }
+    )
+
+    sign_in_as(@admin)
+
+    get admin_error_path(error)
+    assert_response :success
+    assert_includes response.body, "Webhook failed"
+
+    patch resolve_admin_error_path(error)
+    assert_redirected_to admin_errors_path
+    assert error.reload.resolved?
   end
 
   test "admin can extend an account subscription" do

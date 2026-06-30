@@ -27,13 +27,35 @@ module Notifications
         http.request(request)
       end
 
-      response.is_a?(Net::HTTPSuccess)
+      unless response.is_a?(Net::HTTPSuccess)
+        ErrorReporter.report(
+          source: "email_service",
+          severity: "error",
+          message: "Email delivery failed with status #{response.code}",
+          context: delivery_context(to: to, subject: subject).merge(status: response.code, response_body: response.body.to_s.first(1_000))
+        )
+        return false
+      end
+
+      true
+    rescue StandardError => error
+      Rails.logger.error("[email-service] #{error.class}: #{error.message}")
+      ErrorReporter.report(error, source: "email_service", severity: "critical", context: delivery_context(to: to, subject: subject))
+      false
     end
 
     private
 
     def configured?
       ENV["RESEND_API_KEY"].present? && ENV["RESEND_FROM_EMAIL"].present?
+    end
+
+    def delivery_context(to:, subject:)
+      {
+        to: to,
+        subject: subject,
+        from: ENV["RESEND_FROM_EMAIL"]
+      }.compact
     end
   end
 end

@@ -18,9 +18,11 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     ENV["WHATSAPP_PROVIDER"] = "twilio"
     ENV["TWILIO_AUTH_TOKEN"] = "secret-token"
 
-    post webhooks_whatsapp_path,
-      params: whatsapp_payload,
-      headers: { "X-Twilio-Signature" => "invalid" }
+    assert_difference "OperationalError.where(source: 'whatsapp_webhook', severity: 'warning').count", 1 do
+      post webhooks_whatsapp_path,
+        params: whatsapp_payload,
+        headers: { "X-Twilio-Signature" => "invalid" }
+    end
 
     assert_response :unauthorized
     assert_equal 0, Conversation.count

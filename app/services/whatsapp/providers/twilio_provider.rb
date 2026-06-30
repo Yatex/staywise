@@ -21,9 +21,20 @@ module Whatsapp
           http.request(request)
         end
 
-        response.is_a?(Net::HTTPSuccess)
+        unless response.is_a?(Net::HTTPSuccess)
+          ErrorReporter.report(
+            source: "twilio_provider",
+            severity: "error",
+            message: "Twilio message delivery failed with status #{response.code}",
+            context: delivery_context(to: to, body: body).merge(status: response.code, response_body: response.body.to_s.first(1_000))
+          )
+          return false
+        end
+
+        true
       rescue StandardError => error
         Rails.logger.error("[twilio-provider] #{error.class}: #{error.message}")
+        ErrorReporter.report(error, source: "twilio_provider", severity: "critical", context: delivery_context(to: to, body: body))
         false
       end
 
@@ -47,6 +58,14 @@ module Whatsapp
 
       def formatted(number)
         number.to_s.start_with?("whatsapp:") ? number : "whatsapp:#{number}"
+      end
+
+      def delivery_context(to:, body:)
+        {
+          to: to,
+          from: from_number,
+          body_preview: body.to_s.first(300)
+        }.compact
       end
     end
   end

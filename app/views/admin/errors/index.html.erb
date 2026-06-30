@@ -1,0 +1,104 @@
+<% content_for :page_title, "Admin Errores" %>
+
+<div class="space-y-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-950">Errores recientes</h2>
+      <p class="mt-1 text-sm text-slate-500"><%= @open_count %> errores abiertos, <%= @critical_count %> críticos.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <%= link_to "Gestionar usuarios", admin_users_path, class: secondary_button_class %>
+      <%= link_to "Estadísticas", admin_stats_path, class: secondary_button_class %>
+    </div>
+  </div>
+
+  <%= form_with url: admin_errors_path, method: :get, class: "#{card_class} grid gap-4 p-4 md:grid-cols-[1fr_180px_150px_150px_auto]" do |form| %>
+    <div>
+      <%= form.label :q, "Buscar", class: label_class %>
+      <%= form.search_field :q, value: params[:q], class: field_class, placeholder: "Mensaje, origen o clase" %>
+    </div>
+    <div>
+      <%= form.label :source, "Origen", class: label_class %>
+      <%= form.select :source, [["Todos", ""]] + @sources.map { |source| [enum_label(source), source] }, { selected: params[:source] }, class: field_class %>
+    </div>
+    <div>
+      <%= form.label :severity, "Severidad", class: label_class %>
+      <%= form.select :severity, [["Todas", ""]] + OperationalError::SEVERITIES.map { |severity| [enum_label(severity), severity] }, { selected: params[:severity] }, class: field_class %>
+    </div>
+    <div>
+      <%= form.label :status, "Estado", class: label_class %>
+      <%= form.select :status, [["Abiertos", "open"], ["Resueltos", "resolved"], ["Todos", "all"]], { selected: params[:status].presence || "open" }, class: field_class %>
+    </div>
+    <div class="flex items-end gap-2">
+      <%= form.submit "Filtrar", class: primary_button_class %>
+      <%= link_to "Limpiar", admin_errors_path, class: secondary_button_class %>
+    </div>
+  <% end %>
+
+  <div class="<%= card_class %> overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-5 py-3">Error</th>
+            <th class="px-5 py-3">Origen</th>
+            <th class="px-5 py-3">Cuenta</th>
+            <th class="px-5 py-3">Fecha</th>
+            <th class="px-5 py-3">Estado</th>
+            <th class="px-5 py-3 text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 bg-white">
+          <% @errors.each do |error| %>
+            <tr>
+              <td class="max-w-xl px-5 py-4">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(error.severity) %>"><%= enum_label(error.severity) %></span>
+                  <% if error.error_class.present? %>
+                    <span class="text-xs font-medium text-slate-500"><%= error.error_class %></span>
+                  <% end %>
+                </div>
+                <p class="mt-2 line-clamp-2 font-medium text-slate-950"><%= error.message %></p>
+              </td>
+              <td class="px-5 py-4 text-slate-600"><%= enum_label(error.source) %></td>
+              <td class="px-5 py-4">
+                <p class="font-medium text-slate-900"><%= error.account&.name || "Sin cuenta" %></p>
+                <p class="mt-1 text-xs text-slate-500"><%= error.property&.display_name || error.property&.name || "Sin propiedad" %></p>
+              </td>
+              <td class="px-5 py-4 text-slate-600"><%= error.created_at.to_fs(:short) %></td>
+              <td class="px-5 py-4">
+                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(error.resolved? ? "resolved" : "open") %>"><%= error.resolved? ? "Resuelto" : "Abierto" %></span>
+              </td>
+              <td class="px-5 py-4">
+                <div class="flex justify-end gap-2">
+                  <%= link_to "Ver", admin_error_path(error, params.permit(:q, :source, :severity, :status, :page)), class: secondary_button_class %>
+                  <% unless error.resolved? %>
+                    <%= button_to "Resolver", resolve_admin_error_path(error, params.permit(:q, :source, :severity, :status, :page)), method: :patch, class: primary_button_class %>
+                  <% end %>
+                </div>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <% if @errors.blank? %>
+      <p class="px-5 py-8 text-sm text-slate-500">No hay errores para estos filtros.</p>
+    <% end %>
+
+    <% if @total_pages > 1 %>
+      <div class="flex items-center justify-between border-t border-slate-200 px-5 py-3">
+        <p class="text-xs text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
+        <div class="flex gap-2">
+          <% if @current_page > 1 %>
+            <%= link_to "Anterior", admin_errors_path(params.permit(:q, :source, :severity, :status).merge(page: @current_page - 1)), class: secondary_button_class %>
+          <% end %>
+          <% if @current_page < @total_pages %>
+            <%= link_to "Siguiente", admin_errors_path(params.permit(:q, :source, :severity, :status).merge(page: @current_page + 1)), class: secondary_button_class %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>

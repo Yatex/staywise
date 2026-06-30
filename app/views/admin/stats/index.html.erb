@@ -6,7 +6,10 @@
       <h2 class="text-xl font-semibold text-slate-950">Estadísticas de plataforma</h2>
       <p class="mt-1 text-sm text-slate-500">Uso global de Ayla Manager, suscripciones y actividad de IA.</p>
     </div>
-    <%= link_to "Gestionar usuarios", admin_users_path, class: secondary_button_class %>
+    <div class="flex flex-wrap gap-2">
+      <%= link_to "Gestionar usuarios", admin_users_path, class: secondary_button_class %>
+      <%= link_to "Errores recientes", admin_errors_path, class: secondary_button_class %>
+    </div>
   </div>
 
   <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -18,6 +21,8 @@
       ["Huéspedes", @total_guests],
       ["Conversaciones", @total_conversations],
       ["Alertas abiertas", @open_alerts],
+      ["Errores abiertos", @open_operational_errors],
+      ["Errores críticos", @critical_operational_errors],
       ["Mensajes de IA", @ai_messages]
     ].each do |label, value| %>
       <div class="<%= card_class %> p-4">
@@ -141,6 +146,31 @@
       <% end %>
       <% if @recent_billing_events.blank? %>
         <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay eventos de suscripción.</p>
+      <% end %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> overflow-hidden">
+    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <h3 class="text-base font-semibold text-slate-950">Errores operativos recientes</h3>
+      <%= link_to "Ver todos", admin_errors_path, class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <% @recent_operational_errors.each do |error| %>
+        <div class="flex items-start justify-between gap-4 px-5 py-3 text-sm">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(error.severity) %>"><%= enum_label(error.severity) %></span>
+              <span class="font-medium text-slate-950"><%= enum_label(error.source) %></span>
+            </div>
+            <p class="mt-2 text-slate-600"><%= truncate(error.message, length: 140) %></p>
+            <p class="mt-1 text-xs text-slate-500"><%= error.account&.name || "Sin cuenta" %> · <%= error.property&.display_name || error.property&.name || "Sin propiedad" %></p>
+          </div>
+          <%= link_to "Ver", admin_error_path(error), class: secondary_button_class %>
+        </div>
+      <% end %>
+      <% if @recent_operational_errors.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay errores abiertos.</p>
       <% end %>
     </div>
   </section>

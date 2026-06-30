@@ -13,6 +13,8 @@ module Admin
       @active_conversations = Conversation.where(status: "active").count
       @open_alerts = Alert.open.count
       @ai_messages = Message.where(sender: "ai").count
+      @open_operational_errors = OperationalError.open.count
+      @critical_operational_errors = OperationalError.open.where(severity: "critical").count
 
       @subscriptions_by_status = Subscription.group(:status).count
       @subscriptions_by_plan = Subscription.group(:plan).count
@@ -25,6 +27,7 @@ module Admin
       @alerts_by_type = Alert.group(:alert_type).order(Arel.sql("COUNT(*) DESC")).count
       @recent_signups = User.includes(:account).order(created_at: :desc).limit(8)
       @recent_billing_events = BillingEvent.includes(:account).order(created_at: :desc).limit(8)
+      @recent_operational_errors = OperationalError.includes(:account, :property).open.recent.limit(8)
     end
   end
 end

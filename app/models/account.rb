@@ -22,6 +22,7 @@ class Account < ApplicationRecord
   has_many :guests, dependent: :destroy
   has_many :subscriptions, dependent: :destroy
   has_many :billing_events, dependent: :nullify
+  has_many :operational_errors, dependent: :nullify
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true

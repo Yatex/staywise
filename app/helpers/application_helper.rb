@@ -11,9 +11,9 @@ module ApplicationHelper
     case value.to_s
     when "active", "trialing", "resolved"
       "bg-emerald-50 text-emerald-700 ring-emerald-200"
-    when "urgent", "high", "escalated", "past_due"
+    when "urgent", "high", "escalated", "past_due", "error", "critical"
       "bg-rose-50 text-rose-700 ring-rose-200"
-    when "open", "in_progress", "medium"
+    when "open", "in_progress", "medium", "warning"
       "bg-amber-50 text-amber-700 ring-amber-200"
     else
       "bg-slate-100 text-slate-600 ring-slate-200"
@@ -79,7 +79,18 @@ module ApplicationHelper
       "unknown_question" => "Pregunta sin configurar",
       "send_whatsapp_replies" => "Enviar respuestas por WhatsApp",
       "create_alerts" => "Crear alertas",
-      "send_urgent_emails" => "Enviar emails urgentes"
+      "send_urgent_emails" => "Enviar emails urgentes",
+      "info" => "Info",
+      "warning" => "Advertencia",
+      "error" => "Error",
+      "critical" => "Crítico",
+      "whatsapp_webhook" => "Webhook WhatsApp",
+      "twilio_provider" => "Twilio",
+      "ai_service" => "Servicio AI",
+      "stripe_webhook" => "Webhook Stripe",
+      "stripe_checkout" => "Checkout Stripe",
+      "stripe_portal" => "Portal Stripe",
+      "email_service" => "Email"
     }
 
     translations.fetch(value.to_s, value.to_s.humanize)

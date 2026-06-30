@@ -24,6 +24,7 @@ class Property < ApplicationRecord
   has_many :guests, dependent: :nullify
   has_many :conversations, dependent: :destroy
   has_many :alerts, dependent: :destroy
+  has_many :operational_errors, dependent: :nullify
 
   validates :name, presence: true
   validates :status, inclusion: { in: STATUSES }

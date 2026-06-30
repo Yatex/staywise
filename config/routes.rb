@@ -17,6 +17,9 @@ Rails.application.routes.draw do
         patch :update_role
       end
     end
+    resources :errors, only: [:index, :show] do
+      patch :resolve, on: :member
+    end
     get "stats", to: "stats#index", as: :stats
   end
 
