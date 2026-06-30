@@ -5,7 +5,6 @@
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 class="text-xl font-semibold text-slate-950">Suscripción</h2>
-        <p class="mt-1 text-sm text-slate-500">Las suscripciones de Stripe, Checkout y Customer Portal usan IDs de precio desde variables de entorno.</p>
       </div>
       <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@subscription&.status) %>"><%= (@subscription ? enum_label(@subscription.status) : nil) || "Incompleta" %></span>
     </div>
@@ -24,7 +23,7 @@
       </div>
     </div>
     <div class="mt-5">
-      <%= button_to "Abrir portal de suscripción", portal_subscription_path, method: :post, class: secondary_button_class %>
+      <%= button_to "Abrir portal de suscripción", portal_subscription_path, method: :post, class: secondary_button_class, form: { data: { turbo: false } } %>
     </div>
   </section>
 
@@ -36,7 +35,7 @@
         <p class="mt-2 text-sm text-slate-500"><%= plan[:description] %></p>
         <p class="mt-4 text-sm font-semibold text-slate-700"><%= plan[:limit] %></p>
         <div class="mt-6">
-          <%= button_to "Elegir #{plan[:name]}", checkout_subscription_path(plan: plan[:id]), method: :post, class: "#{primary_button_class} w-full" %>
+          <%= button_to "Elegir #{plan[:name]}", checkout_subscription_path(plan: plan[:id]), method: :post, class: "#{primary_button_class} w-full", form: { data: { turbo: false } } %>
         </div>
       </div>
     <% end %>

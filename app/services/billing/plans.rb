@@ -12,18 +12,43 @@ module Billing
     end
 
     def self.price_env_for(plan)
+      effective_price_env_for(plan)
+    end
+
+    def self.price_envs_for(plan)
       {
-        "starter" => "STRIPE_PRICE_STARTER",
-        "growth" => "STRIPE_PRICE_GROWTH",
-        "pro" => "STRIPE_PRICE_PRO",
-        "business" => "STRIPE_PRICE_BUSINESS"
+        "starter" => ["STRIPE_PRICE_STARTER"],
+        "growth" => ["STRIPE_PRICE_GROWTH"],
+        "pro" => ["STRIPE_PRICE_SCALE", "STRIPE_PRICE_PRO"],
+        "business" => ["STRIPE_PRICE_PRO", "STRIPE_PRICE_BUSINESS"]
       }.fetch(plan)
+    end
+
+    def self.effective_price_env_for(plan)
+      case plan
+      when "pro"
+        ENV["STRIPE_PRICE_SCALE"].present? ? "STRIPE_PRICE_SCALE" : "STRIPE_PRICE_PRO"
+      when "business"
+        if ENV["STRIPE_PRICE_BUSINESS"].present?
+          "STRIPE_PRICE_BUSINESS"
+        elsif ENV["STRIPE_PRICE_SCALE"].present?
+          "STRIPE_PRICE_PRO"
+        else
+          "STRIPE_PRICE_BUSINESS"
+        end
+      else
+        price_envs_for(plan).first
+      end
+    end
+
+    def self.price_id_for(plan)
+      ENV[effective_price_env_for(plan)].presence
     end
 
     def self.plan_for_price_id(price_id)
       return if price_id.blank?
 
-      Subscription::PLANS.find { |plan| ENV[price_env_for(plan)] == price_id }
+      Subscription::PLANS.find { |plan| price_id_for(plan) == price_id }
     end
   end
 end

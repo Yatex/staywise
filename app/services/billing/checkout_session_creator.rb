@@ -14,7 +14,7 @@ module Billing
     def call
       return { error: "Plan desconocido." } unless Subscription::PLANS.include?(@plan)
       return { error: "STRIPE_SECRET_KEY no está configurada." } if stripe_secret.blank?
-      return { error: "#{price_env} no está configurada." } if price_id.blank?
+      return { error: "#{price_envs.to_sentence} no está configurada." } if price_id.blank?
 
       response = post_to_stripe
       body = JSON.parse(response.body) rescue {}
@@ -80,8 +80,12 @@ module Billing
       Plans.price_env_for(@plan)
     end
 
+    def price_envs
+      Plans.price_envs_for(@plan)
+    end
+
     def price_id
-      ENV[price_env]
+      Plans.price_id_for(@plan)
     end
 
     def stripe_customer_id
@@ -92,7 +96,7 @@ module Billing
       {
         account_id: @account.id,
         plan: @plan,
-        price_env: price_env,
+        price_envs: price_envs,
         stripe_customer_id: stripe_customer_id
       }.compact
     end

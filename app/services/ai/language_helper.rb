@@ -14,7 +14,7 @@ module AI
       return "ru" if value.match?(/[\p{Cyrillic}]/)
 
       normalized = value.downcase
-      return "es" if normalized.match?(/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|salida|entrada|contraseña|contrasena|anfitri[oó]n)\b/)
+      return "es" if normalized.match?(/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n)\b/)
       return "fr" if normalized.match?(/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/)
       return "de" if normalized.match?(/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/)
       return "pt" if normalized.match?(/\b(olá|ola|obrigado|obrigada|onde|quando|como|posso|anfitrião|anfitriao)\b/)
@@ -103,6 +103,62 @@ module AI
         "Здравствуйте, я Ayla, ассистент #{property_name}. Чем могу помочь?"
       else
         "Hi, I'm Ayla, the assistant for #{property_name}. How can I help?"
+      end
+    end
+
+    def fact_reply_for(field, value, text, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        case field.to_s
+        when "check_in_time"
+          "El check-in es a las #{value}."
+        when "check_out_time"
+          "El checkout es a las #{value}. Si necesitás salir más tarde, puedo consultarlo con el anfitrión."
+        when "address"
+          "La dirección es: #{value}."
+        when "parking"
+          "Sobre el estacionamiento: #{value}"
+        when "rules"
+          "Estas son las reglas de la casa: #{value}"
+        else
+          value.to_s
+        end
+      else
+        case field.to_s
+        when "check_in_time"
+          "Check-in is at #{value}."
+        when "check_out_time"
+          "Checkout is at #{value}. If you need a later checkout, I can check with the host."
+        when "address"
+          "The address is: #{value}."
+        when "parking"
+          "For parking: #{value}"
+        when "rules"
+          "Here are the house rules: #{value}"
+        else
+          value.to_s
+        end
+      end
+    end
+
+    def wifi_reply_for(name:, password:, text:, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        if name.present? && password.present?
+          "La red de WiFi es #{name} y la contraseña es #{password}."
+        elsif name.present?
+          "La red de WiFi es #{name}."
+        else
+          "La contraseña de WiFi es #{password}."
+        end
+      else
+        if name.present? && password.present?
+          "The WiFi network is #{name} and the password is #{password}."
+        elsif name.present?
+          "The WiFi network is #{name}."
+        else
+          "The WiFi password is #{password}."
+        end
       end
     end
 

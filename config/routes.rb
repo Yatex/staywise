@@ -50,7 +50,6 @@ Rails.application.routes.draw do
     post :portal
   end
 
-  resource :ai_configuration, only: [:show, :update]
   resource :settings, only: [:show, :update]
 
   namespace :webhooks do

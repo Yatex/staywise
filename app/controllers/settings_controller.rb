@@ -24,19 +24,10 @@ class SettingsController < ApplicationController
   def account_params
     params.require(:account).permit(
       :name,
-      :default_ai_instructions,
-      :ai_tone,
       :languages_supported,
-      :unsure_behavior,
-      :late_checkout_policy,
-      :emergency_contact_behavior,
       :whatsapp_enabled,
       :email_alerts_enabled,
-      :ai_active,
-      :ai_goal,
-      :ai_response_style,
-      :ai_preferred_language,
-      :ai_default_channel
+      :ai_active
     )
   end
 

@@ -58,8 +58,33 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "reply", decision.outcome
     assert_includes decision.response_text, "Test WiFi"
     assert_includes decision.response_text, "secret"
+    assert_includes decision.response_text, "password"
     assert_not decision.escalation_required
     assert_includes decision.evidence.map { |item| item["source_id"] }, "property_fact:wifi_password"
+  end
+
+  test "qr property guest without reservation dates receives wifi details in spanish" do
+    @guest.update!(check_in_date: nil, checkout_date: nil)
+    message = @conversation.messages.create!(sender: "guest", body: "Quisiera saber la red de wifi", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "La red de WiFi es Test WiFi"
+    assert_includes decision.response_text, "la contraseña es secret"
+    assert_not_includes decision.response_text, "Thanks for your message"
+    assert_not decision.escalation_required
+  end
+
+  test "answers checkout in spanish with a warm complete sentence" do
+    message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el checkout?", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "El checkout es a las 11:00 AM"
+    assert_includes decision.response_text, "Si necesitás salir más tarde"
+    assert_not_equal "11:00 AM", decision.response_text
   end
 
   test "guest outside reservation window cannot receive wifi details" do

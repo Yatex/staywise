@@ -27,42 +27,12 @@
     </section>
 
     <section class="<%= card_class %> p-5">
-      <h2 class="text-base font-semibold text-slate-950">Instrucciones de IA para propietarios</h2>
-      <div class="mt-2">
-        <%= link_to "Abrir configuración completa de IA", ai_configuration_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
-      </div>
-      <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <div>
-          <%= form.label :ai_tone, "Tono de voz", class: label_class %>
-          <%= form.text_field :ai_tone, class: field_class, placeholder: "Amigable, conciso, calmo" %>
-        </div>
-        <div>
-          <%= form.label :languages_supported, "Idiomas disponibles", class: label_class %>
-          <%= form.text_field :languages_supported, value: "Español, Inglés", class: field_class, readonly: true %>
-          <p class="mt-2 text-xs text-slate-500">Ayla admite respuestas en ES y EN.</p>
-        </div>
-        <div>
-          <%= form.label :late_checkout_policy, class: label_class %>
-          <%= form.select :late_checkout_policy, [["Siempre preguntar al propietario", "always_escalate"], ["Responder solo si está configurado", "answer_if_configured"]], {}, class: field_class %>
-        </div>
-        <div class="md:col-span-2">
-          <%= form.label :default_ai_instructions, class: label_class %>
-          <%= form.text_area :default_ai_instructions, rows: 5, class: field_class %>
-        </div>
-        <div>
-          <%= form.label :unsure_behavior, "Qué hacer cuando no está segura", class: label_class %>
-          <%= form.text_area :unsure_behavior, rows: 5, class: field_class %>
-        </div>
-        <div>
-          <%= form.label :emergency_contact_behavior, class: label_class %>
-          <%= form.text_area :emergency_contact_behavior, rows: 5, class: field_class %>
-        </div>
-      </div>
-    </section>
-
-    <section class="<%= card_class %> p-5">
       <h2 class="text-base font-semibold text-slate-950">Integraciones y notificaciones</h2>
       <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+          <%= form.check_box :ai_active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Ayla AI activa para esta cuenta
+        </label>
         <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
           <%= form.check_box :whatsapp_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
           Proveedor de WhatsApp configurado

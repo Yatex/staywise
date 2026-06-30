@@ -21,6 +21,7 @@ module AI
 
     def sensitive_access_authorized?
       return false if @guest.blank? || @guest.property != @property
+      return true if @guest.check_in_date.blank? && @guest.checkout_date.blank?
       return false if @guest.check_in_date.blank? || @guest.checkout_date.blank?
 
       today = @now.to_date

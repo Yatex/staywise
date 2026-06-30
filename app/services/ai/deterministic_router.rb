@@ -97,7 +97,7 @@ module AI
 
       decision(
         outcome: "reply",
-        response_text: source["value"],
+        response_text: LanguageHelper.fact_reply_for(fact.first, source["value"], @guest_message.body, fallback_language: @guest_language),
         confidence: 1.0,
         evidence: [evidence_for(source, fact.last)],
         audit: { "route" => "deterministic_exact_fact", "field" => fact.first }
@@ -131,7 +131,14 @@ module AI
       sources = field == "wifi_password" ? [@registry.property_fact("wifi_name"), @registry.property_fact("wifi_password")].compact : [@registry.property_fact("access_instructions")].compact
       return unknown_escalation("The guest requested #{field}, but it is not configured.") if sources.blank?
 
-      response = sources.map { |source| source["label"] == "wifi_name" ? "WiFi: #{source["value"]}" : source["value"] }.join("\n")
+      response =
+        if field == "wifi_password"
+          wifi_name = sources.find { |source| source["label"] == "wifi_name" }&.fetch("value", nil)
+          wifi_password = sources.find { |source| source["label"] == "wifi_password" }&.fetch("value", nil)
+          LanguageHelper.wifi_reply_for(name: wifi_name, password: wifi_password, text: @guest_message.body, fallback_language: @guest_language)
+        else
+          LanguageHelper.fact_reply_for(field, sources.first["value"], @guest_message.body, fallback_language: @guest_language)
+        end
       decision(
         outcome: "reply",
         response_text: response,
