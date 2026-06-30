@@ -5,50 +5,51 @@
     <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><%= @settings_error %></div>
   <% end %>
 
-  <%= form_with model: @account, url: settings_path, class: "space-y-6" do |form| %>
+  <%= form_with scope: :user, url: settings_path, method: :patch, class: "space-y-6" do |form| %>
     <section class="<%= card_class %> p-5">
-      <h2 class="text-base font-semibold text-slate-950">Perfil de cuenta</h2>
+      <h2 class="text-base font-semibold text-slate-950">Perfil</h2>
       <div class="mt-4 grid gap-4 md:grid-cols-2">
         <div>
-          <%= form.label :name, "Nombre de la organización", class: label_class %>
-          <%= form.text_field :name, class: field_class %>
+          <%= form.label :name, "Tu nombre", class: label_class %>
+          <%= form.text_field :name, value: @user.name, class: field_class %>
         </div>
-        <%= fields_for :user, @user do |user_form| %>
-          <div>
-            <%= user_form.label :name, "Tu nombre", class: label_class %>
-            <%= user_form.text_field :name, class: field_class %>
-          </div>
-          <div>
-            <%= user_form.label :email, class: label_class %>
-            <%= user_form.email_field :email, class: field_class %>
-          </div>
-        <% end %>
       </div>
     </section>
 
     <section class="<%= card_class %> p-5">
-      <h2 class="text-base font-semibold text-slate-950">Integraciones y notificaciones</h2>
-      <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
-          <%= form.check_box :ai_active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-          Ayla AI activa para esta cuenta
-        </label>
-        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
-          <%= form.check_box :whatsapp_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-          Proveedor de WhatsApp configurado
-        </label>
-        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
-          <%= form.check_box :email_alerts_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-          Alertas urgentes por email con Resend
-        </label>
-      </div>
-      <div class="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
-        Las variables de entorno configuran WhatsApp, Stripe, Resend y el servicio de IA. La app no guarda secretos de proveedores en la base de datos.
+      <h2 class="text-base font-semibold text-slate-950">Cambiar contraseña</h2>
+      <div class="mt-4 grid gap-4 md:grid-cols-3">
+        <div>
+          <%= form.label :current_password, "Contraseña actual", class: label_class %>
+          <%= form.password_field :current_password, autocomplete: "current-password", class: field_class %>
+        </div>
+        <div>
+          <%= form.label :password, "Nueva contraseña", class: label_class %>
+          <%= form.password_field :password, autocomplete: "new-password", minlength: 8, class: field_class %>
+        </div>
+        <div>
+          <%= form.label :password_confirmation, "Confirmar contraseña", class: label_class %>
+          <%= form.password_field :password_confirmation, autocomplete: "new-password", minlength: 8, class: field_class %>
+        </div>
       </div>
     </section>
 
     <div class="flex justify-end">
-      <%= form.submit "Guardar configuración", class: primary_button_class %>
+      <%= form.submit "Guardar cambios", class: primary_button_class %>
     </div>
   <% end %>
+
+  <section class="<%= card_class %> mt-6 p-5">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-base font-semibold text-slate-950">Ayla AI</h2>
+        <p class="mt-1 text-sm text-slate-500"><%= @account.ai_active? ? "La IA está respondiendo automáticamente." : "La IA está apagada para esta cuenta." %></p>
+      </div>
+      <%= button_to @account.ai_active? ? "Apagar AI" : "Activar AI",
+        settings_path,
+        method: :patch,
+        params: { account: { ai_active: @account.ai_active? ? "0" : "1" } },
+        class: @account.ai_active? ? "inline-flex items-center justify-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700" : primary_button_class %>
+    </div>
+  </section>
 </div>
