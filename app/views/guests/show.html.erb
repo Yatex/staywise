@@ -29,7 +29,7 @@
         <% @conversations.each do |conversation| %>
           <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
             <p class="font-medium text-slate-950"><%= conversation.property.display_name %></p>
-            <p class="mt-1 text-sm text-slate-500"><%= enum_label(conversation.status) %> · <%= conversation.last_message_at&.to_fs(:short) || "Todavía no hay mensajes" %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= enum_label(conversation.status) %> · <%= local_datetime(conversation.last_message_at) || "Todavía no hay mensajes" %></p>
           <% end %>
         <% end %>
       </div>

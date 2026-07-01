@@ -56,7 +56,7 @@
               <td class="px-5 py-4">
                 <p class="font-medium text-slate-950"><%= user.name %></p>
                 <p class="mt-1 text-xs text-slate-500"><%= user.email %></p>
-                <p class="mt-1 text-xs text-slate-400">Alta <%= user.created_at.to_date.to_fs(:long) %></p>
+                <p class="mt-1 text-xs text-slate-400">Alta <%= local_date(user.created_at) %></p>
               </td>
               <td class="px-5 py-4">
                 <%= form_with url: update_role_admin_user_path(user), method: :patch, class: "w-36" do |form| %>

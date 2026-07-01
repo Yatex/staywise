@@ -222,7 +222,7 @@
           <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p class="font-medium text-slate-950"><%= alert.description.presence || alert.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Huésped desconocido" %> · <%= alert.created_at.to_fs(:short) %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Huésped desconocido" %> · <%= local_datetime(alert.created_at) %></p>
             </div>
             <% if alert.conversation.present? %>
               <%= link_to "Ver conversación", conversation_path(alert.conversation), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
@@ -283,7 +283,7 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
-              <p class="mt-1 text-sm text-slate-500">Último mensaje <%= conversation.last_message_at&.to_fs(:short) || "todavía no" %></p>
+              <p class="mt-1 text-sm text-slate-500">Último mensaje <%= local_datetime(conversation.last_message_at) || "todavía no" %></p>
             </div>
             <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
           </div>

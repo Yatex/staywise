@@ -178,6 +178,7 @@ es:
       short: "%d/%m/%Y"
   time:
     formats:
+      long: "%d/%m/%Y %H:%M"
       short: "%d/%m/%Y %H:%M"
   support:
     array:

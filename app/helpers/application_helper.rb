@@ -146,6 +146,24 @@ module ApplicationHelper
     days == 1 ? "queda 1 día" : "quedan #{days} días"
   end
 
+  def local_datetime(value)
+    return if value.blank?
+
+    I18n.l(value.in_time_zone, format: :short)
+  end
+
+  def local_long_datetime(value)
+    return if value.blank?
+
+    I18n.l(value.in_time_zone, format: :long)
+  end
+
+  def local_date(value)
+    return if value.blank?
+
+    value.in_time_zone.to_date.to_fs(:long)
+  end
+
   def card_class
     "rounded-xl border border-slate-200 bg-white shadow-sm"
   end

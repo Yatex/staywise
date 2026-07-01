@@ -6,6 +6,7 @@ en:
       short: "%m/%d/%Y"
   time:
     formats:
+      long: "%m/%d/%Y %H:%M"
       short: "%m/%d/%Y %H:%M"
   support:
     array:

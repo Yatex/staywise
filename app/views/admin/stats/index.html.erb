@@ -123,7 +123,7 @@
         <% @recent_signups.each do |user| %>
           <div class="px-5 py-3 text-sm">
             <p class="font-medium text-slate-950"><%= user.email %></p>
-            <p class="mt-1 text-xs text-slate-500"><%= user.account.name %> · <%= user.created_at.to_fs(:short) %></p>
+            <p class="mt-1 text-xs text-slate-500"><%= user.account.name %> · <%= local_datetime(user.created_at) %></p>
           </div>
         <% end %>
       </div>
@@ -141,7 +141,7 @@
             <p class="font-medium text-slate-950"><%= event.event_type %></p>
             <p class="mt-1 text-xs text-slate-500"><%= event.account&.name || "Cuenta desconocida" %></p>
           </div>
-          <span class="text-xs text-slate-400"><%= event.created_at.to_fs(:short) %></span>
+          <span class="text-xs text-slate-400"><%= local_datetime(event.created_at) %></span>
         </div>
       <% end %>
       <% if @recent_billing_events.blank? %>
