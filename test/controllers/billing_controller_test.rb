@@ -3,7 +3,7 @@ require "test_helper"
 class BillingControllerTest < ActionDispatch::IntegrationTest
   setup do
     @account = Account.create!(name: "Billing Controller Stays")
-    @account.subscriptions.create!(plan: "starter", status: "trialing")
+    @account.subscriptions.create!(plan: "starter", status: "trialing", trial_ends_at: 14.days.from_now)
     @user = @account.users.create!(
       name: "Billing Owner",
       email: "billing-owner@staywise.test",
@@ -22,6 +22,17 @@ class BillingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "form[data-turbo='false'] button", text: "Elegir Starter"
     assert_select "form[data-turbo='false'] button", text: "Abrir portal de suscripción"
+  end
+
+  test "trialing users see when the free trial ends" do
+    sign_in_as(@user)
+
+    get subscription_path
+
+    assert_response :success
+    assert_includes response.body, "Prueba gratis"
+    assert_includes response.body, "Fin de prueba"
+    assert_includes response.body, @account.active_subscription.trial_ends_on.to_fs(:long)
   end
 
   private

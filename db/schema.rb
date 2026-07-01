@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_30_225438) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_01_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -176,8 +176,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_225438) do
     t.datetime "updated_at", null: false
     t.string "tags", default: [], null: false, array: true
     t.boolean "ai_enabled", default: true, null: false
+    t.string "public_token", null: false
     t.index ["account_id", "name"], name: "index_properties_on_account_id_and_name"
     t.index ["account_id"], name: "index_properties_on_account_id"
+    t.index ["public_token"], name: "index_properties_on_public_token", unique: true
     t.index ["tags"], name: "index_properties_on_tags", using: :gin
   end
 
@@ -224,6 +226,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_225438) do
     t.datetime "email_verified_at"
     t.string "email_verification_token"
     t.datetime "email_verification_sent_at"
+    t.datetime "terms_accepted_at"
+    t.datetime "privacy_accepted_at"
+    t.string "terms_version"
+    t.string "privacy_version"
+    t.string "legal_acceptance_ip"
+    t.text "legal_acceptance_user_agent"
     t.index ["account_id"], name: "index_users_on_account_id"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["email_verification_token"], name: "index_users_on_email_verification_token", unique: true

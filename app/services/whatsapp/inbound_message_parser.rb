@@ -1,6 +1,7 @@
 module Whatsapp
   class InboundMessageParser
-    ParsedMessage = Struct.new(:from, :to, :body, :property_id, :metadata, keyword_init: true)
+    PUBLIC_TOKEN_PATTERN = /(?:Ayla|Staywise)\s+(?:stay|property|ref)\s+([A-Za-z0-9]{16,})/i
+    ParsedMessage = Struct.new(:from, :to, :body, :property_token, :metadata, keyword_init: true)
 
     def initialize(params)
       @params = params
@@ -13,7 +14,7 @@ module Whatsapp
         from: normalized_phone(value("From", "from", "phone_number")),
         to: normalized_phone(value("To", "to")),
         body: body,
-        property_id: value("PropertyId", "property_id") || body[/(?:Ayla|Staywise) property #(\d+)/i, 1],
+        property_token: value("PropertyToken", "property_token") || body[PUBLIC_TOKEN_PATTERN, 1],
         metadata: @params.except("controller", "action")
       )
     end

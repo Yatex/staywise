@@ -1,0 +1,101 @@
+<% content_for :page_title, I18n.locale == :en ? "Privacy Policy" : "Política de Privacidad" %>
+
+<section class="w-full max-w-4xl">
+  <div class="<%= card_class %> p-6 sm:p-8">
+    <% if I18n.locale == :en %>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Ayla Manager</p>
+      <h1 class="mt-2 text-3xl font-semibold text-slate-950">Privacy Policy</h1>
+      <p class="mt-2 text-sm text-slate-500">Effective date: July 1, 2026. Version: <%= User::PRIVACY_VERSION %>.</p>
+
+      <div class="prose prose-slate mt-8 max-w-none">
+        <p>This Privacy Policy explains how Ayla Manager collects, uses, shares, stores, and protects information when owners, account users, guests, or third parties interact with Ayla.</p>
+
+        <h2>1. Information we collect</h2>
+        <p>We may collect account details, names, emails, phone numbers, property information, guest conversation content, WhatsApp metadata, billing identifiers, subscription status, support messages, device data, IP address, user agent, logs, error reports, product usage, and legal acceptance records. You may also enter WiFi details, access instructions, house rules, recommendations, appliance guides, FAQs, and other property content.</p>
+
+        <h2>2. Guest data</h2>
+        <p>If you connect WhatsApp or another messaging channel, Ayla may process guest messages, phone numbers, conversation history, language, property references, reservation context, alerts, and AI responses. You are responsible for giving guests legally required notices and for ensuring you have a lawful basis to use Ayla with guest data.</p>
+
+        <h2>3. How we use information</h2>
+        <p>We use information to create and manage accounts, authenticate users, provide AI responses, route conversations, create alerts, send emails, process payments, maintain subscriptions, improve reliability, detect abuse, debug errors, comply with legal obligations, enforce terms, and protect the service.</p>
+
+        <h2>4. AI processing</h2>
+        <p>Property content and guest messages may be sent to AI model providers or infrastructure providers to generate responses, classify messages, search property knowledge, detect language, draft alerts, and improve product quality. AI providers may process data according to their own service terms and data processing commitments.</p>
+
+        <h2>5. Third-party providers</h2>
+        <p>We may share information with providers that help operate Ayla, including hosting, database, AI, WhatsApp or Twilio, Stripe, email, analytics, monitoring, logging, security, and customer support providers. We only share what is reasonably needed for the service, legal compliance, security, payment processing, and support.</p>
+
+        <h2>6. Payments</h2>
+        <p>Payment data may be handled by Stripe or another payment processor. Ayla generally does not store full card numbers. Billing records may include customer IDs, subscription IDs, plan status, invoice or event identifiers, and related metadata.</p>
+
+        <h2>7. Cookies and logs</h2>
+        <p>We may use cookies, sessions, local storage, and logs for authentication, security, preferences, analytics, debugging, fraud prevention, and product operation. Some third-party services may set their own cookies or collect technical information.</p>
+
+        <h2>8. Retention</h2>
+        <p>We keep information for as long as needed to provide the service, comply with legal obligations, resolve disputes, enforce agreements, maintain security, and keep business records. Some backups, logs, billing records, legal acceptance records, and error reports may be retained after account deletion where permitted or required.</p>
+
+        <h2>9. Security</h2>
+        <p>We use reasonable technical and organizational measures to protect information. No system is completely secure. You are responsible for strong passwords, limiting account access, keeping property data accurate, and avoiding unnecessary sensitive information in property guides or chats.</p>
+
+        <h2>10. International processing</h2>
+        <p>Information may be processed in countries where Ayla, its infrastructure, or its providers operate. By using the service, you authorize this transfer and processing subject to applicable law.</p>
+
+        <h2>11. Your choices</h2>
+        <p>You may update account and property information, disable AI for an account or property where available, request deletion or export of information, or close your account. Some information may be retained if required for legal, security, billing, backup, dispute, or fraud-prevention reasons.</p>
+
+        <h2>12. Children's data</h2>
+        <p>Ayla is not intended for children. You must not knowingly provide personal information from children unless you have all required authority and legal basis.</p>
+
+        <h2>13. Changes</h2>
+        <p>We may update this Privacy Policy. Continued use after an update means you accept the updated policy. We will provide notice where required by law.</p>
+      </div>
+    <% else %>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Ayla Manager</p>
+      <h1 class="mt-2 text-3xl font-semibold text-slate-950">Política de Privacidad</h1>
+      <p class="mt-2 text-sm text-slate-500">Fecha de vigencia: 1 de julio de 2026. Versión: <%= User::PRIVACY_VERSION %>.</p>
+
+      <div class="prose prose-slate mt-8 max-w-none">
+        <p>Esta Política de Privacidad explica cómo Ayla Manager recopila, usa, comparte, almacena y protege información cuando propietarios, usuarios de cuenta, huéspedes o terceros interactúan con Ayla.</p>
+
+        <h2>1. Información que recopilamos</h2>
+        <p>Podemos recopilar datos de cuenta, nombres, emails, teléfonos, información de propiedades, contenido de conversaciones con huéspedes, metadata de WhatsApp, identificadores de facturación, estado de suscripción, mensajes de soporte, datos del dispositivo, dirección IP, user-agent, logs, reportes de error, uso del producto y registros de aceptación legal. También podés cargar datos de WiFi, instrucciones de acceso, reglas de la casa, recomendaciones, guías de electrodomésticos, FAQs y otro contenido de propiedades.</p>
+
+        <h2>2. Datos de huéspedes</h2>
+        <p>Si conectás WhatsApp u otro canal de mensajería, Ayla puede procesar mensajes de huéspedes, teléfonos, historial de conversación, idioma, referencias de propiedad, contexto de reserva, alertas y respuestas de IA. Sos responsable de dar a los huéspedes los avisos legalmente requeridos y de asegurarte de tener una base legal para usar Ayla con datos de huéspedes.</p>
+
+        <h2>3. Cómo usamos la información</h2>
+        <p>Usamos la información para crear y administrar cuentas, autenticar usuarios, brindar respuestas de IA, enrutar conversaciones, crear alertas, enviar emails, procesar pagos, mantener suscripciones, mejorar la confiabilidad, detectar abuso, depurar errores, cumplir obligaciones legales, hacer cumplir términos y proteger el servicio.</p>
+
+        <h2>4. Procesamiento con IA</h2>
+        <p>El contenido de propiedades y los mensajes de huéspedes pueden enviarse a proveedores de modelos de IA o infraestructura para generar respuestas, clasificar mensajes, buscar conocimiento de la propiedad, detectar idioma, redactar alertas y mejorar la calidad del producto. Los proveedores de IA pueden procesar datos de acuerdo con sus propios términos de servicio y compromisos de procesamiento de datos.</p>
+
+        <h2>5. Proveedores externos</h2>
+        <p>Podemos compartir información con proveedores que ayudan a operar Ayla, incluyendo hosting, base de datos, IA, WhatsApp o Twilio, Stripe, email, analítica, monitoreo, logs, seguridad y soporte. Compartimos solo lo razonablemente necesario para prestar el servicio, cumplir la ley, proteger la seguridad, procesar pagos y dar soporte.</p>
+
+        <h2>6. Pagos</h2>
+        <p>Los datos de pago pueden ser gestionados por Stripe u otro procesador de pagos. Ayla generalmente no almacena números completos de tarjeta. Los registros de facturación pueden incluir IDs de cliente, IDs de suscripción, estado del plan, identificadores de facturas o eventos y metadata relacionada.</p>
+
+        <h2>7. Cookies y logs</h2>
+        <p>Podemos usar cookies, sesiones, almacenamiento local y logs para autenticación, seguridad, preferencias, analítica, depuración, prevención de fraude y operación del producto. Algunos servicios externos pueden usar sus propias cookies o recopilar información técnica.</p>
+
+        <h2>8. Retención</h2>
+        <p>Conservamos información durante el tiempo necesario para prestar el servicio, cumplir obligaciones legales, resolver disputas, hacer cumplir acuerdos, mantener seguridad y conservar registros comerciales. Algunos backups, logs, registros de facturación, registros de aceptación legal y reportes de error pueden conservarse después de eliminar una cuenta cuando esté permitido o sea requerido.</p>
+
+        <h2>9. Seguridad</h2>
+        <p>Usamos medidas técnicas y organizativas razonables para proteger la información. Ningún sistema es completamente seguro. Sos responsable de usar contraseñas fuertes, limitar el acceso a la cuenta, mantener datos de propiedades actualizados y evitar información sensible innecesaria en guías o chats.</p>
+
+        <h2>10. Procesamiento internacional</h2>
+        <p>La información puede procesarse en países donde operen Ayla, su infraestructura o sus proveedores. Al usar el servicio, autorizás esta transferencia y procesamiento sujeto a la ley aplicable.</p>
+
+        <h2>11. Tus opciones</h2>
+        <p>Podés actualizar información de cuenta y propiedades, apagar la IA para una cuenta o propiedad cuando esté disponible, pedir eliminación o exportación de información, o cerrar tu cuenta. Parte de la información puede conservarse por motivos legales, de seguridad, facturación, backups, disputas o prevención de fraude.</p>
+
+        <h2>12. Datos de menores</h2>
+        <p>Ayla no está dirigida a menores. No debés proporcionar intencionalmente información personal de menores salvo que tengas toda la autoridad y base legal requerida.</p>
+
+        <h2>13. Cambios</h2>
+        <p>Podemos actualizar esta Política de Privacidad. El uso continuado después de una actualización implica aceptación de la política actualizada. Daremos aviso cuando la ley lo requiera.</p>
+      </div>
+    <% end %>
+  </div>
+</section>

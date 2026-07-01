@@ -20,4 +20,22 @@ class Subscription < ApplicationRecord
   def active?
     status.in?(%w[trialing active])
   end
+
+  def trialing?
+    status == "trialing"
+  end
+
+  def paying?
+    status == "active"
+  end
+
+  def trial_ends_on
+    trial_ends_at&.to_date
+  end
+
+  def trial_days_remaining
+    return unless trial_ends_on
+
+    [(trial_ends_on - Date.current).to_i, 0].max
+  end
 end

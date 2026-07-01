@@ -1,0 +1,101 @@
+<% content_for :page_title, I18n.locale == :en ? "Terms of Service" : "Términos y Condiciones" %>
+
+<section class="w-full max-w-4xl">
+  <div class="<%= card_class %> p-6 sm:p-8">
+    <% if I18n.locale == :en %>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Ayla Manager</p>
+      <h1 class="mt-2 text-3xl font-semibold text-slate-950">Terms of Service</h1>
+      <p class="mt-2 text-sm text-slate-500">Effective date: July 1, 2026. Version: <%= User::TERMS_VERSION %>.</p>
+
+      <div class="prose prose-slate mt-8 max-w-none">
+        <p>These Terms of Service govern access to and use of Ayla Manager and Ayla, an AI assistant for short-term rental operations. By creating an account, accessing the service, or using any Ayla feature, you accept these Terms and the Privacy Policy on behalf of yourself and any organization or property you manage.</p>
+
+        <h2>1. Service role</h2>
+        <p>Ayla helps property owners and managers organize property information, respond to guest questions, manage WhatsApp conversations, create alerts, and maintain reusable property knowledge. Ayla is an operational software tool. It is not a property manager, broker, insurer, emergency service, legal adviser, tax adviser, medical adviser, security service, or financial adviser.</p>
+
+        <h2>2. Owner responsibility</h2>
+        <p>You are fully responsible for the properties, listings, guest communications, instructions, house rules, recommendations, prices, refunds, approvals, access details, safety information, and any content you enter into Ayla. You must review, correct, and keep property information accurate. You are responsible for decisions made from Ayla outputs and for all obligations owed to guests, platforms, landlords, building administrations, regulators, and service providers.</p>
+
+        <h2>3. AI limitations</h2>
+        <p>Ayla uses automated systems and third-party AI providers. AI responses may be incomplete, inaccurate, delayed, mistranslated, or inappropriate. Ayla may misunderstand messages, miss context, fail to escalate, over-escalate, or provide an answer based on outdated or incorrect property data. You must not rely on Ayla as the sole source for emergency, safety, access, legal, payment, refund, health, or high-risk decisions.</p>
+
+        <h2>4. Guest communication and shared chats</h2>
+        <p>You authorize Ayla to send messages to guests through connected channels such as WhatsApp. Guest conversations may be visible to account users and property owners. You are responsible for obtaining any permissions, disclosures, and consents required by law or platform rules before using Ayla with guests.</p>
+
+        <h2>5. Third-party services</h2>
+        <p>Ayla may depend on providers including hosting services, AI model providers, WhatsApp or Twilio, Stripe, email providers, analytics, and other infrastructure. Their availability, pricing, policies, delivery, compliance, and failures are outside Ayla's control. You are responsible for your accounts with those providers and for complying with their terms.</p>
+
+        <h2>6. Payments and subscriptions</h2>
+        <p>Paid plans, trials, renewals, cancellations, taxes, and payment processing may be handled by Stripe or another payment provider. Unless required by law, fees already paid are non-refundable. We may change pricing, plans, limits, features, or billing rules with notice where required.</p>
+
+        <h2>7. Prohibited use</h2>
+        <p>You may not use Ayla to violate laws, platform rules, privacy rights, intellectual property rights, or anti-spam rules. You may not upload unlawful, discriminatory, abusive, deceptive, unsafe, or infringing content. You may not attempt to reverse engineer, overload, scrape, bypass security, misuse APIs, or use Ayla to make automated high-risk decisions without human review.</p>
+
+        <h2>8. Availability and changes</h2>
+        <p>The service is provided on an "as is" and "as available" basis. We may modify, suspend, discontinue, limit, or update the service at any time. We do not guarantee uninterrupted service, error-free responses, message delivery, data recovery, integrations, uptime, or compatibility with every platform or provider.</p>
+
+        <h2>9. Data and content license</h2>
+        <p>You retain ownership of the content you submit. You grant Ayla the rights needed to host, process, transmit, display, analyze, transform, and use that content to provide, secure, improve, and support the service, including through third-party providers acting on our behalf.</p>
+
+        <h2>10. Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, Ayla, its owners, operators, employees, contractors, and providers will not be liable for indirect, incidental, special, consequential, punitive, exemplary, or lost-profit damages, or for losses involving bookings, guests, property damage, refunds, access, safety incidents, provider outages, AI mistakes, or business interruption. To the maximum extent permitted by law, total liability for any claim is limited to the amount you paid for the service in the three months before the event giving rise to the claim.</p>
+
+        <h2>11. Indemnity</h2>
+        <p>You agree to defend, indemnify, and hold harmless Ayla and its owners, operators, employees, contractors, and providers from claims, losses, liabilities, damages, penalties, costs, and expenses arising from your properties, guest communications, content, misuse of the service, violation of these Terms, violation of law, or disputes with guests or third parties.</p>
+
+        <h2>12. Termination</h2>
+        <p>We may suspend or terminate access if we believe you violated these Terms, created risk, failed to pay, misused the service, or used Ayla in a way that may harm guests, third parties, providers, or the product. You may stop using the service at any time.</p>
+
+        <h2>13. Changes to terms</h2>
+        <p>We may update these Terms. Continued use after an update means you accept the new version. If an update materially changes your obligations, we will provide notice where required.</p>
+      </div>
+    <% else %>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Ayla Manager</p>
+      <h1 class="mt-2 text-3xl font-semibold text-slate-950">Términos y Condiciones</h1>
+      <p class="mt-2 text-sm text-slate-500">Fecha de vigencia: 1 de julio de 2026. Versión: <%= User::TERMS_VERSION %>.</p>
+
+      <div class="prose prose-slate mt-8 max-w-none">
+        <p>Estos Términos y Condiciones regulan el acceso y uso de Ayla Manager y Ayla, una asistente de IA para operaciones de alquiler temporal. Al crear una cuenta, acceder al servicio o usar cualquier función de Ayla, aceptás estos Términos y la Política de Privacidad por vos y por cualquier organización o propiedad que administres.</p>
+
+        <h2>1. Rol del servicio</h2>
+        <p>Ayla ayuda a propietarios y administradores a organizar información de propiedades, responder preguntas de huéspedes, gestionar conversaciones de WhatsApp, crear alertas y mantener conocimiento reutilizable. Ayla es una herramienta operativa de software. No es administradora de propiedades, corredora, aseguradora, servicio de emergencia, asesora legal, asesora impositiva, asesora médica, servicio de seguridad ni asesora financiera.</p>
+
+        <h2>2. Responsabilidad del propietario</h2>
+        <p>Vos sos completamente responsable por las propiedades, publicaciones, comunicaciones con huéspedes, instrucciones, reglas de la casa, recomendaciones, precios, reembolsos, aprobaciones, datos de acceso, información de seguridad y cualquier contenido que cargues en Ayla. Debés revisar, corregir y mantener actualizada la información de cada propiedad. Sos responsable por las decisiones tomadas a partir de respuestas de Ayla y por cualquier obligación frente a huéspedes, plataformas, propietarios, administraciones de edificios, reguladores y proveedores.</p>
+
+        <h2>3. Limitaciones de la IA</h2>
+        <p>Ayla usa sistemas automatizados y proveedores externos de IA. Las respuestas pueden ser incompletas, incorrectas, demoradas, mal traducidas o inadecuadas. Ayla puede malinterpretar mensajes, perder contexto, no escalar una situación, escalar de más o responder con información desactualizada o incorrecta de la propiedad. No debés usar Ayla como única fuente para decisiones de emergencia, seguridad, acceso, legales, pagos, reembolsos, salud o cualquier situación de alto riesgo.</p>
+
+        <h2>4. Comunicación con huéspedes y chats compartidos</h2>
+        <p>Autorizás a Ayla a enviar mensajes a huéspedes por canales conectados, como WhatsApp. Las conversaciones con huéspedes pueden ser visibles para usuarios de la cuenta y propietarios de la propiedad. Sos responsable de obtener permisos, avisos y consentimientos requeridos por la ley o por reglas de plataformas antes de usar Ayla con huéspedes.</p>
+
+        <h2>5. Servicios de terceros</h2>
+        <p>Ayla puede depender de proveedores de hosting, modelos de IA, WhatsApp o Twilio, Stripe, email, analítica y otra infraestructura. Su disponibilidad, precios, políticas, entrega, cumplimiento y fallas están fuera del control de Ayla. Sos responsable por tus cuentas con esos proveedores y por cumplir sus términos.</p>
+
+        <h2>6. Pagos y suscripciones</h2>
+        <p>Los planes pagos, pruebas, renovaciones, cancelaciones, impuestos y procesamiento de pagos pueden ser gestionados por Stripe u otro proveedor de pagos. Salvo que la ley exija otra cosa, los cargos ya pagados no son reembolsables. Podemos cambiar precios, planes, límites, funciones o reglas de facturación con aviso cuando corresponda.</p>
+
+        <h2>7. Uso prohibido</h2>
+        <p>No podés usar Ayla para violar leyes, reglas de plataformas, derechos de privacidad, derechos de propiedad intelectual o normas anti-spam. No podés cargar contenido ilegal, discriminatorio, abusivo, engañoso, inseguro o infractor. No podés intentar hacer ingeniería inversa, sobrecargar, extraer datos, eludir seguridad, abusar de APIs ni usar Ayla para tomar decisiones automatizadas de alto riesgo sin revisión humana.</p>
+
+        <h2>8. Disponibilidad y cambios</h2>
+        <p>El servicio se ofrece "tal cual" y "según disponibilidad". Podemos modificar, suspender, discontinuar, limitar o actualizar el servicio en cualquier momento. No garantizamos servicio ininterrumpido, respuestas sin errores, entrega de mensajes, recuperación de datos, integraciones, uptime ni compatibilidad con todas las plataformas o proveedores.</p>
+
+        <h2>9. Datos y licencia de contenido</h2>
+        <p>Conservás la titularidad del contenido que cargás. Otorgás a Ayla los derechos necesarios para alojar, procesar, transmitir, mostrar, analizar, transformar y usar ese contenido para prestar, proteger, mejorar y dar soporte al servicio, incluso mediante proveedores externos que actúen por nuestra cuenta.</p>
+
+        <h2>10. Limitación de responsabilidad</h2>
+        <p>En la máxima medida permitida por la ley, Ayla, sus dueños, operadores, empleados, contratistas y proveedores no serán responsables por daños indirectos, incidentales, especiales, consecuenciales, punitivos, ejemplares o lucro cesante, ni por pérdidas relacionadas con reservas, huéspedes, daños en propiedades, reembolsos, acceso, incidentes de seguridad, caídas de proveedores, errores de IA o interrupción del negocio. En la máxima medida permitida por la ley, la responsabilidad total por cualquier reclamo queda limitada al monto que hayas pagado por el servicio durante los tres meses anteriores al evento que originó el reclamo.</p>
+
+        <h2>11. Indemnidad</h2>
+        <p>Aceptás defender, indemnizar y mantener indemne a Ayla y a sus dueños, operadores, empleados, contratistas y proveedores frente a reclamos, pérdidas, responsabilidades, daños, multas, costos y gastos derivados de tus propiedades, comunicaciones con huéspedes, contenido, mal uso del servicio, incumplimiento de estos Términos, violación de la ley o disputas con huéspedes o terceros.</p>
+
+        <h2>12. Terminación</h2>
+        <p>Podemos suspender o terminar el acceso si creemos que incumpliste estos Términos, generaste riesgo, no pagaste, usaste indebidamente el servicio o usaste Ayla de una manera que pueda dañar a huéspedes, terceros, proveedores o el producto. Podés dejar de usar el servicio en cualquier momento.</p>
+
+        <h2>13. Cambios en los términos</h2>
+        <p>Podemos actualizar estos Términos. El uso continuado después de una actualización implica aceptación de la nueva versión. Si una actualización cambia materialmente tus obligaciones, daremos aviso cuando corresponda.</p>
+      </div>
+    <% end %>
+  </div>
+</section>

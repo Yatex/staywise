@@ -74,10 +74,13 @@
                 <% if subscription.present? %>
                   <div class="flex flex-col gap-1">
                     <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-medium text-slate-900"><%= enum_label(subscription.plan) %></span>
+                      <span class="font-medium text-slate-900"><%= subscription_commercial_label(subscription) %></span>
                       <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(subscription.status) %>"><%= enum_label(subscription.status) %></span>
                     </div>
-                    <p class="text-xs text-slate-500">Termina <%= subscription.current_period_end&.to_date&.to_fs(:long) || "sin configurar" %></p>
+                    <p class="text-xs text-slate-500"><%= subscription_end_label(subscription) %></p>
+                    <% if subscription.trialing? && trial_days_label(subscription).present? %>
+                      <p class="text-xs text-slate-400"><%= trial_days_label(subscription).capitalize %>.</p>
+                    <% end %>
                   </div>
                 <% else %>
                   <span class="text-slate-400">Sin suscripción</span>

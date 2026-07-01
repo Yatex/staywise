@@ -41,7 +41,7 @@ module AI
     end
 
     def intro_message?
-      text = @guest_message.body.to_s.gsub(/(?:Ayla|Staywise) property #\d+/i, "")
+      text = @guest_message.body.to_s.gsub(Whatsapp::InboundMessageParser::PUBLIC_TOKEN_PATTERN, "")
       [@property.display_name, @property.name].compact_blank.uniq.each do |name|
         text = text.gsub(name.to_s, "")
       end

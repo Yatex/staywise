@@ -17,7 +17,7 @@ module Admin
       @critical_operational_errors = OperationalError.open.where(severity: "critical").count
 
       @subscriptions_by_status = Subscription.group(:status).count
-      @subscriptions_by_plan = Subscription.group(:plan).count
+      @paid_subscriptions_by_plan = Subscription.where(status: "active").group(:plan).count
       @paying_subscriptions = Subscription.where(status: "active").count
       @trialing_subscriptions = Subscription.where(status: "trialing").count
       @past_due_subscriptions = Subscription.where(status: "past_due").count

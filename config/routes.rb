@@ -3,6 +3,8 @@ Rails.application.routes.draw do
 
   get "signup", to: "registrations#new"
   post "signup", to: "registrations#create"
+  get "terms", to: "legal#terms", as: :terms
+  get "privacy", to: "legal#privacy", as: :privacy
   get "verify-email", to: "email_verifications#show", as: :verify_email
   post "verify-email", to: "email_verifications#create", as: :resend_verification_email
   get "login", to: "sessions#new"
@@ -34,7 +36,9 @@ Rails.application.routes.draw do
   end
 
   resources :recommendations, only: [:index]
-  resources :conversations, only: [:index, :show]
+  resources :conversations, only: [:index, :show] do
+    post :reply, on: :member
+  end
   resources :alerts, only: [:index, :show, :update] do
     post :answer_question, on: :member
   end

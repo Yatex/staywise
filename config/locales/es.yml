@@ -165,6 +165,11 @@ es:
       signup_subtitle: "Configurá el panel del propietario para tu asistente de huéspedes de alquiler temporal."
       organization_name: "Nombre de la organización"
       your_name: "Tu nombre"
+      legal_prefix: "Acepto los"
+      terms: "Términos y Condiciones"
+      legal_connector: " y la "
+      privacy: "Política de Privacidad"
+      legal_required: "Para crear la cuenta tenés que aceptar los Términos y Condiciones y la Política de Privacidad."
       signup_submit: "Crear cuenta"
       already_have_account: "¿Ya tenés cuenta?"
   date:
@@ -255,3 +260,5 @@ es:
         email: "Email"
         password: "Contraseña"
         password_confirmation: "Confirmar contraseña"
+        terms_accepted_at: "Aceptación de términos"
+        privacy_accepted_at: "Aceptación de privacidad"

@@ -21,4 +21,15 @@ class PropertyTest < ActiveSupport::TestCase
     assert_equal %w[beach premium], property.tags
     assert_equal [property], account.properties.tagged_with("beach").to_a
   end
+
+  test "generates opaque public token for whatsapp reference" do
+    account = Account.create!(name: "Token Stays")
+    account.subscriptions.create!(plan: "growth", status: "trialing")
+
+    property = account.properties.create!(name: "Private Apartment")
+
+    assert_match(/\A[A-Za-z0-9]{24}\z/, property.public_token)
+    assert_equal "Ayla stay #{property.public_token}", property.whatsapp_reference
+    assert_not_includes property.whatsapp_reference, "##{property.id}"
+  end
 end

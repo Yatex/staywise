@@ -15,7 +15,7 @@
 
     <div class="space-y-4 bg-slate-50 px-5 py-6">
       <% @messages.each do |message| %>
-        <div class="flex <%= message.sender == "guest" ? "justify-start" : "justify-end" %>">
+        <div id="message-<%= message.id %>" class="flex <%= message.sender == "guest" ? "justify-start" : "justify-end" %>">
           <div class="<%= message.sender == "guest" ? "border-slate-200 bg-white text-slate-800" : "border-slate-900 bg-slate-900 text-white" %> max-w-[760px] rounded-xl border px-4 py-3 shadow-sm">
             <p class="text-xs font-semibold uppercase tracking-wide <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= enum_label(message.sender) %></p>
             <p class="mt-2 whitespace-pre-line text-sm leading-6"><%= message.body %></p>
@@ -25,6 +25,21 @@
       <% end %>
       <% if @messages.blank? %>
         <p class="text-sm text-slate-500">Todavía no hay mensajes.</p>
+      <% end %>
+    </div>
+
+    <div class="border-t border-slate-200 bg-white px-5 py-5">
+      <h3 class="text-base font-semibold text-slate-950">Responder al huésped</h3>
+      <p class="mt-1 text-sm text-slate-500">El mensaje se envía por WhatsApp desde Ayla. El huésped no ve tu número personal.</p>
+      <%= form_with scope: :reply, url: reply_conversation_path(@conversation), class: "mt-4 space-y-3" do |form| %>
+        <%= form.text_area :body,
+          rows: 4,
+          class: field_class,
+          required: true,
+          placeholder: "Escribí la respuesta para el huésped..." %>
+        <div class="flex justify-end">
+          <%= form.submit "Enviar por WhatsApp", class: primary_button_class %>
+        </div>
       <% end %>
     </div>
   </section>

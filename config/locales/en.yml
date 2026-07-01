@@ -185,6 +185,11 @@ en:
       signup_subtitle: "Set up the owner dashboard for your short-term rental guest assistant."
       organization_name: "Organization name"
       your_name: "Your name"
+      legal_prefix: "I accept the"
+      terms: "Terms of Service"
+      legal_connector: " and the "
+      privacy: "Privacy Policy"
+      legal_required: "To create an account, you must accept the Terms of Service and Privacy Policy."
       signup_submit: "Create account"
       already_have_account: "Already have an account?"
   activerecord:
@@ -255,3 +260,5 @@ en:
         email: "Email"
         password: "Password"
         password_confirmation: "Password confirmation"
+        terms_accepted_at: "Terms acceptance"
+        privacy_accepted_at: "Privacy acceptance"

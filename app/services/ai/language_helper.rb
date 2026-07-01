@@ -193,6 +193,39 @@ module AI
       end
     end
 
+    def with_owner_disclosure(response_text, text: nil, fallback_language: nil)
+      [response_text, owner_disclosure_for(text.presence || response_text, fallback_language: fallback_language)].join("\n\n")
+    end
+
+    def owner_disclosure_for(text, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        "Tené en cuenta que este chat está compartido con el dueño de la propiedad."
+      when "fr"
+        "Veuillez noter que cette conversation est partagée avec le propriétaire du logement."
+      when "de"
+        "Bitte beachte, dass dieser Chat mit dem Eigentümer der Unterkunft geteilt wird."
+      when "pt"
+        "Tenha em conta que esta conversa é compartilhada com o proprietário da acomodação."
+      when "it"
+        "Tieni presente che questa chat è condivisa con il proprietario dell'alloggio."
+      when "zh"
+        "请注意，此聊天会与房源业主共享。"
+      when "ja"
+        "このチャットは宿泊施設のオーナーにも共有されます。"
+      when "ko"
+        "이 채팅은 숙소 소유자와 공유됩니다."
+      when "ar"
+        "يرجى العلم أن هذه المحادثة تتم مشاركتها مع مالك العقار."
+      when "he"
+        "לתשומת ליבך, הצ'אט הזה משותף עם בעל הנכס."
+      when "ru"
+        "Обратите внимание: этот чат доступен владельцу объекта."
+      else
+        "Please note that this chat is shared with the property owner."
+      end
+    end
+
     def normalize_code(value)
       value.to_s.split(/[-_]/).first.presence
     end

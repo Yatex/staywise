@@ -1,0 +1,12 @@
+<% subscription = current_account&.active_subscription %>
+<% if subscription&.trialing? %>
+  <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <p>
+        <strong>Prueba gratis activa.</strong>
+        <%= subscription_end_label(subscription) %><%= " (#{trial_days_label(subscription)})" if trial_days_label(subscription).present? %>.
+      </p>
+      <%= link_to "Ver planes", subscription_path, class: "font-semibold text-amber-950 underline decoration-amber-300 underline-offset-2" %>
+    </div>
+  </div>
+<% end %>

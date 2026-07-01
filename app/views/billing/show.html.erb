@@ -6,20 +6,32 @@
       <div>
         <h2 class="text-xl font-semibold text-slate-950">Suscripción</h2>
       </div>
-      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@subscription&.status) %>"><%= (@subscription ? enum_label(@subscription.status) : nil) || "Incompleta" %></span>
+      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@subscription&.status) %>"><%= @subscription&.trialing? ? "Prueba gratis" : ((@subscription ? enum_label(@subscription.status) : nil) || "Incompleta") %></span>
     </div>
     <div class="mt-5 grid gap-4 sm:grid-cols-3">
       <div class="rounded-lg bg-slate-50 p-4">
-        <p class="text-sm text-slate-500">Plan actual</p>
-        <p class="mt-2 text-lg font-semibold text-slate-950"><%= (@subscription ? enum_label(@subscription.plan) : nil) || "Inicial" %></p>
+        <p class="text-sm text-slate-500">Estado actual</p>
+        <p class="mt-2 text-lg font-semibold text-slate-950"><%= subscription_commercial_label(@subscription) %></p>
+        <% if @subscription&.trialing? %>
+          <p class="mt-1 text-xs text-slate-500">Todavía no hay una suscripción paga activa.</p>
+        <% end %>
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
         <p class="text-sm text-slate-500">Límite de propiedades</p>
         <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.property_limit || "Ilimitado" %></p>
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
-        <p class="text-sm text-slate-500">Propiedades usadas</p>
-        <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.properties.count %></p>
+        <p class="text-sm text-slate-500"><%= @subscription&.trialing? ? "Fin de prueba" : "Propiedades usadas" %></p>
+        <p class="mt-2 text-lg font-semibold text-slate-950">
+          <% if @subscription&.trialing? %>
+            <%= @subscription.trial_ends_on&.to_fs(:long) || "Sin configurar" %>
+          <% else %>
+            <%= current_account.properties.count %>
+          <% end %>
+        </p>
+        <% if @subscription&.trialing? && trial_days_label(@subscription).present? %>
+          <p class="mt-1 text-xs text-slate-500"><%= trial_days_label(@subscription).capitalize %>.</p>
+        <% end %>
       </div>
     </div>
     <div class="mt-5">

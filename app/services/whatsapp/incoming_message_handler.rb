@@ -40,8 +40,8 @@ module Whatsapp
     private
 
     def resolve_property(parsed)
-      if parsed.property_id.present?
-        property = Property.includes(:account).find_by(id: parsed.property_id)
+      if parsed.property_token.present?
+        property = Property.includes(:account).find_by(public_token: parsed.property_token)
         return property if property.present?
       end
 
@@ -68,11 +68,22 @@ module Whatsapp
       return false unless decision.should_reply
       return false if decision.response_text.blank?
 
-      delivered = @provider.send_message(to: guest.phone_number, body: decision.response_text)
+      body = ai_response_body(conversation, decision)
+      delivered = @provider.send_message(to: guest.phone_number, body: body)
       return false unless delivered
 
-      conversation.messages.create!(sender: "ai", channel: "whatsapp", body: decision.response_text, metadata: decision.to_h)
+      conversation.messages.create!(sender: "ai", channel: "whatsapp", body: body, metadata: decision.to_h)
       true
+    end
+
+    def ai_response_body(conversation, decision)
+      return decision.response_text if conversation.messages.where(sender: "ai").exists?
+
+      AI::LanguageHelper.with_owner_disclosure(
+        decision.response_text,
+        text: conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
+        fallback_language: conversation.guest.language
+      )
     end
 
     def missing_property_context(parsed)

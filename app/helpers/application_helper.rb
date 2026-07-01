@@ -117,6 +117,35 @@ module ApplicationHelper
     [["Español", "es"], ["Inglés", "en"]]
   end
 
+  def subscription_commercial_label(subscription)
+    return "Sin suscripción" if subscription.blank?
+    return "Prueba gratis" if subscription.trialing?
+    return enum_label(subscription.plan) if subscription.paying?
+
+    enum_label(subscription.status)
+  end
+
+  def subscription_end_label(subscription)
+    return "Sin configurar" if subscription.blank?
+
+    if subscription.trialing?
+      return "La prueba termina #{subscription.trial_ends_on.to_fs(:long)}" if subscription.trial_ends_on.present?
+
+      "Prueba sin fecha final configurada"
+    elsif subscription.current_period_end.present?
+      "Termina #{subscription.current_period_end.to_date.to_fs(:long)}"
+    else
+      "Termina sin configurar"
+    end
+  end
+
+  def trial_days_label(subscription)
+    return unless subscription&.trialing? && subscription.trial_days_remaining.present?
+
+    days = subscription.trial_days_remaining
+    days == 1 ? "queda 1 día" : "quedan #{days} días"
+  end
+
   def card_class
     "rounded-xl border border-slate-200 bg-white shadow-sm"
   end

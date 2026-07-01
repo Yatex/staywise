@@ -14,7 +14,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     )
 
     @owner_account = Account.create!(name: "Owner Account")
-    @owner_account.subscriptions.create!(plan: "starter", status: "trialing")
+    @owner_account.subscriptions.create!(plan: "starter", status: "trialing", trial_ends_at: 14.days.from_now)
     @owner = @owner_account.users.create!(
       name: "Owner User",
       email: "owner-test@staywise.test",
@@ -43,9 +43,12 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_users_path
     assert_response :success
+    assert_includes response.body, "Prueba gratis"
+    assert_includes response.body, @owner_account.active_subscription.trial_ends_on.to_fs(:long)
 
     get admin_stats_path
     assert_response :success
+    assert_includes response.body, "Planes pagos activos"
 
     get admin_errors_path
     assert_response :success

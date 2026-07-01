@@ -27,8 +27,11 @@ class Property < ApplicationRecord
   has_many :operational_errors, dependent: :nullify
 
   validates :name, presence: true
+  validates :public_token, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
   validate :account_property_limit, on: :create
+
+  has_secure_token :public_token
 
   before_validation :normalize_tags
 
@@ -52,7 +55,7 @@ class Property < ApplicationRecord
   end
 
   def whatsapp_reference
-    "Ayla property ##{id}"
+    "Ayla stay #{public_token}"
   end
 
   private

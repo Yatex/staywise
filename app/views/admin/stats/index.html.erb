@@ -35,14 +35,14 @@
   <section class="grid gap-6 xl:grid-cols-2">
     <div class="<%= card_class %> overflow-hidden">
       <div class="border-b border-slate-200 px-5 py-4">
-        <h3 class="text-base font-semibold text-slate-950">Suscripciones por plan</h3>
+        <h3 class="text-base font-semibold text-slate-950">Planes pagos activos</h3>
       </div>
       <table class="min-w-full divide-y divide-slate-100 text-sm">
         <tbody class="divide-y divide-slate-100">
           <% Subscription::PLANS.each do |plan| %>
             <tr>
               <td class="px-5 py-3 font-medium text-slate-900"><%= enum_label(plan) %></td>
-              <td class="px-5 py-3 text-right text-slate-600"><%= @subscriptions_by_plan[plan] || 0 %></td>
+              <td class="px-5 py-3 text-right text-slate-600"><%= @paid_subscriptions_by_plan[plan] || 0 %></td>
             </tr>
           <% end %>
         </tbody>
