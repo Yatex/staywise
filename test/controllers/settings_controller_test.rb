@@ -8,6 +8,7 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
       name: "Settings Owner",
       email: "settings-owner@staywise.test",
       role: "owner",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )

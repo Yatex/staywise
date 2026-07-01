@@ -87,6 +87,39 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_equal "11:00 AM", decision.response_text
   end
 
+  test "treats checkout as spanish when the surrounding phrase is spanish" do
+    message = @conversation.messages.create!(sender: "guest", body: "Y el check out?", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "El checkout es a las 11:00 AM"
+    assert_not_includes decision.response_text, "Checkout is at"
+  end
+
+  test "asks a clarifying question for ambiguous time intent in spanish" do
+    message = @conversation.messages.create!(sender: "guest", body: "A que hora puedo ir?", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "ask_clarifying_question", decision.outcome
+    assert_includes decision.response_text, "check-in"
+    assert_includes decision.response_text, "checkout"
+    assert_not decision.escalation_required
+    assert_nil decision.alert_type
+  end
+
+  test "answers check in when guest explicitly asks arrival time in spanish" do
+    message = @conversation.messages.create!(sender: "guest", body: "A que hora puedo llegar?", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "El check-in es a las 3:00 PM"
+    assert_not decision.escalation_required
+    assert_equal ["property_fact:check_in_time"], decision.evidence.map { |item| item["source_id"] }
+  end
+
   test "guest outside reservation window cannot receive wifi details" do
     @guest.update!(check_in_date: Date.current + 10.days, checkout_date: Date.current + 12.days)
     message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
@@ -132,6 +165,23 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not answered_decision.escalation_required
     assert_includes answered_decision.response_text, "dark green"
     assert_equal ["faq:#{@property.faqs.last.id}"], answered_decision.evidence.map { |item| item["source_id"] }
+  end
+
+  test "matches reusable faq despite shorthand and different wording" do
+    faq = @property.faqs.create!(
+      question: "Como bajo a la pileta?",
+      answer: "Andá al -1 y después subí por la ventana.",
+      category: "amenities",
+      active: true
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "Cómo llego q pileta?", channel: "whatsapp")
+
+    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "Andá al -1"
+    assert_not decision.escalation_required
+    assert_equal ["faq:#{faq.id}"], decision.evidence.map { |item| item["source_id"] }
   end
 
   test "default qr intro asks how to help without alerting owner" do

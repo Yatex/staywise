@@ -21,6 +21,9 @@ module ApplicationHelper
   end
 
   def enum_label(value)
+    translated = t("enums.#{value}", default: nil)
+    return translated if translated.present?
+
     translations = {
       "active" => "Activo",
       "archived" => "Archivado",
@@ -57,6 +60,7 @@ module ApplicationHelper
       "check_in" => "Check-in",
       "checkout" => "Checkout",
       "wifi" => "WiFi",
+      "appliances" => "Electrodomésticos",
       "house_rules" => "Reglas de la casa",
       "amenities" => "Comodidades",
       "building_access" => "Acceso al edificio",
@@ -94,6 +98,15 @@ module ApplicationHelper
     }
 
     translations.fetch(value.to_s, value.to_s.humanize)
+  end
+
+  def locale_path(locale)
+    query = request.query_parameters.merge(locale: locale).compact_blank.to_query
+    [request.path, query.presence].compact.join("?")
+  end
+
+  def locale_label(locale)
+    t("ui.locales.#{locale}")
   end
 
   def language_label(value)

@@ -26,7 +26,14 @@
                 <h1 class="text-lg font-semibold text-slate-950"><%= content_for(:page_title).presence || "Ayla Manager" %></h1>
               </div>
               <div class="flex items-center gap-3">
-                <%= link_to "Nueva propiedad", new_property_path, class: secondary_button_class %>
+                <div class="flex rounded-lg border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-500 shadow-sm">
+                  <% I18n.available_locales.each do |locale| %>
+                    <%= link_to locale_label(locale),
+                      locale_path(locale),
+                      class: "rounded-md px-2 py-1 #{I18n.locale == locale ? "bg-slate-900 text-white" : "hover:bg-slate-50 hover:text-slate-900"}" %>
+                  <% end %>
+                </div>
+                <%= link_to t("ui.layout.new_property"), new_property_path, class: secondary_button_class %>
                 <details class="relative">
                   <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white">
@@ -45,11 +52,11 @@
                       <p class="mt-1 truncate text-xs text-slate-500"><%= current_user.email %></p>
                     </div>
                     <nav class="p-2">
-                      <%= link_to "Suscripciones", subscription_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
-                      <%= link_to "Configuración", settings_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to t("ui.nav.subscriptions"), subscription_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= link_to t("ui.nav.settings"), settings_path, class: "block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950" %>
                     </nav>
                     <div class="border-t border-slate-100 p-2">
-                      <%= button_to "Cerrar sesión", logout_path, method: :delete, class: "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-950" %>
+                      <%= button_to t("ui.layout.logout"), logout_path, method: :delete, class: "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-950" %>
                     </div>
                   </div>
                 </details>
@@ -64,6 +71,13 @@
         </div>
       </div>
     <% else %>
+      <div class="fixed right-4 top-4 z-20 flex rounded-lg border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-500 shadow-sm">
+        <% I18n.available_locales.each do |locale| %>
+          <%= link_to locale_label(locale),
+            locale_path(locale),
+            class: "rounded-md px-2 py-1 #{I18n.locale == locale ? "bg-slate-900 text-white" : "hover:bg-slate-50 hover:text-slate-900"}" %>
+        <% end %>
+      </div>
       <main class="flex min-h-screen items-center justify-center px-4 py-12">
         <%= render "shared/flash" %>
         <%= yield %>

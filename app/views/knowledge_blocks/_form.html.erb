@@ -9,7 +9,7 @@
     <div class="grid gap-4 md:grid-cols-2">
       <div>
         <%= form.label :title, class: label_class %>
-        <%= form.text_field :title, class: field_class, required: true %>
+        <%= form.text_field :title, class: field_class, required: true, placeholder: knowledge_block.category == "appliances" ? "Lavarropas, aire acondicionado, TV, horno..." : nil %>
       </div>
       <div>
         <%= form.label :category, class: label_class %>
@@ -21,7 +21,7 @@
       </div>
       <div class="md:col-span-2">
         <%= form.label :content, class: label_class %>
-        <%= form.text_area :content, rows: 10, class: field_class, required: true %>
+        <%= form.text_area :content, rows: 10, class: field_class, required: true, placeholder: knowledge_block.category == "appliances" ? "Explicá paso a paso cómo se usa, botones importantes, programas recomendados y qué hacer si aparece un error." : nil %>
       </div>
       <div class="md:col-span-2">
         <%= form.label :youtube_url, "Link de YouTube opcional", class: label_class %>

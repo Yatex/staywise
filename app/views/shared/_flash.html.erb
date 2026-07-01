@@ -7,7 +7,7 @@
       data-dismissable-timeout-value="3500"
     >
       <span><%= message %></span>
-      <button type="button" class="shrink-0 text-current opacity-60 transition hover:opacity-100" aria-label="Cerrar notificación" data-action="dismissable#dismiss">x</button>
+      <button type="button" class="shrink-0 text-current opacity-60 transition hover:opacity-100" aria-label="<%= t("ui.layout.close_notification") %>" data-action="dismissable#dismiss">x</button>
     </div>
   <% end %>
 </div>

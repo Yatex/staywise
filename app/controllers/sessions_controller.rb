@@ -8,6 +8,12 @@ class SessionsController < ApplicationController
     user = User.find_by(email: params[:email].to_s.strip.downcase)
 
     if user&.authenticate(params[:password])
+      unless user.email_verified?
+        Notifications::EmailVerificationNotifier.call(user)
+        redirect_to login_path, alert: "Confirmá tu email antes de ingresar. Te enviamos un nuevo link."
+        return
+      end
+
       sign_in(user)
       redirect_to dashboard_path, notice: "Sesión iniciada."
     else

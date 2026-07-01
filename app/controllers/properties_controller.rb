@@ -10,7 +10,8 @@ class PropertiesController < ApplicationController
   end
 
   def show
-    @knowledge_blocks = @property.knowledge_blocks.order(:category, :title)
+    @appliance_guides = @property.knowledge_blocks.where(category: "appliances").order(:title)
+    @knowledge_blocks = @property.knowledge_blocks.where.not(category: "appliances").order(:category, :title)
     @recommendations = @property.recommendations.order(:category, :name)
     @faqs = @property.faqs.order(:category, :question)
     @new_questions = @property.alerts.unknown_questions.open.includes(:guest, :conversation).order(created_at: :desc).limit(10)

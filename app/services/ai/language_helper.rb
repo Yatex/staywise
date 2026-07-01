@@ -14,6 +14,8 @@ module AI
       return "ru" if value.match?(/[\p{Cyrillic}]/)
 
       normalized = value.downcase
+      return "es" if normalized.match?(/\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b.*\bcheck\s*-?\s*out\b/)
+      return "es" if normalized.match?(/\bcheck\s*-?\s*out\b.*\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b/)
       return "es" if normalized.match?(/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n)\b/)
       return "fr" if normalized.match?(/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/)
       return "de" if normalized.match?(/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/)
@@ -103,6 +105,35 @@ module AI
         "Здравствуйте, я Ayla, ассистент #{property_name}. Чем могу помочь?"
       else
         "Hi, I'm Ayla, the assistant for #{property_name}. How can I help?"
+      end
+    end
+
+    def ambiguous_time_reply_for(text, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        "¿Te referís al horario de check-in para llegar, o al horario de checkout para irte?"
+      when "fr"
+        "Vous parlez de l'heure d'arrivée pour le check-in, ou de l'heure de départ pour le checkout ?"
+      when "de"
+        "Meinst du die Check-in-Zeit zum Ankommen oder die Checkout-Zeit zum Abreisen?"
+      when "pt"
+        "Você quer saber o horário de check-in para chegar ou o horário de checkout para sair?"
+      when "it"
+        "Intendi l'orario di check-in per arrivare o l'orario di checkout per partire?"
+      when "zh"
+        "你是想问入住可以几点到，还是退房最晚几点离开？"
+      when "ja"
+        "到着できるチェックイン時間のことですか、それともチェックアウトで出発する時間のことですか？"
+      when "ko"
+        "도착 가능한 체크인 시간을 말씀하시는 건가요, 아니면 퇴실해야 하는 체크아웃 시간을 말씀하시는 건가요?"
+      when "ar"
+        "هل تقصد وقت تسجيل الوصول للوصول، أم وقت تسجيل المغادرة للمغادرة؟"
+      when "he"
+        "הכוונה לשעת הצ'ק-אין להגעה, או לשעת הצ'ק-אאוט לעזיבה?"
+      when "ru"
+        "Вы имеете в виду время заезда, когда можно приехать, или время выезда?"
+      else
+        "Do you mean what time you can arrive for check-in, or what time you need to leave for checkout?"
       end
     end
 

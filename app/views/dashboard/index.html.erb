@@ -1,14 +1,14 @@
-<% content_for :page_title, "Panel" %>
+<% content_for :page_title, t("ui.nav.dashboard") %>
 
 <div class="space-y-6">
   <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
     <div class="<%= card_class %> overflow-hidden">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 class="text-base font-semibold text-slate-950">Chats recientes</h2>
-          <p class="text-sm text-slate-500">Conversaciones de WhatsApp que la IA respondió o escaló.</p>
+          <h2 class="text-base font-semibold text-slate-950"><%= t("ui.dashboard.recent_chats") %></h2>
+          <p class="text-sm text-slate-500"><%= t("ui.dashboard.recent_chats_body") %></p>
         </div>
-        <%= link_to "Ver todo", conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+        <%= link_to t("ui.actions.view_all"), conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
       </div>
       <div class="divide-y divide-slate-100">
         <% @recent_conversations.each do |conversation| %>
@@ -23,7 +23,7 @@
           <% end %>
         <% end %>
         <% if @recent_conversations.blank? %>
-          <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay conversaciones. Los mensajes entrantes de WhatsApp aparecerán acá.</p>
+          <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.dashboard.no_conversations") %></p>
         <% end %>
       </div>
     </div>
@@ -31,10 +31,10 @@
     <div class="<%= card_class %> overflow-hidden">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 class="text-base font-semibold text-slate-950">Alertas abiertas</h2>
-          <p class="text-sm text-slate-500">Acción requerida del propietario.</p>
+          <h2 class="text-base font-semibold text-slate-950"><%= t("ui.dashboard.open_alerts") %></h2>
+          <p class="text-sm text-slate-500"><%= t("ui.dashboard.open_alerts_body") %></p>
         </div>
-        <%= link_to "Ver todo", alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+        <%= link_to t("ui.actions.view_all"), alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
       </div>
       <div class="divide-y divide-slate-100">
         <% @alerts.each do |alert| %>
@@ -49,7 +49,7 @@
           <% end %>
         <% end %>
         <% if @alerts.blank? %>
-          <p class="px-5 py-8 text-sm text-slate-500">No hay alertas abiertas.</p>
+          <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.dashboard.no_alerts") %></p>
         <% end %>
       </div>
     </div>

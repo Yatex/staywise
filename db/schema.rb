@@ -221,8 +221,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_225438) do
     t.string "role", default: "owner", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "email_verified_at"
+    t.string "email_verification_token"
+    t.datetime "email_verification_sent_at"
     t.index ["account_id"], name: "index_users_on_account_id"
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["email_verification_token"], name: "index_users_on_email_verification_token", unique: true
   end
 
   add_foreign_key "alerts", "conversations"

@@ -1,5 +1,10 @@
 module AI
   class SourceRegistry
+    SEARCH_STOPWORDS = %w[
+      a al algo como con cual cuales cuando de del donde el en es esta este esto la las le lo los me mi para por q que se si su te tu un una y
+      can could how i is it me my of on please the there this to what where with you
+    ].freeze
+
     SAFE_PROPERTY_FACTS = {
       "check_in_time" => :check_in_time,
       "check_out_time" => :checkout_time,
@@ -56,6 +61,18 @@ module AI
       end
     end
 
+    def best_faq_for(message)
+      best_record_for(message, @property.faqs.active.to_a) do |faq|
+        [faq.question, faq.answer, faq.category].compact.join(" ")
+      end
+    end
+
+    def best_knowledge_block_for(message)
+      best_record_for(message, @property.knowledge_blocks.active.to_a) do |block|
+        [block.title, block.category, block.content].compact.join(" ")
+      end
+    end
+
     def faq_source(faq)
       return unless faq&.property_id == @property.id
 
@@ -65,7 +82,7 @@ module AI
     def knowledge_source(block)
       return unless block&.property_id == @property.id
 
-      source("knowledge_block", "knowledge_block:#{block.id}", block.title, block.content)
+      source("knowledge_block", "knowledge_block:#{block.id}", block.title, block.content).merge("category" => block.category)
     end
 
     def recommendation_source(recommendation)
@@ -141,6 +158,73 @@ module AI
         "label" => label,
         "value" => value.to_s
       }
+    end
+
+    def best_record_for(message, records)
+      message_tokens = search_tokens(message)
+      return if message_tokens.blank? || records.blank?
+
+      scored = records.filter_map do |record|
+        source_tokens = search_tokens(yield(record))
+        score = match_score(message_tokens, source_tokens)
+        { record: record, score: score } if score.positive?
+      end.sort_by { |item| -item[:score] }
+
+      return if scored.blank?
+      return if scored.first[:score] < 2
+      return if scored.second && scored.second[:score] == scored.first[:score]
+
+      scored.first[:record]
+    end
+
+    def match_score(message_tokens, source_tokens)
+      message_tokens.sum do |message_token|
+        if source_tokens.include?(message_token)
+          3
+        elsif message_token.length >= 5 && source_tokens.any? { |source_token| source_token.length >= 5 && edit_distance_at_most_one?(message_token, source_token) }
+          2
+        else
+          0
+        end
+      end
+    end
+
+    def search_tokens(value)
+      ActiveSupport::Inflector.transliterate(value.to_s.downcase)
+        .gsub(/\bq\b/, " que ")
+        .scan(/[a-z0-9]+/)
+        .reject { |word| word.length < 4 || SEARCH_STOPWORDS.include?(word) }
+        .uniq
+    end
+
+    def edit_distance_at_most_one?(left, right)
+      return true if left == right
+      return false if (left.length - right.length).abs > 1
+
+      i = 0
+      j = 0
+      edits = 0
+
+      while i < left.length && j < right.length
+        if left[i] == right[j]
+          i += 1
+          j += 1
+        elsif edits.zero?
+          edits += 1
+          if left.length > right.length
+            i += 1
+          elsif right.length > left.length
+            j += 1
+          else
+            i += 1
+            j += 1
+          end
+        else
+          return false
+        end
+      end
+
+      edits + (left.length - i) + (right.length - j) <= 1
     end
 
     def normalize(value)

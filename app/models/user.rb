@@ -4,6 +4,7 @@ class User < ApplicationRecord
   belongs_to :account
 
   has_secure_password
+  has_secure_token :email_verification_token
 
   validates :name, presence: true
   validates :email, presence: true, uniqueness: true, format: { with: URI::MailTo::EMAIL_REGEXP }
@@ -26,6 +27,22 @@ class User < ApplicationRecord
 
   def admin_like?
     admin?
+  end
+
+  def email_verified?
+    email_verified_at.present?
+  end
+
+  def email_verification_required?
+    !email_verified?
+  end
+
+  def verify_email!
+    update!(
+      email_verified_at: Time.current,
+      email_verification_token: nil,
+      email_verification_sent_at: nil
+    )
   end
 
   private

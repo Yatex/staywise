@@ -3,6 +3,8 @@ Rails.application.routes.draw do
 
   get "signup", to: "registrations#new"
   post "signup", to: "registrations#create"
+  get "verify-email", to: "email_verifications#show", as: :verify_email
+  post "verify-email", to: "email_verifications#create", as: :resend_verification_email
   get "login", to: "sessions#new"
   post "login", to: "sessions#create"
   delete "logout", to: "sessions#destroy"

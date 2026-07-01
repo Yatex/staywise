@@ -7,6 +7,7 @@ class BillingCheckoutSessionCreatorTest < ActiveSupport::TestCase
     @account.users.create!(
       name: "Owner",
       email: "owner@example.com",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )

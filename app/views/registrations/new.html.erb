@@ -1,11 +1,11 @@
-<% content_for :page_title, "Crear tu cuenta de Ayla Manager" %>
+<% content_for :page_title, t("ui.auth.signup_title") %>
 
 <section class="w-full max-w-md">
   <div class="<%= card_class %> p-6">
     <div class="mb-6">
-      <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">S</div>
-      <h1 class="text-2xl font-semibold text-slate-950">Crear tu cuenta de Ayla Manager</h1>
-      <p class="mt-2 text-sm text-slate-500">Configurá el panel del propietario para tu asistente de huéspedes de alquiler temporal.</p>
+      <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">A</div>
+      <h1 class="text-2xl font-semibold text-slate-950"><%= t("ui.auth.signup_heading") %></h1>
+      <p class="mt-2 text-sm text-slate-500"><%= t("ui.auth.signup_subtitle") %></p>
     </div>
 
     <% if @signup_error.present? %>
@@ -14,11 +14,11 @@
 
     <%= form_with scope: :registration, url: signup_path, class: "space-y-4" do |form| %>
       <div>
-        <%= form.label :account_name, "Nombre de la organización", class: label_class %>
+        <%= form.label :account_name, t("ui.auth.organization_name"), class: label_class %>
         <%= form.text_field :account_name, value: @account.name, class: field_class, required: true %>
       </div>
       <div>
-        <%= form.label :name, "Tu nombre", class: label_class %>
+        <%= form.label :name, t("ui.auth.your_name"), class: label_class %>
         <%= form.text_field :name, value: @user.name, class: field_class, required: true %>
       </div>
       <div>
@@ -33,9 +33,9 @@
         <%= form.label :password_confirmation, class: label_class %>
         <%= form.password_field :password_confirmation, class: field_class, required: true, minlength: 8 %>
       </div>
-      <%= form.submit "Crear cuenta", class: "#{primary_button_class} w-full" %>
+      <%= form.submit t("ui.auth.signup_submit"), class: "#{primary_button_class} w-full" %>
     <% end %>
 
-    <p class="mt-5 text-center text-sm text-slate-500">¿Ya tenés cuenta? <%= link_to "Ingresar", login_path, class: "font-semibold text-slate-950" %></p>
+    <p class="mt-5 text-center text-sm text-slate-500"><%= t("ui.auth.already_have_account") %> <%= link_to t("ui.auth.login_submit"), login_path, class: "font-semibold text-slate-950" %></p>
   </div>
 </section>

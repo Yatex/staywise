@@ -8,6 +8,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       name: "Admin User",
       email: "admin-test@staywise.test",
       role: "admin",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )
@@ -18,6 +19,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       name: "Owner User",
       email: "owner-test@staywise.test",
       role: "owner",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )

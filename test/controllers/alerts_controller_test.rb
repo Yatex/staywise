@@ -7,6 +7,7 @@ class AlertsControllerTest < ActionDispatch::IntegrationTest
     @user = @account.users.create!(
       name: "Owner",
       email: "alert-owner@staywise.test",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )

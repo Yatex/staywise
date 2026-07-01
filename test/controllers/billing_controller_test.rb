@@ -8,6 +8,7 @@ class BillingControllerTest < ActionDispatch::IntegrationTest
       name: "Billing Owner",
       email: "billing-owner@staywise.test",
       role: "owner",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )

@@ -27,7 +27,7 @@
     </div>
 
     <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Dudas nuevas", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
+      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Electrodomésticos", "#appliances"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Dudas nuevas", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
       <% end %>
     </div>
@@ -126,6 +126,36 @@
       <% end %>
       <% if @knowledge_blocks.blank? %>
         <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay bloques de guía.</p>
+      <% end %>
+    </div>
+  </section>
+
+  <section id="appliances" class="<%= card_class %> overflow-hidden">
+    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <div>
+        <h3 class="text-base font-semibold text-slate-950">Electrodomésticos</h3>
+        <p class="text-sm text-slate-500">Guías de uso para lavarropas, aire acondicionado, TV, horno, cafetera u otros equipos de la propiedad.</p>
+      </div>
+      <%= link_to "Agregar guía", new_property_knowledge_block_path(@property, category: "appliances"), class: secondary_button_class %>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <% @appliance_guides.each do |guide| %>
+        <div class="px-5 py-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="font-medium text-slate-950"><%= guide.title %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= enum_label(guide.status) %></p>
+            </div>
+            <%= link_to "Editar", edit_property_knowledge_block_path(@property, guide), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
+          </div>
+          <p class="mt-3 whitespace-pre-line text-sm text-slate-600"><%= truncate(guide.content, length: 260) %></p>
+          <% if guide.youtube_url.present? %>
+            <p class="mt-3 text-sm"><%= link_to "Video de YouTube", guide.youtube_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %></p>
+          <% end %>
+        </div>
+      <% end %>
+      <% if @appliance_guides.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay guías de electrodomésticos.</p>
       <% end %>
     </div>
   </section>

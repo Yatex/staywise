@@ -7,6 +7,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     @user = @account.users.create!(
       name: "Owner",
       email: "property-owner@staywise.test",
+      email_verified_at: Time.current,
       password: "password123",
       password_confirmation: "password123"
     )
@@ -16,9 +17,19 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "property show and step forms render" do
+    @property.knowledge_blocks.create!(
+      title: "Lavarropas",
+      category: "appliances",
+      content: "Usar programa rápido y agregar una ficha.",
+      status: "active"
+    )
+
     get property_path(@property)
     assert_response :success
     assert_includes @response.body, "Dudas nuevas"
+    assert_includes @response.body, "Electrodomésticos"
+    assert_includes @response.body, "Lavarropas"
+    assert_includes @response.body, new_property_knowledge_block_path(@property, category: "appliances")
 
     get edit_property_path(@property)
     assert_response :success
@@ -28,6 +39,14 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     get new_property_knowledge_block_path(@property)
     assert_response :success
     assert_includes @response.body, "Link de YouTube opcional"
+  end
+
+  test "new appliance guide preselects appliance category" do
+    get new_property_knowledge_block_path(@property, category: "appliances")
+
+    assert_response :success
+    assert_select "select[name='knowledge_block[category]'] option[selected][value='appliances']", text: "Electrodomésticos"
+    assert_includes @response.body, "Lavarropas, aire acondicionado, TV, horno"
   end
 
   test "new property form hides intro header and shows initial faq section" do

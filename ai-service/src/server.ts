@@ -115,9 +115,11 @@ const server = createServer(async (request, response) => {
         "Answer only from the provided tool results.",
         "Every reply must cite one or more evidence items from those tool results.",
         "If the guest only greets, sends the default QR/link message, or has not asked a substantive property question, respond with a friendly clarifying question. This does not require evidence.",
+        "If the guest question is ambiguous but likely refers to known property facts, ask one friendly clarifying question. This does not require evidence and must not create an owner escalation.",
+        "For ambiguous time questions like 'what time can I go?' or 'a qué hora puedo ir?', ask whether the guest means arrival/check-in or departure/checkout.",
         "Do not invent source IDs, property facts, rules, prices, availability, refunds, or policies.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
-        "If information is missing or approval is needed, escalate or propose an action requiring approval.",
+        "Escalate or propose an action requiring approval only when information is truly missing, the guest asks for an exception/approval, or a clarification cannot resolve the request.",
         "Guest-facing response_text must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
         "Owner-facing fields alert_title, alert_description, suggested_owner_action, and escalation.summary must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
         "Never use owner-facing Spanish as the guest reply when the guest wrote in another language.",
@@ -281,6 +283,8 @@ function detectLanguage(text: string) {
   if (/[\u0400-\u04FF]/u.test(text)) return "ru";
 
   const normalized = text.toLowerCase();
+  if (/\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b.*\bcheck\s*-?\s*out\b/u.test(normalized)) return "es";
+  if (/\bcheck\s*-?\s*out\b.*\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b/u.test(normalized)) return "es";
   if (/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n)\b/u.test(normalized)) return "es";
   if (/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/u.test(normalized)) return "fr";
   if (/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/u.test(normalized)) return "de";
@@ -352,7 +356,7 @@ function buildTools(toolContext: any) {
       description: "Search owner-provided FAQs and guide blocks scoped to the current property.",
       inputSchema: z.object({
         query: z.string(),
-        topic: z.enum(["faq", "house_rules", "troubleshooting", "general"]).optional(),
+        topic: z.enum(["faq", "house_rules", "appliances", "troubleshooting", "general"]).optional(),
       }),
       execute: async ({ query, topic }: { query: string; topic?: string }) => {
         const candidates = [
@@ -422,20 +426,74 @@ function buildTools(toolContext: any) {
 }
 
 function searchSources(sources: any[], query: string, topic?: string) {
-  const words = query
-    .toLowerCase()
-    .split(/[^a-z0-9áéíóúüñ]+/i)
-    .filter((word) => word.length >= 4);
+  const words = searchTokens(query);
 
   return sources
     .map((source) => {
-      const haystack = [source.label, source.value, source.source_type].join(" ").toLowerCase();
-      const score = words.filter((word) => haystack.includes(word)).length + (topic && haystack.includes(topic) ? 1 : 0);
+      const haystack = [source.label, source.value, source.category, source.source_type].join(" ").toLowerCase();
+      const sourceWords = searchTokens(haystack);
+      const score = words.reduce((total, word) => {
+        if (sourceWords.includes(word)) return total + 3;
+        if (word.length >= 5 && sourceWords.some((sourceWord) => sourceWord.length >= 5 && editDistanceAtMostOne(word, sourceWord))) {
+          return total + 2;
+        }
+        return total;
+      }, topic && haystack.includes(topic) ? 1 : 0);
       return { source, score };
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((item) => item.source);
+}
+
+function searchTokens(value: string) {
+  const stopwords = new Set([
+    "como", "cual", "cuando", "donde", "para", "porque", "quien", "algo",
+    "esta", "este", "esto", "tengo", "quiero", "puedo", "llego",
+    "what", "where", "when", "with", "this", "that", "there", "please",
+  ]);
+
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .replace(/\bq\b/g, " que ")
+        .split(/[^a-z0-9]+/i)
+        .filter((word) => word.length >= 4 && !stopwords.has(word)),
+    ),
+  );
+}
+
+function editDistanceAtMostOne(left: string, right: string) {
+  if (left === right) return true;
+  if (Math.abs(left.length - right.length) > 1) return false;
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+
+  while (i < left.length && j < right.length) {
+    if (left[i] === right[j]) {
+      i += 1;
+      j += 1;
+    } else if (edits === 0) {
+      edits += 1;
+      if (left.length > right.length) {
+        i += 1;
+      } else if (right.length > left.length) {
+        j += 1;
+      } else {
+        i += 1;
+        j += 1;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return edits + (left.length - i) + (right.length - j) <= 1;
 }
 
 function summarizeToolResults(toolResults: any[]) {

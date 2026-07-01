@@ -1,9 +1,9 @@
-<% content_for :page_title, "Alertas" %>
+<% content_for :page_title, t("ui.nav.alerts") %>
 
 <div class="space-y-6">
   <div>
-    <h2 class="text-xl font-semibold text-slate-950">Alertas y tareas</h2>
-    <p class="mt-1 text-sm text-slate-500">Situaciones detectadas por IA que necesitan atención del propietario.</p>
+    <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.alerts.title") %></h2>
+    <p class="mt-1 text-sm text-slate-500"><%= t("ui.alerts.subtitle") %></p>
   </div>
 
   <div class="<%= card_class %> overflow-hidden">
@@ -13,7 +13,7 @@
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p class="font-medium text-slate-950"><%= alert.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %> · <%= alert.guest&.display_name || "Huésped desconocido" %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %> · <%= alert.guest&.display_name || t("ui.alerts.unknown_guest") %></p>
               <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= alert.description %></p>
             </div>
             <div class="flex shrink-0 gap-2">
@@ -24,7 +24,7 @@
         <% end %>
       <% end %>
       <% if @alerts.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay alertas.</p>
+        <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.alerts.empty") %></p>
       <% end %>
     </div>
   </div>

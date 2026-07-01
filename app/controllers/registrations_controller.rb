@@ -18,8 +18,8 @@ class RegistrationsController < ApplicationController
       @account.subscriptions.create!(plan: "starter", status: "trialing", trial_ends_at: 14.days.from_now)
     end
 
-    sign_in(@user)
-    redirect_to dashboard_path, notice: "Bienvenido a Ayla Manager."
+    Notifications::EmailVerificationNotifier.call(@user)
+    redirect_to login_path, notice: "Cuenta creada. Te enviamos un email para confirmar tu cuenta antes de ingresar."
   rescue ActiveRecord::RecordInvalid => error
     @account ||= Account.new(name: registration_params[:account_name])
     @user ||= User.new(email: registration_params[:email], name: registration_params[:name])

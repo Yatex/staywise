@@ -64,8 +64,10 @@ module AI
         "Do not answer without evidence from a provided tool result.",
         "Use a warm complete sentence for direct facts; do not reply with only a raw value like a time or password.",
         "If the guest only greets, sends the default QR/link message, or has not asked a real property question, ask how you can help without creating an owner alert.",
+        "If the guest question is ambiguous but likely refers to known property facts, ask one friendly clarifying question without creating an owner alert.",
+        "For ambiguous time questions like 'what time can I go?' or 'a qué hora puedo ir?', ask whether they mean arrival/check-in or departure/checkout.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, booking changes, or access outside permitted hours.",
-        "If evidence is missing or approval is needed, escalate with a concise acknowledgement."
+        "Only escalate when information is truly missing, the guest asks for an approval/exception, or a clarification still cannot resolve the request."
       ]
     end
   end

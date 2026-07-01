@@ -3,26 +3,26 @@
     <%= image_tag "ayla-mark.svg", alt: "Ayla", class: "h-10 w-10 rounded-xl" %>
     <div>
       <p class="text-base font-semibold text-slate-950">Ayla Manager</p>
-      <p class="text-xs text-slate-500">IA para huéspedes</p>
+      <p class="text-xs text-slate-500"><%= t("ui.layout.tagline") %></p>
     </div>
   </div>
 
   <nav class="mt-6 grid grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-1">
-    <%= link_to "Panel", dashboard_path, class: nav_link_class(dashboard_path) %>
-    <%= link_to "Propiedades", properties_path, class: nav_link_class(properties_path) %>
-    <%= link_to "Conversaciones", conversations_path, class: nav_link_class(conversations_path) %>
-    <%= link_to "Alertas", alerts_path, class: nav_link_class(alerts_path) %>
-    <%= link_to "Recomendaciones", recommendations_path, class: nav_link_class(recommendations_path) %>
-    <%= link_to "Huéspedes", guests_path, class: nav_link_class(guests_path) %>
+    <%= link_to t("ui.nav.dashboard"), dashboard_path, class: nav_link_class(dashboard_path) %>
+    <%= link_to t("ui.nav.properties"), properties_path, class: nav_link_class(properties_path) %>
+    <%= link_to t("ui.nav.conversations"), conversations_path, class: nav_link_class(conversations_path) %>
+    <%= link_to t("ui.nav.alerts"), alerts_path, class: nav_link_class(alerts_path) %>
+    <%= link_to t("ui.nav.recommendations"), recommendations_path, class: nav_link_class(recommendations_path) %>
+    <%= link_to t("ui.nav.guests"), guests_path, class: nav_link_class(guests_path) %>
   </nav>
 
   <% if current_user.admin? %>
     <div class="mt-6 border-t border-slate-200 pt-5">
-      <p class="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Admin</p>
+      <p class="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400"><%= t("ui.nav.admin") %></p>
       <nav class="mt-2 grid gap-1">
-        <%= link_to "Usuarios", admin_users_path, class: nav_link_class(admin_users_path) %>
-        <%= link_to "Estadísticas", admin_stats_path, class: nav_link_class(admin_stats_path) %>
-        <%= link_to "Errores", admin_errors_path, class: nav_link_class(admin_errors_path) %>
+        <%= link_to t("ui.nav.users"), admin_users_path, class: nav_link_class(admin_users_path) %>
+        <%= link_to t("ui.nav.stats"), admin_stats_path, class: nav_link_class(admin_stats_path) %>
+        <%= link_to t("ui.nav.errors"), admin_errors_path, class: nav_link_class(admin_errors_path) %>
       </nav>
     </div>
   <% end %>

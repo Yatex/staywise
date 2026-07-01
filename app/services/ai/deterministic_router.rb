@@ -17,7 +17,7 @@ module AI
     end
 
     def call
-      intro_decision || emergency_decision || sensitive_request_decision || sensitive_fact_decision || exact_fact_decision
+      intro_decision || emergency_decision || ambiguous_time_decision || sensitive_request_decision || sensitive_fact_decision || exact_fact_decision || reusable_knowledge_decision
     end
 
     private
@@ -77,11 +77,36 @@ module AI
       )
     end
 
+    def ambiguous_time_decision
+      return unless ambiguous_time_question?
+
+      decision(
+        outcome: "ask_clarifying_question",
+        response_text: LanguageHelper.ambiguous_time_reply_for(@guest_message.body, fallback_language: @guest_language),
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { "required" => false, "category" => nil, "urgency" => nil, "summary" => nil },
+        alert_type: nil,
+        alert_title: nil,
+        alert_description: nil,
+        suggested_owner_action: nil,
+        audit: { "route" => "deterministic_ambiguous_time" }
+      )
+    end
+
+    def ambiguous_time_question?
+      return false unless @text.match?(/hora|time|heure|uhrzeit|horário|horario|ora|几点|何時|몇\s*시/)
+      return false if @text.match?(/check.?in|check.?out|checkout|entrada|ingreso|llegar|arrival|arrive|salida|salir|leave|departure/)
+
+      @text.match?(/puedo ir|puedo llegar|puedo pasar|can i go|can i come|can i arrive|what time can i|a qu[eé] hora|qué hora|que hora/)
+    end
+
     def exact_fact_decision
       fact =
-        if @text.match?(/check.?in|entrada|ingreso/)
+        if @text.match?(/check.?in|entrada|ingreso|llegar|arrival|arrive/)
           ["check_in_time", "Check-in time"]
-        elsif @text.match?(/check.?out|salida/)
+        elsif @text.match?(/check.?out|salida|salir|leave|departure/)
           ["check_out_time", "Check-out time"]
         elsif @text.match?(/address|direcci[oó]n|ubicaci[oó]n/)
           ["address", "Property address"]
@@ -102,6 +127,31 @@ module AI
         evidence: [evidence_for(source, fact.last)],
         audit: { "route" => "deterministic_exact_fact", "field" => fact.first }
       )
+    end
+
+    def reusable_knowledge_decision
+      if (faq = @registry.best_faq_for(@guest_message.body))
+        source = @registry.faq_source(faq)
+        return decision(
+          outcome: "reply",
+          response_text: faq.answer,
+          confidence: 0.86,
+          evidence: [evidence_for(source, "Best matching FAQ for the guest question.")],
+          audit: { "route" => "deterministic_fuzzy_faq", "faq_id" => faq.id }
+        )
+      end
+
+      if (block = @registry.best_knowledge_block_for(@guest_message.body))
+        source = @registry.knowledge_source(block)
+        response = [block.content, ("Video: #{block.youtube_url}" if block.youtube_url.present?)].compact.join("\n\n")
+        return decision(
+          outcome: "reply",
+          response_text: response,
+          confidence: 0.78,
+          evidence: [evidence_for(source, "Best matching guide block for the guest question.")],
+          audit: { "route" => "deterministic_fuzzy_knowledge_block", "knowledge_block_id" => block.id }
+        )
+      end
     end
 
     def sensitive_fact_decision

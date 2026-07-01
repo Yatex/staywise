@@ -1,9 +1,9 @@
-<% content_for :page_title, "Conversaciones" %>
+<% content_for :page_title, t("ui.nav.conversations") %>
 
 <div class="space-y-6">
   <div>
-    <h2 class="text-xl font-semibold text-slate-950">Conversaciones de huéspedes</h2>
-    <p class="mt-1 text-sm text-slate-500">Conversaciones de WhatsApp con respuestas de IA, escalamiento al propietario y contexto del huésped.</p>
+    <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.conversations.title") %></h2>
+    <p class="mt-1 text-sm text-slate-500"><%= t("ui.conversations.subtitle") %></p>
   </div>
 
   <div class="<%= card_class %> overflow-hidden">
@@ -13,11 +13,11 @@
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= conversation.property.display_name %> · <%= pluralize(conversation.messages.count, "mensaje", "mensajes") %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= conversation.property.display_name %> · <%= t("ui.conversations.messages_count", count: conversation.messages.count) %></p>
             </div>
             <div class="flex items-center gap-2">
               <% unless conversation.ai_enabled? %>
-                <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">IA apagada</span>
+                <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"><%= t("ui.conversations.ai_off") %></span>
               <% end %>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
             </div>
@@ -25,7 +25,7 @@
         <% end %>
       <% end %>
       <% if @conversations.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay conversaciones.</p>
+        <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.conversations.empty") %></p>
       <% end %>
     </div>
   </div>

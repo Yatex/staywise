@@ -1,30 +1,30 @@
-<% content_for :page_title, "Propiedades" %>
+<% content_for :page_title, t("ui.properties.title") %>
 
 <div class="space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <div>
-      <h2 class="text-xl font-semibold text-slate-950">Propiedades</h2>
-      <p class="mt-1 text-sm text-slate-500">Cada propiedad tiene su propia guía, recomendaciones, FAQs y conversaciones.</p>
+      <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.properties.title") %></h2>
+      <p class="mt-1 text-sm text-slate-500"><%= t("ui.properties.subtitle") %></p>
     </div>
-    <%= link_to "Agregar propiedad", new_property_path, class: primary_button_class %>
+    <%= link_to t("ui.properties.add"), new_property_path, class: primary_button_class %>
   </div>
 
   <%= form_with url: properties_path, method: :get, class: "#{card_class} grid gap-4 p-4 md:grid-cols-[1fr_180px_180px_auto]" do |form| %>
     <div>
-      <%= form.label :q, "Buscar", class: label_class %>
-      <%= form.search_field :q, value: params[:q], class: field_class, placeholder: "Nombre, alias o dirección" %>
+      <%= form.label :q, t("ui.actions.search"), class: label_class %>
+      <%= form.search_field :q, value: params[:q], class: field_class, placeholder: t("ui.properties.search_placeholder") %>
     </div>
     <div>
       <%= form.label :status, class: label_class %>
-      <%= form.select :status, [["Todos", "all"]] + Property::STATUSES.map { |status| [enum_label(status), status] }, { selected: params[:status].presence || "all" }, class: field_class %>
+      <%= form.select :status, [[t("ui.common.all"), "all"]] + Property::STATUSES.map { |status| [enum_label(status), status] }, { selected: params[:status].presence || "all" }, class: field_class %>
     </div>
     <div>
       <%= form.label :tag, class: label_class %>
-      <%= form.select :tag, [["Todas las etiquetas", ""]] + @available_tags.map { |tag| [tag, tag] }, { selected: params[:tag] }, class: field_class %>
+      <%= form.select :tag, [[t("ui.properties.all_tags"), ""]] + @available_tags.map { |tag| [tag, tag] }, { selected: params[:tag] }, class: field_class %>
     </div>
     <div class="flex items-end gap-2">
-      <%= form.submit "Filtrar", class: primary_button_class %>
-      <%= link_to "Limpiar", properties_path, class: secondary_button_class %>
+      <%= form.submit t("ui.actions.filter"), class: primary_button_class %>
+      <%= link_to t("ui.actions.clear"), properties_path, class: secondary_button_class %>
     </div>
   <% end %>
 
@@ -39,7 +39,7 @@
           </div>
           <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(property.status) %>"><%= enum_label(property.status) %></span>
         </div>
-        <p class="mt-4 text-sm text-slate-500"><%= property.address.presence || "Dirección sin configurar" %></p>
+        <p class="mt-4 text-sm text-slate-500"><%= property.address.presence || t("ui.properties.no_address") %></p>
         <% if property.tags.any? %>
           <div class="mt-3 flex flex-wrap gap-2">
             <% property.tags.each do |tag| %>
@@ -50,25 +50,25 @@
         <div class="mt-5 grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg bg-slate-50 p-3">
             <p class="text-lg font-semibold text-slate-950"><%= property.knowledge_blocks.count %></p>
-            <p class="text-xs text-slate-500">Guía</p>
+            <p class="text-xs text-slate-500"><%= t("ui.properties.guide_count") %></p>
           </div>
           <div class="rounded-lg bg-slate-50 p-3">
             <p class="text-lg font-semibold text-slate-950"><%= property.recommendations.count %></p>
-            <p class="text-xs text-slate-500">Lugares</p>
+            <p class="text-xs text-slate-500"><%= t("ui.properties.places_count") %></p>
           </div>
           <div class="rounded-lg bg-slate-50 p-3">
             <p class="text-lg font-semibold text-slate-950"><%= property.alerts.operational.open.count %></p>
-            <p class="text-xs text-slate-500">Alertas</p>
+            <p class="text-xs text-slate-500"><%= t("ui.nav.alerts") %></p>
           </div>
         </div>
         <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4" data-controller="clipboard" data-clipboard-text-value="<%= whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(property, format: :svg) %>">
-          <%= link_to "Abrir", property_path(property), class: primary_button_class %>
+          <%= link_to t("ui.actions.open"), property_path(property), class: primary_button_class %>
           <% if whatsapp_link.present? %>
-            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
-            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
-            <%= link_to "Descargar QR", whatsapp_qr_property_path(property, format: :svg, download: 1), class: secondary_button_class %>
+            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText"><%= t("ui.properties.copy_whatsapp_link") %></button>
+            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage"><%= t("ui.properties.copy_qr") %></button>
+            <%= link_to t("ui.properties.download_qr"), whatsapp_qr_property_path(property, format: :svg, download: 1), class: secondary_button_class %>
           <% else %>
-            <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">WhatsApp sin configurar</span>
+            <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"><%= t("ui.properties.whatsapp_not_configured") %></span>
           <% end %>
         </div>
       </article>
@@ -77,9 +77,9 @@
 
   <% if @properties.blank? %>
     <div class="<%= card_class %> p-8 text-center">
-      <h3 class="text-lg font-semibold text-slate-950">Agregá tu primera propiedad</h3>
-      <p class="mx-auto mt-2 max-w-md text-sm text-slate-500">Empezá con la información que más preguntan los huéspedes: acceso, WiFi, checkout y ayuda local.</p>
-      <%= link_to "Crear propiedad", new_property_path, class: "#{primary_button_class} mt-5" %>
+      <h3 class="text-lg font-semibold text-slate-950"><%= t("ui.properties.empty_title") %></h3>
+      <p class="mx-auto mt-2 max-w-md text-sm text-slate-500"><%= t("ui.properties.empty_body") %></p>
+      <%= link_to t("ui.properties.create"), new_property_path, class: "#{primary_button_class} mt-5" %>
     </div>
   <% end %>
 </div>

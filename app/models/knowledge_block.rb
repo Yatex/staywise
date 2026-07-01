@@ -3,6 +3,7 @@ class KnowledgeBlock < ApplicationRecord
     check_in
     checkout
     wifi
+    appliances
     house_rules
     amenities
     building_access

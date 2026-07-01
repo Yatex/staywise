@@ -12,7 +12,7 @@ class KnowledgeBlocksController < ApplicationController
     @knowledge_block = if source
       @property.knowledge_blocks.new(source.attributes.slice("title", "category", "content", "status", "youtube_url"))
     else
-      @property.knowledge_blocks.new(status: "active")
+      @property.knowledge_blocks.new(status: "active", category: default_category)
     end
   end
 
@@ -65,5 +65,10 @@ class KnowledgeBlocksController < ApplicationController
 
   def knowledge_block_params
     params.require(:knowledge_block).permit(:title, :category, :content, :status, :youtube_url)
+  end
+
+  def default_category
+    category = params[:category].to_s
+    KnowledgeBlock::CATEGORIES.include?(category) ? category : nil
   end
 end
