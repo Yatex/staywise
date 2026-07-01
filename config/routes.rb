@@ -60,6 +60,7 @@ Rails.application.routes.draw do
 
   namespace :webhooks do
     post :whatsapp, to: "whatsapp#create"
+    post :whatsapp_status, to: "whatsapp_status#create"
     post :stripe, to: "stripe#create"
   end
 

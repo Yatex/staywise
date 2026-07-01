@@ -11,11 +11,13 @@ module Whatsapp
         uri = URI(format(TWILIO_MESSAGES_URL, sid: account_sid))
         request = Net::HTTP::Post.new(uri)
         request.basic_auth(account_sid, auth_token)
-        request.set_form_data(
+        payload = {
           "From" => formatted(from_number),
           "To" => formatted(to),
           "Body" => body
-        )
+        }
+        payload["StatusCallback"] = status_callback_url if status_callback_url.present?
+        request.set_form_data(payload)
 
         response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) do |http|
           http.request(request)
@@ -28,14 +30,20 @@ module Whatsapp
             message: "Twilio message delivery failed with status #{response.code}",
             context: delivery_context(to: to, body: body).merge(status: response.code, response_body: response.body.to_s.first(1_000))
           )
-          return false
+          return DeliveryResult.new(success?: false, error: "Twilio message delivery failed with status #{response.code}", raw_response: response.body.to_s.first(1_000))
         end
 
-        true
+        body_json = JSON.parse(response.body)
+        DeliveryResult.new(
+          success?: true,
+          provider_message_id: body_json["sid"],
+          provider_status: body_json["status"],
+          raw_response: body_json.slice("sid", "status", "to", "from", "error_code", "error_message")
+        )
       rescue StandardError => error
         Rails.logger.error("[twilio-provider] #{error.class}: #{error.message}")
         ErrorReporter.report(error, source: "twilio_provider", severity: "critical", context: delivery_context(to: to, body: body))
-        false
+        DeliveryResult.new(success?: false, error: error.message)
       end
 
       private
@@ -58,6 +66,13 @@ module Whatsapp
 
       def formatted(number)
         number.to_s.start_with?("whatsapp:") ? number : "whatsapp:#{number}"
+      end
+
+      def status_callback_url
+        app_host = ENV["APP_HOST"].to_s.delete_suffix("/")
+        return if app_host.blank?
+
+        "#{app_host}/webhooks/whatsapp_status"
       end
 
       def delivery_context(to:, body:)

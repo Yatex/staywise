@@ -69,10 +69,10 @@ module Whatsapp
       return false if decision.response_text.blank?
 
       body = ai_response_body(conversation, decision)
-      delivered = @provider.send_message(to: guest.phone_number, body: body)
-      return false unless delivered
+      delivery = @provider.send_message(to: guest.phone_number, body: body)
+      return false unless delivery_success?(delivery)
 
-      conversation.messages.create!(sender: "ai", channel: "whatsapp", body: body, metadata: decision.to_h)
+      conversation.messages.create!(sender: "ai", channel: "whatsapp", body: body, metadata: decision.to_h.merge(delivery_metadata(delivery)))
       true
     end
 
@@ -87,7 +87,8 @@ module Whatsapp
     end
 
     def missing_property_context(parsed)
-      replied = @provider.send_message(to: parsed.from, body: MISSING_PROPERTY_CONTEXT_REPLY)
+      delivery = @provider.send_message(to: parsed.from, body: MISSING_PROPERTY_CONTEXT_REPLY)
+      replied = delivery_success?(delivery)
       Rails.logger.info("[whatsapp-routing] missing_property_context from=#{parsed.from} replied=#{replied}")
       {
         conversation: nil,
@@ -97,6 +98,21 @@ module Whatsapp
         replied: replied,
         error: "missing_property_context"
       }
+    end
+
+    def delivery_success?(delivery)
+      delivery.respond_to?(:success?) ? delivery.success? : !!delivery
+    end
+
+    def delivery_metadata(delivery)
+      return {} unless delivery.respond_to?(:provider_message_id)
+
+      {
+        "provider_message_id" => delivery.provider_message_id,
+        "provider_status" => delivery.provider_status,
+        "delivery_status" => delivery.provider_status.presence || "accepted_by_provider",
+        "delivery_status_updated_at" => Time.current.iso8601
+      }.compact
     end
   end
 end

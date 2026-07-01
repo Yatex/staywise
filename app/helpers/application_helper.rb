@@ -164,6 +164,29 @@ module ApplicationHelper
     value.in_time_zone.to_date.to_fs(:long)
   end
 
+  def whatsapp_delivery_label(message)
+    status = message.metadata["delivery_status"].presence || message.metadata["provider_status"].presence
+
+    case status
+    when "delivered"
+      "Entregado por WhatsApp"
+    when "sent"
+      "Enviado por WhatsApp"
+    when "queued", "accepted", "accepted_by_provider"
+      "Aceptado por Twilio"
+    when "failed"
+      "Falló el envío por WhatsApp"
+    when "undelivered"
+      "WhatsApp no pudo entregarlo"
+    else
+      "Enviado desde Ayla"
+    end
+  end
+
+  def whatsapp_delivery_failed?(message)
+    message.metadata["delivery_status"].to_s.in?(%w[failed undelivered])
+  end
+
   def card_class
     "rounded-xl border border-slate-200 bg-white shadow-sm"
   end

@@ -1,6 +1,12 @@
 require "test_helper"
 
 class ConversationsControllerTest < ActionDispatch::IntegrationTest
+  class SuccessfulProvider < Whatsapp::Providers::BaseProvider
+    def send_message(to:, body:)
+      DeliveryResult.new(success?: true, provider_message_id: "SM_owner_reply", provider_status: "queued")
+    end
+  end
+
   class FailingProvider < Whatsapp::Providers::BaseProvider
     def send_message(to:, body:)
       false
@@ -26,12 +32,14 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "owner can reply to guest through ayla whatsapp number" do
-    assert_difference -> { @conversation.messages.where(sender: "owner").count }, 1 do
-      post reply_conversation_path(@conversation), params: {
-        reply: {
-          body: "Hola, podemos coordinar late checkout hasta las 12:00."
+    Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
+      assert_difference -> { @conversation.messages.where(sender: "owner").count }, 1 do
+        post reply_conversation_path(@conversation), params: {
+          reply: {
+            body: "Hola, podemos coordinar late checkout hasta las 12:00."
+          }
         }
-      }
+      end
     end
 
     owner_message = @conversation.messages.where(sender: "owner").last
@@ -41,6 +49,21 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Hola, podemos coordinar late checkout hasta las 12:00.", owner_message.body
     assert_equal @user.id, owner_message.metadata["sent_by_user_id"]
     assert_equal "ayla_dashboard", owner_message.metadata["sent_via"]
+    assert_equal "SM_owner_reply", owner_message.metadata["provider_message_id"]
+    assert_equal "queued", owner_message.metadata["delivery_status"]
+  end
+
+  test "null whatsapp provider does not store owner reply as sent" do
+    assert_no_difference -> { @conversation.messages.count } do
+      post reply_conversation_path(@conversation), params: {
+        reply: {
+          body: "Esto no debería guardarse como enviado."
+        }
+      }
+    end
+
+    assert_redirected_to conversation_path(@conversation)
+    assert_equal "WhatsApp no está conectado. Configurá Twilio antes de responder desde Ayla.", flash[:alert]
   end
 
   test "blank owner reply is rejected" do

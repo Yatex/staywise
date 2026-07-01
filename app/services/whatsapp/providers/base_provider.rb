@@ -1,6 +1,8 @@
 module Whatsapp
   module Providers
     class BaseProvider
+      DeliveryResult = Struct.new(:success?, :provider_message_id, :provider_status, :error, :raw_response, keyword_init: true)
+
       def send_message(to:, body:)
         raise NotImplementedError
       end
