@@ -136,6 +136,42 @@ module AI
       }
     end
 
+    def stay_facts(requested_fields)
+      Array(requested_fields).filter_map do |field|
+        case field.to_s
+        when "reservation_dates", "reservation_status"
+          reservation_fact(field)
+        else
+          property_fact(field)
+        end
+      end
+    end
+
+    def search_property_knowledge(query:, topic: nil, limit: 5)
+      candidates = @property.faqs.active.map { |faq| faq_source(faq) } +
+        @property.knowledge_blocks.active.map { |block| knowledge_source(block) }
+
+      search_sources(candidates, query, topic: topic).first(limit)
+    end
+
+    def approved_recommendations(category:, limit: 5)
+      normalized_category = normalize_recommendation_category(category)
+      scope = @property.recommendations.order(:category, :name)
+      scope = scope.where(category: normalized_category) if normalized_category.present?
+
+      scope.limit(limit).map { |recommendation| recommendation_source(recommendation) }
+    end
+
+    def access_instructions
+      return { denied: true, reason: "Sensitive access is not authorized for this guest/reservation window." } unless @authorization.sensitive_access_authorized?
+
+      authorized_sensitive_facts.values
+    end
+
+    def property_policy(policy_type)
+      policies[policy_type.to_s] || source("policy", "policy:#{policy_type}", policy_type, "Escalate to the host for approval.")
+    end
+
     private
 
     def authorized_sensitive_facts
@@ -175,6 +211,33 @@ module AI
       return if scored.second && scored.second[:score] == scored.first[:score]
 
       scored.first[:record]
+    end
+
+    def search_sources(sources, query, topic: nil)
+      message_tokens = search_tokens(query)
+      return [] if message_tokens.blank?
+
+      sources
+        .map do |source|
+          haystack = [source["label"], source["value"], source["category"], source["source_type"]].compact.join(" ")
+          score = match_score(message_tokens, search_tokens(haystack))
+          score += 1 if topic.present? && haystack.downcase.include?(topic.to_s.downcase)
+          { source: source, score: score }
+        end
+        .select { |item| item[:score].positive? }
+        .sort_by { |item| -item[:score] }
+        .map { |item| item[:source] }
+    end
+
+    def normalize_recommendation_category(category)
+      case category.to_s
+      when "breakfast", "coffee"
+        "cafe"
+      when "activities"
+        "attraction"
+      else
+        category.to_s.presence
+      end
     end
 
     def match_score(message_tokens, source_tokens)

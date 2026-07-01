@@ -240,6 +240,7 @@ function safeBaseContext(payload: any) {
     owner_instructions: payload?.owner_instructions,
     conversation_history: payload?.conversation_history,
     safety_rules: payload?.safety_rules,
+    tool_endpoint: payload?.tool_endpoint,
   };
 }
 
@@ -313,7 +314,10 @@ async function collectToolResults(payload: any) {
       "Do not provide a final guest answer. Return a short retrieval summary after tool calls.",
     ].join("\n"),
     prompt: JSON.stringify(safeBaseContext(payload)),
-    tools: buildTools(payload?.tool_context || {}),
+    tools: buildTools({
+      ...(payload?.tool_context || {}),
+      tool_endpoint: payload?.tool_endpoint,
+    }),
     stopWhen: stepCountIs(3),
   });
 
@@ -325,6 +329,9 @@ async function collectToolResults(payload: any) {
 }
 
 function buildTools(toolContext: any) {
+  const remoteTools = buildRemoteTools(toolContext?.tool_endpoint);
+  if (remoteTools) return remoteTools;
+
   return {
     get_stay_facts: {
       description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
@@ -423,6 +430,111 @@ function buildTools(toolContext: any) {
       }),
     },
   };
+}
+
+function buildRemoteTools(toolEndpoint: any) {
+  if (!toolEndpoint?.base_url || !toolEndpoint?.conversation_id) return null;
+
+  return {
+    get_stay_facts: {
+      description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
+      inputSchema: z.object({
+        requested_fields: z.array(
+          z.enum([
+            "check_in_time",
+            "check_out_time",
+            "address",
+            "parking",
+            "rules",
+            "reservation_dates",
+            "reservation_status",
+          ]),
+        ),
+      }),
+      execute: async (input: { requested_fields: string[] }) =>
+        callRailsTool(toolEndpoint, "stay_facts", input),
+    },
+    search_property_knowledge: {
+      description: "Search owner-provided FAQs and guide blocks scoped to the current property. Use this for approximate wording, typos, amenities, appliance guides, and general property questions.",
+      inputSchema: z.object({
+        query: z.string(),
+        topic: z.enum(["faq", "house_rules", "appliances", "troubleshooting", "general"]).optional(),
+      }),
+      execute: async (input: { query: string; topic?: string }) =>
+        callRailsTool(toolEndpoint, "search_property_knowledge", input),
+    },
+    get_approved_recommendations: {
+      description: "Get owner-approved local recommendations scoped to the current property.",
+      inputSchema: z.object({
+        category: z.enum([
+          "restaurant",
+          "breakfast",
+          "coffee",
+          "pharmacy",
+          "transport",
+          "supermarket",
+          "activities",
+          "other",
+        ]),
+      }),
+      execute: async (input: { category: string }) =>
+        callRailsTool(toolEndpoint, "approved_recommendations", input),
+    },
+    get_access_instructions: {
+      description: "Get sensitive access instructions only when Rails has authorized disclosure for this guest and reservation window.",
+      inputSchema: z.object({}),
+      execute: async () => callRailsTool(toolEndpoint, "access_instructions", {}),
+    },
+    get_property_policy: {
+      description: "Get owner policy scoped to this account/property. Policies do not grant approval by themselves.",
+      inputSchema: z.object({
+        policy_type: z.enum(["early_checkin", "late_checkout", "refund", "maintenance", "access"]),
+      }),
+      execute: async (input: { policy_type: string }) =>
+        callRailsTool(toolEndpoint, "property_policy", input),
+    },
+    create_escalation_draft: {
+      description: "Create an escalation draft. This does not write to the database; Rails decides whether to create the real alert.",
+      inputSchema: z.object({
+        category: z.string(),
+        urgency: z.string(),
+        summary: z.string(),
+      }),
+      execute: async (input: { category: string; urgency: string; summary: string }) =>
+        callRailsTool(toolEndpoint, "escalation_draft", input),
+    },
+  };
+}
+
+async function callRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>) {
+  const url = new URL(`/internal/ai/tools/${toolName}`, toolEndpoint.base_url);
+  const token = process.env.AI_TOOLS_TOKEN || process.env.AI_SERVICE_TOKEN;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (token) headers.authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      conversation_id: toolEndpoint.conversation_id,
+      message_id: toolEndpoint.message_id,
+      ...input,
+    }),
+  });
+
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    return {
+      error: "tool_request_failed",
+      status: response.status,
+      body,
+    };
+  }
+
+  return body;
 }
 
 function searchSources(sources: any[], query: string, topic?: string) {

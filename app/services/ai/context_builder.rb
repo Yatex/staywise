@@ -23,6 +23,7 @@ module AI
         },
         owner_instructions: owner_instructions_payload,
         conversation_history: conversation_history_payload,
+        tool_endpoint: tool_endpoint_payload,
         safety_rules: safety_rules,
         tool_context: registry.tool_context
       }
@@ -55,6 +56,17 @@ module AI
       @conversation.messages.order(created_at: :desc).limit(4).reverse.map do |message|
         message.slice(:sender, :body, :channel, :created_at)
       end
+    end
+
+    def tool_endpoint_payload
+      base_url = ENV["AI_TOOLS_BASE_URL"].presence || ENV["APP_HOST"].presence
+      return if base_url.blank?
+
+      {
+        base_url: base_url,
+        conversation_id: @conversation.id,
+        message_id: @guest_message.id
+      }
     end
 
     def safety_rules

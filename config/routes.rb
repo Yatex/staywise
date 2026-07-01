@@ -59,6 +59,19 @@ Rails.application.routes.draw do
     post :stripe, to: "stripe#create"
   end
 
+  namespace :internal do
+    namespace :ai do
+      scope "tools", controller: :tools do
+        post :stay_facts
+        post :search_property_knowledge
+        post :approved_recommendations
+        post :access_instructions
+        post :property_policy
+        post :escalation_draft
+      end
+    end
+  end
+
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
