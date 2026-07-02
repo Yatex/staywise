@@ -269,7 +269,7 @@ module AI
     end
 
     def persist_audit(payload, decision)
-      AiDecisionLog.create!(
+      AIDecisionLog.create!(
         account: @property.account,
         property: @property,
         guest: @conversation.guest,

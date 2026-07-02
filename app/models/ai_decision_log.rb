@@ -1,4 +1,4 @@
-class AiDecisionLog < ApplicationRecord
+class AIDecisionLog < ApplicationRecord
   belongs_to :account, optional: true
   belongs_to :property, optional: true
   belongs_to :guest, optional: true
