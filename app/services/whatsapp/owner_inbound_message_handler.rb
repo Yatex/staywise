@@ -15,9 +15,11 @@ module Whatsapp
 
     def call
       session = active_session
-      return no_active_session unless session
 
       body = @parsed.body.to_s.strip
+      return owner_assistant_response(body) if OwnerAssistant.query?(body)
+      return no_active_session unless session
+
       return hold_session(session) if body.match?(COMMAND_HOLD)
       return send_alert_detail(session) if session.state == "awaiting_ack" || body.match?(COMMAND_OK)
 
@@ -44,6 +46,12 @@ module Whatsapp
       end
 
       { owner_message: true, handled: true, session: nil, replied: true }
+    end
+
+    def owner_assistant_response(body)
+      replied = OwnerAssistant.call(owner_whatsapp_number: @owner_whatsapp_number, body: body, provider: @provider)
+
+      { owner_message: true, handled: true, session: nil, replied: replied, owner_assistant: true }
     end
 
     def hold_session(session)

@@ -401,6 +401,72 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "awaiting_ack", second.session.reload.state
   end
 
+  test "owner can ask assistant stats without answering the active guest alert" do
+    owner_phone = "+15559990004"
+    @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
+    guest = @account.guests.create!(phone_number: "+15550000121", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "escalated")
+    conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "¿Puedo invitar gente a la pileta?")
+    alert = conversation.alerts.create!(
+      property: @property,
+      guest: guest,
+      alert_type: "unknown_question",
+      title: "Pregunta pendiente",
+      description: "¿Puedo invitar gente a la pileta?",
+      status: "in_progress"
+    )
+    session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_answer")
+    provider = RecordingProvider.new
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:#{owner_phone}",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "Ayla, ¿cómo vienen las consultas estos días?"
+      },
+      provider: provider
+    ).call
+
+    assert result.fetch(:owner_assistant)
+    assert_equal "awaiting_answer", session.reload.state
+    assert_equal 0, conversation.messages.where(sender: "owner").count
+    assert_includes provider.sent_messages.last.fetch(:body), "Resumen de Ayla"
+    assert_includes provider.sent_messages.last.fetch(:body), "Consultas de huéspedes: 1"
+    assert_includes provider.sent_messages.last.fetch(:body), "Alertas creadas: 1"
+    assert_includes provider.sent_messages.last.fetch(:body), "Pendientes ahora:"
+  end
+
+  test "owner assistant can list pending alerts" do
+    owner_phone = "+15559990005"
+    @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
+    guest = @account.guests.create!(phone_number: "+15550000122", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "escalated")
+    alert = conversation.alerts.create!(
+      property: @property,
+      guest: guest,
+      alert_type: "maintenance_issue",
+      title: "Problema de aire",
+      description: "El aire acondicionado no prende",
+      status: "open",
+      priority: "high"
+    )
+    @account.owner_whatsapp_sessions.create!(alert: alert, state: "queued")
+    provider = RecordingProvider.new
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:#{owner_phone}",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "pendientes"
+      },
+      provider: provider
+    ).call
+
+    assert result.fetch(:owner_assistant)
+    assert_includes provider.sent_messages.last.fetch(:body), "Pendientes ahora:"
+    assert_includes provider.sent_messages.last.fetch(:body), "El aire acondicionado no prende"
+  end
+
   private
 
   def with_ai_decision(decision)
