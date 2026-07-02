@@ -18,14 +18,16 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "creates guest conversation messages and alert from incoming whatsapp payload" do
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000002",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference} Can I get late checkout?"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_late_checkout_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000002",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} Can I get late checkout?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     conversation = result.fetch(:conversation)
 
@@ -116,14 +118,16 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   test "first concrete ai answer also discloses that chat is shared with owner" do
     @property.update!(checkout_time: "11:00")
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000009",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference} Y el check out?"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_checkout_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000009",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} Y el check out?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     body = result.fetch(:conversation).messages.where(sender: "ai").last.body
 
@@ -145,14 +149,16 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       provider: Whatsapp::Providers::NullProvider.new
     ).call
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => phone_number,
-        "To" => "whatsapp:+15550009999",
-        "Body" => "Y el check out?"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_checkout_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => phone_number,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "Y el check out?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     body = result.fetch(:conversation).messages.where(sender: "ai").last.body
 
@@ -198,17 +204,59 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     guest = @account.guests.create!(phone_number: "+15550000007", property: @property)
     guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000007",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "Can I get late checkout?"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_late_checkout_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000007",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "Can I get late checkout?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     assert result.fetch(:replied)
     assert_equal @property, result.fetch(:conversation).property
     assert_equal "late_checkout_request", result.fetch(:conversation).alerts.first.alert_type
+  end
+
+  private
+
+  def with_ai_decision(decision)
+    AI::DecisionService.stub(:call, decision) { yield }
+  end
+
+  def ai_checkout_decision
+    AI::DecisionResult.from_hash(
+      decision: "reply",
+      language: "es",
+      message_body: "El checkout es a las 11:00.",
+      intent_summary: "checkout",
+      detected_intents: [{ type: "checkout", status: "answered" }],
+      evidence_ids: ["property.check_out_time"],
+      required_capabilities: [],
+      proposed_action: nil,
+      escalation: { required: false, reason_code: nil, summary_for_host: nil },
+      missing_information: [],
+      safety_flags: [],
+      confidence: 0.95
+    )
+  end
+
+  def ai_late_checkout_decision
+    AI::DecisionResult.from_hash(
+      decision: "propose_action",
+      language: "en",
+      message_body: "Late checkout depends on availability and requires host confirmation. I have sent your request.",
+      intent_summary: "late checkout",
+      detected_intents: [{ type: "late_checkout", status: "requires_host_approval" }],
+      evidence_ids: [],
+      required_capabilities: [],
+      proposed_action: { type: "request_late_checkout", payload: {} },
+      escalation: { required: true, reason_code: "booking_change", summary_for_host: "Guest asked for late checkout." },
+      missing_information: [],
+      safety_flags: [],
+      confidence: 0.9
+    )
   end
 end

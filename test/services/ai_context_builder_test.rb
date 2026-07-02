@@ -19,7 +19,12 @@ class AiContextBuilderTest < ActiveSupport::TestCase
     payload = AI::ContextBuilder.new(conversation: @conversation, guest_message: @message).call
 
     assert_equal "https://aylamanager.test", payload.dig(:tool_endpoint, :base_url)
-    assert_equal @conversation.id, payload.dig(:tool_endpoint, :conversation_id)
-    assert_equal @message.id, payload.dig(:tool_endpoint, :message_id)
+    assert payload.dig(:tool_endpoint, :decision_context_id).present?
+    assert_nil payload.dig(:tool_endpoint, :conversation_id)
+    assert_nil payload.dig(:tool_endpoint, :message_id)
+
+    resolved = AI::DecisionContext.resolve(payload.dig(:tool_endpoint, :decision_context_id))
+    assert_equal @conversation, resolved.fetch(:conversation)
+    assert_equal @message, resolved.fetch(:guest_message)
   end
 end

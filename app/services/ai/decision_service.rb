@@ -36,6 +36,12 @@ module AI
         end
       end
 
+      unless SafetyConfig.tool_first_flow_enabled?(account: @property.account, property: @property)
+        fallback = local_decision(payload)
+        audit("tool_first_disabled", fallback, started_at)
+        return fallback
+      end
+
       if (decision = remote_decision(payload))
         validation = DecisionValidator.new(conversation: @conversation, decision: decision, source: "ai").call
         if validation.valid?
@@ -113,8 +119,15 @@ module AI
 
     def safe_escalation(description)
       DecisionResult.from_hash(
-        outcome: "escalate",
-        response_text: guest_safe_ack,
+        decision: "escalate",
+        language: @guest_language,
+        message_body: guest_safe_ack,
+        intent_summary: description,
+        detected_intents: [{ type: "unknown", status: "escalated" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        missing_information: [@guest_message.body],
+        safety_flags: ["fallback"],
         should_reply: true,
         confidence: 1.0,
         evidence: [],
@@ -122,8 +135,11 @@ module AI
           required: true,
           category: "unknown",
           urgency: "medium",
-          summary: description
+          reason_code: "unknown_question",
+          summary: description,
+          summary_for_host: description
         },
+        proposed_action: nil,
         alert_type: "unknown_question",
         alert_title: "La pregunta necesita respuesta del anfitrión",
         alert_description: @guest_message.body,
@@ -236,7 +252,10 @@ module AI
         route: route,
         outcome: decision.outcome,
         alert_type: decision.alert_type,
-        evidence_ids: decision.evidence.map { |item| item["source_id"] },
+        evidence_ids: decision.evidence_ids.presence || decision.evidence.map { |item| item["evidence_id"].presence || item["source_id"] },
+        detected_intents: decision.detected_intents,
+        missing_information: decision.missing_information,
+        safety_flags: decision.safety_flags,
         validator_result: validator_result,
         rejection_reason: rejection_reason,
         replied_candidate: decision.should_reply,
@@ -246,6 +265,33 @@ module AI
       }.compact
 
       Rails.logger.info("[ai-audit] #{payload.to_json}")
+      persist_audit(payload, decision)
+    end
+
+    def persist_audit(payload, decision)
+      AiDecisionLog.create!(
+        account: @property.account,
+        property: @property,
+        guest: @conversation.guest,
+        conversation: @conversation,
+        message: @guest_message,
+        route: payload.fetch(:route),
+        decision: decision.outcome,
+        language: decision.language || @guest_language,
+        validator_result: payload[:validator_result],
+        rejection_reason: payload[:rejection_reason],
+        escalation_required: decision.escalation_required,
+        replied_candidate: decision.should_reply,
+        latency_ms: payload[:latency_ms],
+        model: payload[:model],
+        detected_intents: decision.detected_intents,
+        evidence_ids: payload[:evidence_ids],
+        missing_information: decision.missing_information,
+        safety_flags: decision.safety_flags,
+        payload: payload
+      )
+    rescue StandardError => error
+      Rails.logger.warn("[ai-audit] persist_failed #{error.class}: #{error.message}")
     end
 
     def guest_safe_ack(text = @guest_message.body)

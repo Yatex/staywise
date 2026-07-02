@@ -25,7 +25,7 @@ module AI
         conversation_history: conversation_history_payload,
         tool_endpoint: tool_endpoint_payload,
         safety_rules: safety_rules,
-        tool_context: registry.tool_context
+        tool_context: tool_endpoint_payload.present? ? nil : registry.tool_context
       }
     end
 
@@ -64,8 +64,7 @@ module AI
 
       {
         base_url: base_url,
-        conversation_id: @conversation.id,
-        message_id: @guest_message.id
+        decision_context_id: DecisionContext.issue(conversation: @conversation, guest_message: @guest_message)
       }
     end
 

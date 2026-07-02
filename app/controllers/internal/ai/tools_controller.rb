@@ -4,6 +4,10 @@ module Internal
       before_action :authenticate_ai_service!
       before_action :set_conversation
 
+      def guest_context
+        render json: registry.guest_context(query: params[:query])
+      end
+
       def stay_facts
         render json: registry.stay_facts(params[:requested_fields])
       end
@@ -50,13 +54,15 @@ module Internal
       end
 
       def set_conversation
-        @conversation = Conversation.includes(:guest, :property).find(params[:conversation_id])
-      rescue ActiveRecord::RecordNotFound
-        render json: { error: "conversation_not_found" }, status: :not_found
+        resolved = ::AI::DecisionContext.resolve(params.require(:decision_context_id))
+        @conversation = resolved.fetch(:conversation)
+        @guest_message = resolved.fetch(:guest_message)
+      rescue ::AI::DecisionContext::InvalidContext, ActionController::ParameterMissing
+        render json: { error: "invalid_decision_context" }, status: :unauthorized
       end
 
       def registry
-        @registry ||= ::AI::SourceRegistry.new(conversation: @conversation)
+        @registry ||= ::AI::SourceRegistry.new(conversation: @conversation, guest_message: @guest_message)
       end
     end
   end

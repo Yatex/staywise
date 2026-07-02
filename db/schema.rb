@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_01_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_02_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -35,6 +35,38 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_01_150000) do
     t.jsonb "ai_escalation_rules", default: {}, null: false
     t.jsonb "ai_automation_settings", default: {}, null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "ai_decision_logs", force: :cascade do |t|
+    t.bigint "account_id"
+    t.bigint "property_id"
+    t.bigint "guest_id"
+    t.bigint "conversation_id"
+    t.bigint "message_id"
+    t.string "route", null: false
+    t.string "decision"
+    t.string "language"
+    t.string "validator_result"
+    t.text "rejection_reason"
+    t.boolean "escalation_required", default: false, null: false
+    t.boolean "replied_candidate", default: false, null: false
+    t.integer "latency_ms"
+    t.string "model"
+    t.jsonb "detected_intents", default: [], null: false
+    t.jsonb "evidence_ids", default: [], null: false
+    t.jsonb "missing_information", default: [], null: false
+    t.jsonb "safety_flags", default: [], null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_ai_decision_logs_on_account_id"
+    t.index ["conversation_id"], name: "index_ai_decision_logs_on_conversation_id"
+    t.index ["guest_id"], name: "index_ai_decision_logs_on_guest_id"
+    t.index ["message_id"], name: "index_ai_decision_logs_on_message_id"
+    t.index ["property_id", "created_at"], name: "index_ai_decision_logs_on_property_id_and_created_at"
+    t.index ["property_id"], name: "index_ai_decision_logs_on_property_id"
+    t.index ["route", "created_at"], name: "index_ai_decision_logs_on_route_and_created_at"
+    t.index ["validator_result", "created_at"], name: "index_ai_decision_logs_on_validator_result_and_created_at"
   end
 
   create_table "alerts", force: :cascade do |t|
@@ -237,6 +269,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_01_150000) do
     t.index ["email_verification_token"], name: "index_users_on_email_verification_token", unique: true
   end
 
+  add_foreign_key "ai_decision_logs", "accounts"
+  add_foreign_key "ai_decision_logs", "conversations"
+  add_foreign_key "ai_decision_logs", "guests"
+  add_foreign_key "ai_decision_logs", "messages"
+  add_foreign_key "ai_decision_logs", "properties"
   add_foreign_key "alerts", "conversations"
   add_foreign_key "alerts", "guests"
   add_foreign_key "alerts", "properties"

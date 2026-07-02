@@ -3,6 +3,13 @@ module AI
     ATTRIBUTES = %i[
       outcome
       response_text
+      language
+      intent_summary
+      detected_intents
+      evidence_ids
+      required_capabilities
+      missing_information
+      safety_flags
       confidence
       evidence
       escalation
@@ -21,11 +28,23 @@ module AI
 
     def self.from_hash(hash)
       normalized = hash.to_h.transform_keys(&:to_s)
+      decision = normalized["decision"].presence || normalized["outcome"]
+      message_body = normalized["message_body"].presence || normalized["response_text"]
+      evidence_ids = Array(normalized["evidence_ids"]).presence ||
+        Array(normalized["evidence"]).filter_map { |item| item.to_h["evidence_id"].presence || item.to_h["source_id"] }
+
       new(
-        outcome: normalized["outcome"],
-        response_text: normalized["response_text"],
+        outcome: decision,
+        response_text: message_body,
+        language: normalized["language"],
+        intent_summary: normalized["intent_summary"],
+        detected_intents: normalized.fetch("detected_intents", []),
+        evidence_ids: evidence_ids,
+        required_capabilities: normalized.fetch("required_capabilities", []),
+        missing_information: normalized.fetch("missing_information", []),
+        safety_flags: normalized.fetch("safety_flags", []),
         confidence: normalized.fetch("confidence", 0.0).to_f,
-        evidence: normalized.fetch("evidence", []),
+        evidence: normalized.fetch("evidence", evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } }),
         escalation: normalized["escalation"],
         proposed_action: normalized["proposed_action"],
         rejection_reason: normalized["rejection_reason"],
@@ -46,13 +65,21 @@ module AI
 
       @outcome = normalized_outcome
       @evidence = Array(@evidence).map { |item| item.to_h.stringify_keys }
+      @evidence_ids = Array(@evidence_ids.presence || @evidence.map { |item| item["evidence_id"].presence || item["source_id"] }).compact_blank
+      @detected_intents = Array(@detected_intents).map { |item| item.to_h.stringify_keys }
+      @required_capabilities = Array(@required_capabilities)
+      @missing_information = Array(@missing_information)
+      @safety_flags = Array(@safety_flags)
       @escalation = @escalation.to_h.stringify_keys if @escalation.present?
       @proposed_action = @proposed_action.to_h.stringify_keys if @proposed_action.present?
       @audit = @audit.to_h.stringify_keys
     end
 
     def to_h
-      ATTRIBUTES.index_with { |attribute| public_send(attribute) }
+      ATTRIBUTES.index_with { |attribute| public_send(attribute) }.merge(
+        decision: outcome,
+        message_body: response_text
+      )
     end
 
     def should_reply
@@ -76,7 +103,7 @@ module AI
     end
 
     def alert_description
-      @alert_description || escalation&.fetch("summary", nil) || proposed_action&.fetch("details", nil) || response_text
+      @alert_description || escalation&.fetch("summary_for_host", nil) || escalation&.fetch("summary", nil) || proposed_action&.fetch("details", nil) || proposed_action&.fetch("payload", nil)&.to_json || response_text
     end
 
     def suggested_owner_action
@@ -94,14 +121,14 @@ module AI
 
     def inferred_alert_type
       case proposed_action&.fetch("type", nil)
-      when "late_checkout_request"
+      when "late_checkout_request", "request_late_checkout"
         "late_checkout_request"
-      when "maintenance_request"
+      when "maintenance_request", "report_issue"
         "maintenance_issue"
-      when "early_checkin_request", "booking_change_request", "refund_request", "access_request"
+      when "early_checkin_request", "booking_change_request", "refund_request", "access_request", "request_early_checkin", "request_reservation_extension", "human_handoff"
         "owner_approval_required"
       else
-        case escalation&.fetch("category", nil)
+        case escalation&.fetch("category", nil) || escalation&.fetch("reason_code", nil)
         when "emergency"
           "emergency"
         when "maintenance"

@@ -31,7 +31,7 @@ module Whatsapp
 
       decision = AI::DecisionService.call(conversation: conversation, guest_message: guest_message)
       alert = Alerts::Creator.call(conversation: conversation, decision: decision)
-      replied = maybe_reply(conversation, guest, decision)
+      replied = maybe_reply(conversation, guest, decision, alert: alert)
       conversation.update!(status: "escalated") if alert.present?
 
       { conversation: conversation, message: guest_message, decision: decision, alert: alert, replied: replied }
@@ -62,13 +62,13 @@ module Whatsapp
         guest.conversations.create!(property: property, status: "active", ai_enabled: true)
     end
 
-    def maybe_reply(conversation, guest, decision)
+    def maybe_reply(conversation, guest, decision, alert:)
       return false unless conversation.ai_enabled?
       return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
       return false unless decision.should_reply
       return false if decision.response_text.blank?
 
-      body = ai_response_body(conversation, decision)
+      body = ai_response_body(conversation, decision, alert: alert)
       delivery = @provider.send_message(to: guest.phone_number, body: body)
       return false unless delivery_success?(delivery)
 
@@ -76,12 +76,22 @@ module Whatsapp
       true
     end
 
-    def ai_response_body(conversation, decision)
-      return decision.response_text if conversation.messages.where(sender: "ai").exists?
+    def ai_response_body(conversation, decision, alert:)
+      response_text = safe_response_text_for(decision, alert: alert, conversation: conversation)
+      return response_text if conversation.messages.where(sender: "ai").exists?
 
       AI::LanguageHelper.with_owner_disclosure(
-        decision.response_text,
+        response_text,
         text: conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
+        fallback_language: conversation.guest.language
+      )
+    end
+
+    def safe_response_text_for(decision, alert:, conversation:)
+      return decision.response_text unless decision.escalation_required && alert.blank?
+
+      AI::LanguageHelper.not_confirmed_no_alert_reply_for(
+        conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
         fallback_language: conversation.guest.language
       )
     end

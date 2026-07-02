@@ -2,81 +2,50 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { gateway, generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
-const EvidenceSchema = z.object({
-  source_type: z.enum([
-    "reservation_fact",
-    "property_fact",
-    "faq",
-    "knowledge_block",
-    "recommendation",
-    "policy",
-  ]),
-  source_id: z.string(),
-  claim: z.string(),
-});
-
 const DecisionSchema = z.object({
-  outcome: z.enum([
+  decision: z.enum([
     "reply",
     "ask_clarifying_question",
     "escalate",
     "propose_action",
     "no_reply",
   ]),
-  response_text: z.string().nullable(),
-  confidence: z.number().min(0).max(1),
-  evidence: z.array(EvidenceSchema).default([]),
-  escalation: z.object({
-    required: z.boolean(),
-    category: z
-      .enum([
-        "emergency",
-        "maintenance",
-        "complaint",
-        "booking_change",
-        "refund",
-        "access",
-        "unknown",
-      ])
-      .nullable(),
-    urgency: z.enum(["low", "medium", "high", "urgent"]).nullable(),
-    summary: z.string().nullable(),
-  }),
+  language: z.string(),
+  message_body: z.string().nullable(),
+  intent_summary: z.string(),
+  detected_intents: z.array(z.object({
+    type: z.string(),
+    status: z.enum([
+      "answered",
+      "needs_clarification",
+      "requires_host_approval",
+      "escalated",
+    ]),
+  })).default([]),
+  evidence_ids: z.array(z.string()).default([]),
+  required_capabilities: z.array(z.string()).default([]),
   proposed_action: z
     .object({
       type: z.enum([
-        "early_checkin_request",
-        "late_checkout_request",
-        "maintenance_request",
-        "refund_request",
-        "booking_change_request",
-        "access_request",
+        "request_early_checkin",
+        "request_late_checkout",
+        "request_reservation_extension",
+        "report_issue",
+        "human_handoff",
+        "none",
       ]),
-      requires_approval: z.boolean(),
-      details: z.string().nullable(),
+      payload: z.record(z.unknown()).default({}),
     })
     .nullable(),
-
-  // Backward-compatible fields consumed by the existing Rails alert path.
-  should_reply: z.boolean().optional(),
-  escalation_required: z.boolean().optional(),
-  alert_type: z
-    .enum([
-      "late_checkout_request",
-      "missing_item",
-      "maintenance_issue",
-      "emergency",
-      "complaint",
-      "owner_approval_required",
-      "unknown_question",
-      "other",
-    ])
-    .optional()
-    .nullable(),
-  alert_title: z.string().optional().nullable(),
-  alert_description: z.string().optional().nullable(),
-  suggested_owner_action: z.string().optional().nullable(),
-});
+  escalation: z.object({
+    required: z.boolean(),
+    reason_code: z.string().nullable(),
+    summary_for_host: z.string().nullable(),
+  }),
+  missing_information: z.array(z.string()).default([]),
+  safety_flags: z.array(z.string()).default([]),
+  confidence: z.number().min(0).max(1),
+}).strict();
 
 const PropertyImportSchema = z.object({
   property: z.object({
@@ -144,17 +113,24 @@ const server = createServer(async (request, response) => {
       schemaName: "AylaDecision",
       system: [
         "You are Ayla, an AI guest assistant for short-term rentals.",
-        "Answer only from the provided tool results.",
-        "Every reply must cite one or more evidence items from those tool results.",
+        "You are tool-first: use tools to understand and answer factual questions. Do not answer factual property or reservation questions from memory.",
+        "You must call guest_context before answering any factual property, reservation, policy, access, WiFi, recommendation, or guide question.",
+        "Answer only from provided tool results.",
+        "Every factual reply must cite one or more evidence_ids from those tool results.",
+        "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
+        "Use recommendations only when the guest asks for places, restaurants, transport, pharmacies, supermarkets, attractions, money exchange, or similar local recommendations.",
+        "Never answer a building guide, laundry, visitor, pool permission, booking change, or appliance question with unrelated check-in, checkout, YouTube music, map, restaurant, or money-exchange content.",
         "If the guest only greets, sends the default QR/link message, or has not asked a substantive property question, respond with a friendly clarifying question. This does not require evidence.",
         "If the guest question is ambiguous but likely refers to known property facts, ask one friendly clarifying question. This does not require evidence and must not create an owner escalation.",
         "For ambiguous time questions like 'what time can I go?' or 'a qué hora puedo ir?', ask whether the guest means arrival/check-in or departure/checkout.",
         "Do not invent source IDs, property facts, rules, prices, availability, refunds, or policies.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
         "Escalate or propose an action requiring approval only when information is truly missing, the guest asks for an exception/approval, or a clarification cannot resolve the request.",
-        "Guest-facing response_text must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
-        "Owner-facing fields alert_title, alert_description, suggested_owner_action, and escalation.summary must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
+        "Guest-facing message_body must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
+        "Owner-facing escalation.summary_for_host must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
         "Never use owner-facing Spanish as the guest reply when the guest wrote in another language.",
+        "If multiple intents are present, every intent must be answered, marked needs_clarification, requires_host_approval, or escalated.",
+        "Do not say the host was notified unless decision is escalate or propose_action with escalation.required=true.",
         "Keep replies friendly, helpful, and concise.",
       ].join("\n"),
       prompt: JSON.stringify({
@@ -165,23 +141,10 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 200, {
       ...result.object,
-      should_reply: result.object.outcome !== "no_reply" && Boolean(result.object.response_text),
-      escalation_required: result.object.escalation.required,
-      audit: {
-        model: gatewayModelId(),
-        tool_results: summarizeToolResults(toolResults),
-        token_usage: result.usage,
-      },
     });
   } catch (error) {
     console.error("[ai-service]", error);
-    sendJson(response, 200, {
-      ...fallbackDecision(payload),
-      audit: {
-        fallback: true,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
+    sendJson(response, 200, fallbackDecision(payload));
   }
 });
 
@@ -306,31 +269,31 @@ function fallbackDecision(payload: any) {
   const guestText = payload?.guest_message || "";
   const ownerLanguage = payload?.owner_language || payload?.owner_instructions?.ai_preferred_language || "es";
   return {
-    outcome: "escalate",
-    response_text: safeAckFor(guestText, payload?.guest_language),
-    should_reply: true,
+    decision: "escalate",
+    language: normalizeLanguage(payload?.guest_language) || detectLanguage(guestText),
+    message_body: safeAckFor(guestText, payload?.guest_language),
+    intent_summary: "AI service fallback",
+    detected_intents: [
+      {
+        type: "unknown",
+        status: "escalated",
+      },
+    ],
+    evidence_ids: [],
+    required_capabilities: [],
+    proposed_action: null,
     confidence: 0.25,
-    evidence: [],
     escalation: {
       required: true,
-      category: "unknown",
-      urgency: "medium",
-      summary: ownerText(
+      reason_code: "ai_service_fallback",
+      summary_for_host: ownerText(
         ownerLanguage,
         "El huésped hizo una pregunta que el servicio de IA no pudo responder.",
         "The guest asked a question the AI service could not answer.",
       ),
     },
-    proposed_action: null,
-    escalation_required: true,
-    alert_type: "unknown_question",
-    alert_title: ownerText(ownerLanguage, "Pregunta pendiente del anfitrión", "Question pending host response"),
-    alert_description: payload?.guest_message || ownerText(ownerLanguage, "El huésped hizo una pregunta que la IA no pudo responder.", "The guest asked a question the AI could not answer."),
-    suggested_owner_action: ownerText(
-      ownerLanguage,
-      "Agregá la respuesta a la guía o FAQ de la propiedad y luego respondé al huésped.",
-      "Add the answer to the property guide or FAQ, then reply to the guest.",
-    ),
+    missing_information: [payload?.guest_message || "guest_message"],
+    safety_flags: ["fallback"],
   };
 }
 
@@ -411,11 +374,13 @@ function ownerText(language: string, spanish: string, english: string) {
 async function collectToolResults(payload: any) {
   if (process.env.AI_TOOLS_ENABLED === "false") return [];
 
+  const initialToolResults = await mandatoryToolResults(payload);
   const result = await generateText({
     model: gatewayModel(),
     system: [
       "You select the minimum read-only Ayla tools needed to answer or classify the guest message.",
-      "Never request arbitrary record IDs. Tools are scoped to the current conversation by the server.",
+      "Always treat guest_context as the source of capabilities and authorization.",
+      "Never request arbitrary record IDs. Tools are scoped by the signed decision_context_id.",
       "Do not provide a final guest answer. Return a short retrieval summary after tool calls.",
     ].join("\n"),
     prompt: JSON.stringify(safeBaseContext(payload)),
@@ -426,11 +391,35 @@ async function collectToolResults(payload: any) {
     stopWhen: stepCountIs(3),
   });
 
-  return result.toolResults.map((toolResult: any) => ({
+  return initialToolResults.concat(result.toolResults.map((toolResult: any) => ({
     toolName: toolResult.toolName,
     input: toolResult.input,
     result: toolResult.output,
-  }));
+  })));
+}
+
+async function mandatoryToolResults(payload: any) {
+  if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
+    return [
+      {
+        toolName: "guest_context",
+        input: { query: payload?.guest_message },
+        result: await callRailsTool(payload.tool_endpoint, "guest_context", { query: payload?.guest_message }),
+      },
+    ];
+  }
+
+  if (payload?.tool_context) {
+    return [
+      {
+        toolName: "guest_context",
+        input: { query: payload?.guest_message },
+        result: payload.tool_context,
+      },
+    ];
+  }
+
+  return [];
 }
 
 function buildTools(toolContext: any) {
@@ -438,6 +427,13 @@ function buildTools(toolContext: any) {
   if (remoteTools) return remoteTools;
 
   return {
+    guest_context: {
+      description: "Get the scoped, safe guest/property/reservation context and capabilities. This must be consulted before factual replies.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+      }),
+      execute: async () => toolContext,
+    },
     get_stay_facts: {
       description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
       inputSchema: z.object({
@@ -465,7 +461,7 @@ function buildTools(toolContext: any) {
       },
     },
     search_property_knowledge: {
-      description: "Search owner-provided FAQs and guide blocks scoped to the current property.",
+      description: "Search owner-provided FAQs and guide blocks scoped to the current property. Only use results that directly answer the latest guest question.",
       inputSchema: z.object({
         query: z.string(),
         topic: z.enum(["faq", "house_rules", "appliances", "troubleshooting", "general"]).optional(),
@@ -479,7 +475,7 @@ function buildTools(toolContext: any) {
       },
     },
     get_approved_recommendations: {
-      description: "Get owner-approved local recommendations scoped to the current property.",
+      description: "Get owner-approved local recommendations scoped to the current property. Use only for guest requests about local places, services, transport, restaurants, supermarkets, pharmacies, attractions, or money exchange.",
       inputSchema: z.object({
         category: z.enum([
           "restaurant",
@@ -538,9 +534,17 @@ function buildTools(toolContext: any) {
 }
 
 function buildRemoteTools(toolEndpoint: any) {
-  if (!toolEndpoint?.base_url || !toolEndpoint?.conversation_id) return null;
+  if (!toolEndpoint?.base_url || !toolEndpoint?.decision_context_id) return null;
 
   return {
+    guest_context: {
+      description: "Get the scoped, safe guest/property/reservation context and capabilities. This must be consulted before factual replies.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+      }),
+      execute: async (input: { query?: string }) =>
+        callRailsTool(toolEndpoint, "guest_context", input),
+    },
     get_stay_facts: {
       description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
       inputSchema: z.object({
@@ -569,7 +573,7 @@ function buildRemoteTools(toolEndpoint: any) {
         callRailsTool(toolEndpoint, "search_property_knowledge", input),
     },
     get_approved_recommendations: {
-      description: "Get owner-approved local recommendations scoped to the current property.",
+      description: "Get owner-approved local recommendations scoped to the current property. Use only for guest requests about local places, services, transport, restaurants, supermarkets, pharmacies, attractions, or money exchange.",
       inputSchema: z.object({
         category: z.enum([
           "restaurant",
@@ -623,8 +627,7 @@ async function callRailsTool(toolEndpoint: any, toolName: string, input: Record<
     method: "POST",
     headers,
     body: JSON.stringify({
-      conversation_id: toolEndpoint.conversation_id,
-      message_id: toolEndpoint.message_id,
+      decision_context_id: toolEndpoint.decision_context_id,
       ...input,
     }),
   });
@@ -649,6 +652,8 @@ function searchSources(sources: any[], query: string, topic?: string) {
     .map((source) => {
       const haystack = [source.label, source.value, source.category, source.source_type].join(" ").toLowerCase();
       const sourceWords = searchTokens(haystack);
+      if (!sourceMatchesIntent(words, sourceWords)) return null;
+
       const score = words.reduce((total, word) => {
         if (sourceWords.includes(word)) return total + 3;
         if (word.length >= 5 && sourceWords.some((sourceWord) => sourceWord.length >= 5 && editDistanceAtMostOne(word, sourceWord))) {
@@ -658,7 +663,8 @@ function searchSources(sources: any[], query: string, topic?: string) {
       }, topic && haystack.includes(topic) ? 1 : 0);
       return { source, score };
     })
-    .filter((item) => item.score > 0)
+    .filter((item): item is { source: any; score: number } => item !== null)
+    .filter((item) => item.score >= minimumSearchScore(words))
     .sort((a, b) => b.score - a.score)
     .map((item) => item.source);
 }
@@ -666,21 +672,56 @@ function searchSources(sources: any[], query: string, topic?: string) {
 function searchTokens(value: string) {
   const stopwords = new Set([
     "como", "cual", "cuando", "donde", "para", "porque", "quien", "algo",
-    "esta", "este", "esto", "tengo", "quiero", "puedo", "llego",
+    "esta", "este", "esto", "tengo", "quiero", "puedo",
     "what", "where", "when", "with", "this", "that", "there", "please",
+    "hora", "horario", "horarios", "hours", "time", "times", "saber",
+    "decis", "decime", "dirias", "podrias", "pasarias",
   ]);
 
-  return Array.from(
-    new Set(
-      value
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .replace(/\bq\b/g, " que ")
-        .split(/[^a-z0-9]+/i)
-        .filter((word) => word.length >= 4 && !stopwords.has(word)),
-    ),
-  );
+  const tokens = value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\bq\b/g, " que ")
+    .split(/[^a-z0-9]+/i)
+    .filter((word) => word.length >= 4 && !stopwords.has(word));
+
+  return Array.from(new Set(expandSearchTokens(tokens)));
+}
+
+function expandSearchTokens(tokens: string[]) {
+  const expanded = [...tokens];
+  if (intersects(tokens, ["llego", "llegar", "guia", "ubicacion", "direccion", "acceder", "acceso", "bajar", "bajo", "subir", "edificio", "maps", "mapa", "route", "directions"])) {
+    expanded.push("direction");
+  }
+  if (intersects(tokens, ["pileta", "piscina", "pool"])) expanded.push("pool");
+  if (intersects(tokens, ["lavadero", "lavarropas", "laundry", "laundromat", "washing", "washer"])) expanded.push("laundry");
+  if (intersects(tokens, ["invitar", "invitados", "visita", "visitas", "gente", "amigos", "guests", "visitors", "visitor", "friends", "bring"])) {
+    expanded.push("visitors", "permission");
+  }
+  if (intersects(tokens, ["permiso", "permitido", "permitir", "allowed", "allow", "approve", "approved"])) {
+    expanded.push("permission");
+  }
+  if (intersects(tokens, ["checkin", "entrada", "ingreso", "arrival", "arrive", "llegar"])) expanded.push("checkin");
+  if (intersects(tokens, ["checkout", "salida", "salir", "leave", "departure"])) expanded.push("checkout");
+  return expanded;
+}
+
+function sourceMatchesIntent(queryTokens: string[], sourceTokens: string[]) {
+  if (intersects(queryTokens, ["visitors", "permission"]) && !intersects(sourceTokens, ["visitors", "permission"])) {
+    return false;
+  }
+
+  return true;
+}
+
+function minimumSearchScore(tokens: string[]) {
+  const meaningful = tokens.filter((token) => !["direction", "pool", "laundry", "visitors", "permission", "checkin", "checkout"].includes(token));
+  return meaningful.length >= 2 ? 6 : 3;
+}
+
+function intersects(left: string[], right: string[]) {
+  return left.some((item) => right.includes(item));
 }
 
 function editDistanceAtMostOne(left: string, right: string) {
@@ -716,8 +757,21 @@ function editDistanceAtMostOne(left: string, right: string) {
 function summarizeToolResults(toolResults: any[]) {
   return toolResults.map((item) => ({
     toolName: item.toolName,
+    evidence_ids: collectEvidenceIds(item.result),
     source_ids: Array.isArray(item.result)
       ? item.result.map((source: any) => source?.source_id).filter(Boolean)
       : [item.result?.source_id].filter(Boolean),
   }));
+}
+
+function collectEvidenceIds(result: any): string[] {
+  if (!result) return [];
+  if (Array.isArray(result)) {
+    return result.flatMap((item) => collectEvidenceIds(item));
+  }
+  if (typeof result !== "object") return [];
+
+  const own = result.evidence_id ? [result.evidence_id] : [];
+  const nested = Object.values(result).flatMap((value) => collectEvidenceIds(value));
+  return Array.from(new Set([...own, ...nested]));
 }

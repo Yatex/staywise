@@ -17,7 +17,7 @@ module AI
     end
 
     def call
-      intro_decision || emergency_decision || ambiguous_time_decision || sensitive_request_decision || sensitive_fact_decision || exact_fact_decision || reusable_knowledge_decision
+      intro_decision || simple_acknowledgement_decision || human_handoff_decision || emergency_decision
     end
 
     private
@@ -77,6 +77,42 @@ module AI
       )
     end
 
+    def simple_acknowledgement_decision
+      return unless @text.squish.match?(/\A(ok|okay|dale|gracias|muchas gracias|perfecto|bien|thanks|thank you|👍)\z/i)
+
+      decision(
+        outcome: "no_reply",
+        response_text: nil,
+        should_reply: false,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { "required" => false, "category" => nil, "urgency" => nil, "summary" => nil },
+        alert_type: nil,
+        alert_title: nil,
+        alert_description: nil,
+        suggested_owner_action: nil,
+        audit: { "route" => "deterministic_simple_acknowledgement" }
+      )
+    end
+
+    def human_handoff_decision
+      return unless @text.match?(/hablar.*(persona|humano|anfitri[oó]n|dueñ[oa])|quiero.*(persona|humano|anfitri[oó]n|dueñ[oa])|talk.*(person|human|host|owner)|speak.*(person|human|host|owner)/)
+
+      decision(
+        outcome: "escalate",
+        response_text: LanguageHelper.human_handoff_ack_for(@guest_message.body, fallback_language: @guest_language),
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: escalation("unknown", "medium", "Guest explicitly asked to speak with a human."),
+        alert_type: "owner_approval_required",
+        alert_title: "El huésped pidió hablar con una persona",
+        alert_description: @guest_message.body,
+        suggested_owner_action: "Respondé desde la conversación para continuar sin compartir tu número.",
+        audit: { "route" => "deterministic_human_handoff" }
+      )
+    end
+
     def ambiguous_time_decision
       return unless ambiguous_time_question?
 
@@ -104,7 +140,7 @@ module AI
 
     def exact_fact_decision
       fact =
-        if @text.match?(/check.?in|entrada|ingreso|llegar|arrival|arrive/)
+        if @text.match?(/check.?in|entrada|ingreso/) || (@text.match?(/llegar|arrival|arrive/) && time_question?)
           ["check_in_time", "Check-in time"]
         elsif @text.match?(/check.?out|salida|salir|leave|departure/)
           ["check_out_time", "Check-out time"]
@@ -126,6 +162,21 @@ module AI
         confidence: 1.0,
         evidence: [evidence_for(source, fact.last)],
         audit: { "route" => "deterministic_exact_fact", "field" => fact.first }
+      )
+    end
+
+    def directions_decision
+      return unless directions_question?
+
+      source = @registry.property_fact("address")
+      return unknown_escalation("The guest asked for directions or a guide to reach the building, but no address or guide is configured.") unless source
+
+      decision(
+        outcome: "reply",
+        response_text: LanguageHelper.fact_reply_for("address", source["value"], @guest_message.body, fallback_language: @guest_language),
+        confidence: 1.0,
+        evidence: [evidence_for(source, "Property address for directions.")],
+        audit: { "route" => "deterministic_directions" }
       )
     end
 
@@ -206,7 +257,7 @@ module AI
           ["early_checkin_request", "booking_change", "Early check-in request"]
         elsif @text.match?(/refund|discount|compensation|reembolso|descuento|compensaci[oó]n/)
           ["refund_request", "refund", "Refund, discount, or compensation request"]
-        elsif @text.match?(/change.*reservation|reservation change|cambiar.*reserva|cambio.*reserva/)
+        elsif @text.match?(/change.*reservation|reservation change|extend.*reservation|cambiar.*reserva|cambio.*reserva|extender.*reserva|extender la reserva|alargar.*reserva/)
           ["booking_change_request", "booking_change", "Booking change request"]
         elsif @text.match?(/broken|leak|not working|damage|maintenance|roto|fuga|no funciona|daño|mantenimiento/)
           ["maintenance_request", "maintenance", "Maintenance issue"]
@@ -251,6 +302,17 @@ module AI
 
     def safe_ack
       LanguageHelper.safe_ack_for(@guest_message.body, fallback_language: @guest_language)
+    end
+
+    def time_question?
+      @text.match?(/hora|horario|time|when|cu[aá]ndo|cuando/)
+    end
+
+    def directions_question?
+      return false if time_question?
+      return false if @text.match?(/pileta|piscina|pool/)
+
+      @text.match?(/como llego|cómo llego|gu[ií]a.*llegar|llegar.*edificio|ubicaci[oó]n|direcci[oó]n|maps|mapa/)
     end
 
     def evidence_for(source, claim)

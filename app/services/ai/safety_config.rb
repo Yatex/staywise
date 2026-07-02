@@ -6,6 +6,16 @@ module AI
       enabled?("AI_SAFE_ROUTER_ENABLED", default: true)
     end
 
+    def tool_first_flow_enabled?(account: nil, property: nil)
+      account_value = account&.ai_automation_settings&.fetch("tool_first_ai_flow", nil)
+      return truthy?(account_value) unless account_value.nil?
+
+      property_value = property&.respond_to?(:ai_tool_first_flow) ? property.ai_tool_first_flow : nil
+      return truthy?(property_value) unless property_value.nil?
+
+      enabled?("AI_TOOL_FIRST_FLOW_ENABLED", default: true)
+    end
+
     def evidence_required?
       enabled?("AI_EVIDENCE_REQUIRED", default: true)
     end
@@ -22,6 +32,10 @@ module AI
       value = ENV[name]
       return default if value.blank?
 
+      value.to_s.downcase.in?(%w[1 true yes on])
+    end
+
+    def truthy?(value)
       value.to_s.downcase.in?(%w[1 true yes on])
     end
   end

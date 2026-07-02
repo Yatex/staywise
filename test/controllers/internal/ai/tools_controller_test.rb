@@ -17,17 +17,42 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
       checkout_date: Date.current + 2.days
     )
     @conversation = @guest.conversations.create!(property: @property)
+    @message = @conversation.messages.create!(sender: "guest", body: "What time is check-in?", channel: "whatsapp")
+    @decision_context_id = AI::DecisionContext.issue(conversation: @conversation, guest_message: @message)
+  end
+
+  test "guest context returns safe scoped context from signed decision context" do
+    post "/internal/ai/tools/guest_context", params: {
+      decision_context_id: @decision_context_id,
+      query: "What time is check-in?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "Tools Apartment", body.dig("property", "name")
+    assert_equal "checked_in", body.dig("reservation", "status")
+    assert_includes body.fetch("evidence").map { |item| item["evidence_id"] }, "property.check_in_time"
+    assert_equal true, body.dig("available_capabilities", "can_view_wifi")
+  end
+
+  test "tools reject free conversation ids without signed context" do
+    post "/internal/ai/tools/stay_facts", params: {
+      conversation_id: @conversation.id,
+      requested_fields: ["check_in_time"]
+    }
+
+    assert_response :unauthorized
   end
 
   test "stay facts returns scoped property and reservation facts" do
     post "/internal/ai/tools/stay_facts", params: {
-      conversation_id: @conversation.id,
+      decision_context_id: @decision_context_id,
       requested_fields: ["check_in_time", "reservation_status"]
     }
 
     assert_response :success
     body = JSON.parse(response.body)
-    assert_equal ["property_fact:check_in_time", "reservation_fact:reservation_status"], body.map { |item| item["source_id"] }
+    assert_equal ["property.check_in_time", "reservation.reservation_status"], body.map { |item| item["evidence_id"] }
   end
 
   test "search property knowledge returns approximate faq matches" do
@@ -39,13 +64,14 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     )
 
     post "/internal/ai/tools/search_property_knowledge", params: {
-      conversation_id: @conversation.id,
+      decision_context_id: @decision_context_id,
       query: "Cómo llego q pileta?"
     }
 
     assert_response :success
     body = JSON.parse(response.body)
     assert_equal "faq:#{faq.id}", body.first["source_id"]
+    assert_equal "faq.#{faq.id}", body.first["evidence_id"]
     assert_equal "Andá al -1 y después subí por la ventana.", body.first["value"]
   end
 
@@ -57,18 +83,19 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     )
 
     post "/internal/ai/tools/approved_recommendations", params: {
-      conversation_id: @conversation.id,
+      decision_context_id: @decision_context_id,
       category: "coffee"
     }
 
     assert_response :success
     body = JSON.parse(response.body)
     assert_equal "recommendation:#{recommendation.id}", body.first["source_id"]
+    assert_equal "recommendation.#{recommendation.id}", body.first["evidence_id"]
   end
 
   test "access instructions are returned only when authorized" do
     post "/internal/ai/tools/access_instructions", params: {
-      conversation_id: @conversation.id
+      decision_context_id: @decision_context_id
     }
 
     assert_response :success
@@ -76,9 +103,11 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_includes body.map { |item| item["source_id"] }, "property_fact:wifi_password"
 
     @guest.update!(check_in_date: Date.current + 10.days, checkout_date: Date.current + 12.days)
+    new_message = @conversation.messages.create!(sender: "guest", body: "What is the access code?", channel: "whatsapp")
+    decision_context_id = AI::DecisionContext.issue(conversation: @conversation, guest_message: new_message)
 
     post "/internal/ai/tools/access_instructions", params: {
-      conversation_id: @conversation.id
+      decision_context_id: decision_context_id
     }
 
     assert_response :success

@@ -16,7 +16,7 @@ module AI
       normalized = value.downcase
       return "es" if normalized.match?(/\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b.*\bcheck\s*-?\s*out\b/)
       return "es" if normalized.match?(/\bcheck\s*-?\s*out\b.*\b(y|el|la|los|las|un|una|del|de|mi|tu|para)\b/)
-      return "es" if normalized.match?(/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n)\b/)
+      return "es" if normalized.match?(/\b(qué|que|dónde|donde|cuándo|cuando|cómo|como|hola|gracias|necesito|puedo|quisiera|quiero|saber|salida|entrada|red|clave|contraseña|contrasena|anfitri[oó]n|pasar[ií]as|dir[ií]as|gu[ií]a|llegar|edificio)\b/)
       return "fr" if normalized.match?(/\b(bonjour|merci|où|ou|quand|comment|puis-je|hôte|hote|propriétaire|proprietaire)\b/)
       return "de" if normalized.match?(/\b(hallo|danke|wo|wann|wie|kann ich|gastgeber|vermieter)\b/)
       return "pt" if normalized.match?(/\b(olá|ola|obrigado|obrigada|onde|quando|como|posso|anfitrião|anfitriao)\b/)
@@ -134,6 +134,40 @@ module AI
         "Вы имеете в виду время заезда, когда можно приехать, или время выезда?"
       else
         "Do you mean what time you can arrive for check-in, or what time you need to leave for checkout?"
+      end
+    end
+
+    def human_handoff_ack_for(text, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        "Claro. Ya envié tu solicitud al anfitrión para que pueda responderte directamente por este chat."
+      when "fr"
+        "Bien sûr. J'ai transmis votre demande à l'hôte pour qu'il puisse vous répondre directement dans cette conversation."
+      when "de"
+        "Natürlich. Ich habe deine Anfrage an den Gastgeber weitergeleitet, damit er direkt in diesem Chat antworten kann."
+      when "pt"
+        "Claro. Já enviei sua solicitação ao anfitrião para que ele possa responder diretamente por este chat."
+      when "it"
+        "Certo. Ho inviato la tua richiesta all'host, così potrà risponderti direttamente in questa chat."
+      else
+        "Of course. I have sent your request to the host so they can reply directly in this chat."
+      end
+    end
+
+    def not_confirmed_no_alert_reply_for(text, fallback_language: nil)
+      case detect(text, fallback: fallback_language)
+      when "es"
+        "No tengo esa información confirmada en este momento. Puedo pedirle al anfitrión que la revise."
+      when "fr"
+        "Je n'ai pas cette information confirmée pour le moment. Je peux demander à l'hôte de la vérifier."
+      when "de"
+        "Ich habe diese Information im Moment nicht bestätigt. Ich kann den Gastgeber bitten, sie zu prüfen."
+      when "pt"
+        "Não tenho essa informação confirmada no momento. Posso pedir ao anfitrião que verifique."
+      when "it"
+        "Al momento non ho questa informazione confermata. Posso chiedere all'host di verificarla."
+      else
+        "I do not have confirmed information about that right now. I can ask the host to review it."
       end
     end
 
