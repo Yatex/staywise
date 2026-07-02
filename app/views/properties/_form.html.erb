@@ -1,9 +1,23 @@
-<%= form_with model: property, class: "space-y-6" do |form| %>
+<%= form_with model: property, multipart: true, class: "space-y-6" do |form| %>
   <% if property.errors.any? %>
     <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
       <%= property.errors.full_messages.to_sentence %>
     </div>
   <% end %>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">AI</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Importar información con Ayla</h2>
+        <p class="mt-1 text-sm text-slate-500">Subí una imagen, PDF o archivo de texto con datos de la propiedad. Ayla completa los campos que pueda detectar para que los revises antes de guardar.</p>
+        <div class="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+          <%= file_field_tag "property_import[file]", accept: "image/*,.pdf,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml", class: field_class %>
+          <%= button_tag "Leer archivo con IA", type: "submit", name: "preview_import", value: "1", class: secondary_button_class %>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section class="<%= card_class %> p-5">
     <div class="flex items-start gap-4">
@@ -115,12 +129,16 @@
     </div>
   </section>
 
-  <% unless property.persisted? %>
+  <% show_initial_faqs = !property.persisted? || Array(@initial_faqs).any? { |faq| faq.to_h.values.any?(&:present?) } %>
+  <% if show_initial_faqs %>
     <section class="<%= card_class %> p-5" data-controller="initial-faqs" data-initial-faqs-next-index-value="<%= Array(@initial_faqs).length %>">
       <div class="flex items-start gap-4">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
         <div class="min-w-0 flex-1">
-          <h2 class="text-base font-semibold text-slate-950">Preguntas frecuentes iniciales</h2>
+          <h2 class="text-base font-semibold text-slate-950"><%= property.persisted? ? "Preguntas frecuentes para agregar" : "Preguntas frecuentes iniciales" %></h2>
+          <% if property.persisted? %>
+            <p class="mt-1 text-sm text-slate-500">Estas FAQs se van a agregar a la propiedad cuando guardes los cambios.</p>
+          <% end %>
           <div class="mt-4 space-y-4" data-initial-faqs-target="list">
             <% Array(@initial_faqs).each_with_index do |faq, index| %>
               <div class="rounded-lg border border-slate-200 p-4">
@@ -167,7 +185,7 @@
 
   <section class="<%= card_class %> p-5">
     <div class="flex items-start gap-4">
-      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= property.persisted? ? "6" : "7" %></span>
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= show_initial_faqs ? "7" : "6" %></span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">IA de esta propiedad</h2>
         <label class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">

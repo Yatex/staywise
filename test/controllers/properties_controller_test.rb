@@ -134,10 +134,117 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Completá pregunta y respuesta"
   end
 
+  test "previews property import on create without saving" do
+    result = AI::PropertyImportService::Result.new(
+      property_attributes: {
+        "name" => "Pippa Loft",
+        "wifi_name" => "Pippa",
+        "wifi_password" => "Pippa123",
+        "checkout_time" => "11:00"
+      },
+      faqs: [
+        {
+          "question" => "¿Cómo bajo a la pileta?",
+          "answer" => "Andá al -1 y después subí por la ventana.",
+          "category" => "amenities"
+        }
+      ],
+      source_summary: "Datos extraídos del archivo."
+    )
+
+    assert_no_difference -> { @account.properties.count } do
+      AI::PropertyImportService.stub(:call, result) do
+        post properties_path, params: {
+          preview_import: "1",
+          property: {
+            name: "",
+            initial_faqs: [
+              { question: "", answer: "", category: "" }
+            ]
+          },
+          property_import: {
+            file: uploaded_text_file
+          }
+        }
+      end
+    end
+
+    assert_response :success
+    assert_select "input[name='property[name]'][value='Pippa Loft']"
+    assert_select "input[name='property[wifi_name]'][value='Pippa']"
+    assert_select "input[name='property[wifi_password]'][value='Pippa123']"
+    assert_includes @response.body, "¿Cómo bajo a la pileta?"
+    assert_includes @response.body, "Ayla leyó el archivo"
+  end
+
+  test "previews property import on edit without updating until saved" do
+    result = AI::PropertyImportService::Result.new(
+      property_attributes: {
+        "wifi_name" => "Pippa",
+        "wifi_password" => "Pippa123",
+        "ai_general_notes" => "Lavarropas automático con fichas."
+      },
+      faqs: [
+        {
+          "question" => "¿Cómo uso el lavarropas?",
+          "answer" => "Usá fichas y el programa rápido.",
+          "category" => "appliances"
+        }
+      ],
+      source_summary: "Datos extraídos del archivo."
+    )
+
+    AI::PropertyImportService.stub(:call, result) do
+      patch property_path(@property), params: {
+        preview_import: "1",
+        property: {
+          name: @property.name
+        },
+        property_import: {
+          file: uploaded_text_file
+        }
+      }
+    end
+
+    assert_response :success
+    assert_select "input[name='property[wifi_name]'][value='Pippa']"
+    assert_includes @response.body, "Preguntas frecuentes para agregar"
+    assert_includes @response.body, "¿Cómo uso el lavarropas?"
+    assert_nil @property.reload.wifi_name
+
+    assert_difference -> { @property.faqs.count }, 1 do
+      patch property_path(@property), params: {
+        property: {
+          name: @property.name,
+          wifi_name: "Pippa",
+          wifi_password: "Pippa123",
+          initial_faqs: [
+            {
+              question: "¿Cómo uso el lavarropas?",
+              answer: "Usá fichas y el programa rápido.",
+              category: "appliances"
+            }
+          ]
+        }
+      }
+    end
+
+    assert_redirected_to property_path(@property)
+    assert_equal "Pippa", @property.reload.wifi_name
+    assert_equal "¿Cómo uso el lavarropas?", @property.faqs.order(:created_at).last.question
+  end
+
   private
 
   def sign_in_as(user)
     post login_path, params: { email: user.email, password: "password123" }
     assert_redirected_to dashboard_path
+  end
+
+  def uploaded_text_file
+    file = Tempfile.new(["property-import", ".txt"])
+    file.write("WiFi Pippa. Password Pippa123.")
+    file.rewind
+    Rack::Test::UploadedFile.new(file.path, "text/plain", original_filename: "property.txt")
   end
 end

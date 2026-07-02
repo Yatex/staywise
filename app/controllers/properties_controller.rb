@@ -32,6 +32,11 @@ class PropertiesController < ApplicationController
     @property = current_account.properties.new(property_params)
     @initial_faqs = initial_faq_params
 
+    if params[:preview_import].present?
+      preview_property_import(:new)
+      return
+    end
+
     if invalid_initial_faqs?
       @source_properties = current_account.properties.order(:name)
       render :new, status: :unprocessable_entity
@@ -47,10 +52,24 @@ class PropertiesController < ApplicationController
   end
 
   def edit
+    @initial_faqs = []
   end
 
   def update
-    if @property.update(property_params)
+    @initial_faqs = initial_faq_params(default: [])
+
+    if params[:preview_import].present?
+      @property.assign_attributes(property_params)
+      preview_property_import(:edit)
+      return
+    end
+
+    if invalid_initial_faqs?
+      render :edit, status: :unprocessable_entity
+      return
+    end
+
+    if update_property_with_initial_faqs
       redirect_to @property, notice: "Propiedad actualizada."
     else
       render :edit, status: :unprocessable_entity
@@ -143,7 +162,7 @@ class PropertiesController < ApplicationController
     )
   end
 
-  def initial_faq_params
+  def initial_faq_params(default: blank_initial_faqs)
     permitted = params
       .fetch(:property, ActionController::Parameters.new)
       .permit(initial_faqs: [:question, :answer, :category])
@@ -152,7 +171,7 @@ class PropertiesController < ApplicationController
       row.to_h.slice("question", "answer", "category")
     end
 
-    rows.presence || blank_initial_faqs
+    rows.presence || default
   end
 
   def blank_initial_faqs
@@ -160,7 +179,7 @@ class PropertiesController < ApplicationController
   end
 
   def completed_initial_faqs
-    @initial_faqs.select do |row|
+    Array(@initial_faqs).select do |row|
       row["question"].present? || row["answer"].present? || row["category"].present?
     end
   end
@@ -192,5 +211,72 @@ class PropertiesController < ApplicationController
     end
 
     saved
+  end
+
+  def update_property_with_initial_faqs
+    saved = false
+
+    Property.transaction do
+      saved = @property.update(property_params)
+      raise ActiveRecord::Rollback unless saved
+
+      create_initial_faqs!
+    end
+
+    saved
+  end
+
+  def create_initial_faqs!
+    completed_initial_faqs.each do |row|
+      @property.faqs.create!(
+        question: row["question"],
+        answer: row["answer"],
+        category: row["category"],
+        active: true
+      )
+    end
+  end
+
+  def preview_property_import(template)
+    result = AI::PropertyImportService.call(
+      account: current_account,
+      property: @property,
+      upload: params.dig(:property_import, :file)
+    )
+
+    @property.assign_attributes(result.property_attributes)
+    @initial_faqs = merge_imported_faqs(result.faqs, @initial_faqs)
+    @source_properties = current_account.properties.order(:name) if template == :new
+    flash.now[:notice] = import_notice_for(result)
+    render template, status: :ok
+  rescue AI::PropertyImportService::ImportError => error
+    @source_properties = current_account.properties.order(:name) if template == :new
+    @initial_faqs = blank_initial_faqs if template == :new && Array(@initial_faqs).blank?
+    flash.now[:alert] = error.message
+    render template, status: :unprocessable_entity
+  end
+
+  def merge_imported_faqs(imported_faqs, existing_faqs)
+    imported = Array(imported_faqs).map { |row| stringify_faq_row(row) }.select { |row| row["question"].present? || row["answer"].present? }
+    existing = Array(existing_faqs).map { |row| stringify_faq_row(row) }
+    imported_questions = imported.map { |row| row["question"].to_s.downcase.strip }
+    remaining_existing = existing.reject do |row|
+      row.values.all?(&:blank?) || imported_questions.include?(row["question"].to_s.downcase.strip)
+    end
+
+    combined = imported + remaining_existing
+    combined.presence || (@property.persisted? ? [] : blank_initial_faqs)
+  end
+
+  def stringify_faq_row(row)
+    row.to_h.stringify_keys.slice("question", "answer", "category")
+  end
+
+  def import_notice_for(result)
+    count = result.faqs.count
+    message = "Ayla leyó el archivo y completó los campos que pudo detectar. Revisá todo antes de guardar."
+    return message if count.zero?
+
+    "#{message} También preparó #{count} FAQ#{'s' if count != 1} para agregar."
   end
 end

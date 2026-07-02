@@ -78,13 +78,40 @@ const DecisionSchema = z.object({
   suggested_owner_action: z.string().optional().nullable(),
 });
 
+const PropertyImportSchema = z.object({
+  property: z.object({
+    name: z.string().nullable().optional(),
+    address: z.string().nullable().optional(),
+    internal_nickname: z.string().nullable().optional(),
+    check_in_time: z.string().nullable().optional(),
+    checkout_time: z.string().nullable().optional(),
+    wifi_name: z.string().nullable().optional(),
+    wifi_password: z.string().nullable().optional(),
+    house_rules: z.string().nullable().optional(),
+    access_instructions: z.string().nullable().optional(),
+    parking_instructions: z.string().nullable().optional(),
+    emergency_information: z.string().nullable().optional(),
+    owner_contact_instructions: z.string().nullable().optional(),
+    ai_general_notes: z.string().nullable().optional(),
+    tag_list: z.string().nullable().optional(),
+  }),
+  faqs: z.array(
+    z.object({
+      question: z.string(),
+      answer: z.string(),
+      category: z.string().nullable().optional(),
+    }),
+  ).default([]),
+  source_summary: z.string().nullable().optional(),
+});
+
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, { ok: true });
     return;
   }
 
-  if (request.method !== "POST" || request.url !== "/decide") {
+  if (request.method !== "POST" || !["/decide", "/property_import"].includes(request.url || "")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -99,6 +126,11 @@ const server = createServer(async (request, response) => {
   try {
     const body = await readBody(request);
     payload = JSON.parse(body || "{}");
+
+    if (request.url === "/property_import") {
+      await handlePropertyImport(payload, response);
+      return;
+    }
 
     if (!gatewayConfigured()) {
       sendJson(response, 200, fallbackDecision(payload));
@@ -195,6 +227,79 @@ function gatewayConfigured() {
       process.env.VERCEL_OIDC_TOKEN ||
       process.env.VERCEL,
   );
+}
+
+async function handlePropertyImport(payload: any, response: ServerResponse) {
+  if (!gatewayConfigured()) {
+    sendJson(response, 503, { error: "AI gateway is not configured" });
+    return;
+  }
+
+  const document = payload?.document || {};
+  const result = await generateObject({
+    model: gatewayModel(),
+    schema: PropertyImportSchema,
+    schemaName: "AylaPropertyImport",
+    system: [
+      "You extract short-term rental property setup data for Ayla Manager.",
+      "Extract only information explicitly present in the uploaded document/image. The current property is context only; do not echo existing fields unless the upload confirms or updates them.",
+      "Do not invent facts, amenities, rules, prices, availability, policies, addresses, codes, or passwords.",
+      "Prefer the document/image when it conflicts with blank current property fields. Preserve the owner's language for long text fields.",
+      "Normalize check-in and checkout times as short readable values like '15:00' or '11:00'.",
+      "Put appliance guides, amenity notes, pool/building directions, and miscellaneous guest-helpful details in ai_general_notes when they do not fit a dedicated field.",
+      "Create FAQs only when the source contains a reusable guest question and a clear answer, or when an instruction can naturally become a reusable FAQ.",
+      "Return null or omit fields that are not supported by evidence in the source.",
+    ].join("\n"),
+    messages: [
+      {
+        role: "user",
+        content: propertyImportContent(payload, document),
+      },
+    ],
+  });
+
+  sendJson(response, 200, {
+    ...result.object,
+    audit: {
+      model: gatewayModelId(),
+      token_usage: result.usage,
+    },
+  });
+}
+
+function propertyImportContent(payload: any, document: any) {
+  const parts: any[] = [
+    {
+      type: "text",
+      text: JSON.stringify({
+        account: payload?.account,
+        current_property: payload?.property,
+        document: {
+          filename: document?.filename,
+          content_type: document?.content_type,
+          kind: document?.kind,
+          extracted_text: document?.text,
+        },
+      }),
+    },
+  ];
+
+  if (document?.base64 && document?.content_type?.startsWith("image/")) {
+    parts.push({
+      type: "image",
+      image: document.base64,
+      mediaType: document.content_type,
+    });
+  } else if (document?.base64 && document?.content_type === "application/pdf") {
+    parts.push({
+      type: "file",
+      data: document.base64,
+      filename: document.filename || "property-information.pdf",
+      mediaType: "application/pdf",
+    });
+  }
+
+  return parts;
 }
 
 function fallbackDecision(payload: any) {
