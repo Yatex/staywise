@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_02_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_02_123100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -34,6 +34,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_02_120000) do
     t.string "ai_default_channel", default: "whatsapp", null: false
     t.jsonb "ai_escalation_rules", default: {}, null: false
     t.jsonb "ai_automation_settings", default: {}, null: false
+    t.string "owner_whatsapp_number"
+    t.boolean "owner_whatsapp_escalations_enabled", default: false, null: false
+    t.index ["owner_whatsapp_number"], name: "index_accounts_on_owner_whatsapp_number"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
   end
 
@@ -188,6 +191,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_02_120000) do
     t.index ["source", "created_at"], name: "index_operational_errors_on_source_and_created_at"
   end
 
+  create_table "owner_whatsapp_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "alert_id", null: false
+    t.string "state", default: "queued", null: false
+    t.datetime "last_prompted_at"
+    t.datetime "last_owner_message_at"
+    t.datetime "resolved_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "state"], name: "index_owner_whatsapp_sessions_on_account_id_and_state"
+    t.index ["account_id"], name: "index_owner_whatsapp_sessions_on_account_id"
+    t.index ["alert_id"], name: "index_owner_whatsapp_sessions_on_alert_id", unique: true
+  end
+
   create_table "properties", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", null: false
@@ -287,6 +305,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_02_120000) do
   add_foreign_key "messages", "conversations"
   add_foreign_key "operational_errors", "accounts"
   add_foreign_key "operational_errors", "properties"
+  add_foreign_key "owner_whatsapp_sessions", "accounts"
+  add_foreign_key "owner_whatsapp_sessions", "alerts"
   add_foreign_key "properties", "accounts"
   add_foreign_key "recommendations", "properties"
   add_foreign_key "subscriptions", "accounts"

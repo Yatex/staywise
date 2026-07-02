@@ -11,6 +11,10 @@ module Whatsapp
       parsed = InboundMessageParser.new(@params).call
       raise ArgumentError, "El mensaje entrante de WhatsApp está vacío." if parsed.body.blank?
 
+      if OwnerInboundMessageHandler.owner_message?(parsed)
+        return OwnerInboundMessageHandler.new(parsed, provider: @provider).call
+      end
+
       property = resolve_property(parsed)
       return missing_property_context(parsed) if property.blank?
 

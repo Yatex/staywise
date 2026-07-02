@@ -74,13 +74,17 @@ const PropertyImportSchema = z.object({
   source_summary: z.string().nullable().optional(),
 });
 
+const TranslationSchema = z.object({
+  translated_text: z.string(),
+}).strict();
+
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, { ok: true });
     return;
   }
 
-  if (request.method !== "POST" || !["/decide", "/property_import"].includes(request.url || "")) {
+  if (request.method !== "POST" || !["/decide", "/property_import", "/translate"].includes(request.url || "")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -98,6 +102,11 @@ const server = createServer(async (request, response) => {
 
     if (request.url === "/property_import") {
       await handlePropertyImport(payload, response);
+      return;
+    }
+
+    if (request.url === "/translate") {
+      await handleTranslate(payload, response);
       return;
     }
 
@@ -219,6 +228,41 @@ async function handlePropertyImport(payload: any, response: ServerResponse) {
         content: propertyImportContent(payload, document),
       },
     ],
+  });
+
+  sendJson(response, 200, {
+    ...result.object,
+    audit: {
+      model: gatewayModelId(),
+      token_usage: result.usage,
+    },
+  });
+}
+
+async function handleTranslate(payload: any, response: ServerResponse) {
+  if (!gatewayConfigured()) {
+    sendJson(response, 503, { error: "AI gateway is not configured" });
+    return;
+  }
+
+  const result = await generateObject({
+    model: gatewayModel(),
+    schema: TranslationSchema,
+    schemaName: "AylaTranslation",
+    system: [
+      "You translate short-term rental guest/host messages for Ayla Manager.",
+      "Translate the text into target_language.",
+      "Preserve concrete facts exactly: times, dates, names, addresses, WiFi names, passwords, codes, URLs, phone numbers, prices, and proper nouns.",
+      "Do not add new information, apologies, explanations, signatures, or formatting that was not present.",
+      "Keep the tone natural, warm, and concise.",
+      "Return only the translated text in translated_text.",
+    ].join("\n"),
+    prompt: JSON.stringify({
+      source_language: payload?.source_language,
+      target_language: payload?.target_language,
+      text: payload?.text,
+      context: payload?.context,
+    }),
   });
 
   sendJson(response, 200, {

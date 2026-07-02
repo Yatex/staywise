@@ -8,14 +8,33 @@ module Whatsapp
       def send_message(to:, body:)
         return false unless configured?
 
+        deliver(to: to, payload: { "Body" => body }, context: { body: body })
+      end
+
+      def send_template(to:, template_sid:, variables: {})
+        return false unless configured?
+        return send_message(to: to, body: variables.values.compact.join(" ")) if template_sid.blank?
+
+        deliver(
+          to: to,
+          payload: {
+            "ContentSid" => template_sid,
+            "ContentVariables" => variables.compact.to_json
+          },
+          context: { body: "template:#{template_sid}" }
+        )
+      end
+
+      private
+
+      def deliver(to:, payload:, context:)
         uri = URI(format(TWILIO_MESSAGES_URL, sid: account_sid))
         request = Net::HTTP::Post.new(uri)
         request.basic_auth(account_sid, auth_token)
-        payload = {
+        payload = payload.merge(
           "From" => formatted(from_number),
           "To" => formatted(to),
-          "Body" => body
-        }
+        )
         payload["StatusCallback"] = status_callback_url if status_callback_url.present?
         request.set_form_data(payload)
 
@@ -28,7 +47,7 @@ module Whatsapp
             source: "twilio_provider",
             severity: "error",
             message: "Twilio message delivery failed with status #{response.code}",
-            context: delivery_context(to: to, body: body).merge(status: response.code, response_body: response.body.to_s.first(1_000))
+            context: delivery_context(to: to, body: context[:body]).merge(status: response.code, response_body: response.body.to_s.first(1_000))
           )
           return DeliveryResult.new(success?: false, error: "Twilio message delivery failed with status #{response.code}", raw_response: response.body.to_s.first(1_000))
         end
@@ -42,11 +61,9 @@ module Whatsapp
         )
       rescue StandardError => error
         Rails.logger.error("[twilio-provider] #{error.class}: #{error.message}")
-        ErrorReporter.report(error, source: "twilio_provider", severity: "critical", context: delivery_context(to: to, body: body))
+        ErrorReporter.report(error, source: "twilio_provider", severity: "critical", context: delivery_context(to: to, body: context[:body]))
         DeliveryResult.new(success?: false, error: error.message)
       end
-
-      private
 
       def configured?
         account_sid.present? && auth_token.present? && from_number.present?

@@ -27,7 +27,7 @@ class SettingsController < ApplicationController
   private
 
   def account_params
-    params.require(:account).permit(:ai_active)
+    params.require(:account).permit(:ai_active, :owner_whatsapp_number, :owner_whatsapp_escalations_enabled)
   end
 
   def update_user!

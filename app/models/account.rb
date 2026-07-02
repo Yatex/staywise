@@ -14,7 +14,8 @@ class Account < ApplicationRecord
   DEFAULT_AUTOMATION_SETTINGS = {
     "send_whatsapp_replies" => true,
     "create_alerts" => true,
-    "send_urgent_emails" => true
+    "send_urgent_emails" => true,
+    "send_owner_whatsapp_escalations" => true
   }.freeze
 
   has_many :users, dependent: :destroy
@@ -23,6 +24,7 @@ class Account < ApplicationRecord
   has_many :subscriptions, dependent: :destroy
   has_many :billing_events, dependent: :nullify
   has_many :operational_errors, dependent: :nullify
+  has_many :owner_whatsapp_sessions, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true
@@ -32,6 +34,7 @@ class Account < ApplicationRecord
 
   before_validation :assign_slug, on: :create
   before_validation :normalize_ai_configuration
+  before_validation :normalize_owner_whatsapp_number
 
   def active_subscription
     subscriptions.order(created_at: :desc).first
@@ -51,6 +54,10 @@ class Account < ApplicationRecord
 
   def ai_automation_enabled?(setting)
     ai_automation_settings.fetch(setting.to_s, true)
+  end
+
+  def owner_whatsapp_configured?
+    owner_whatsapp_escalations_enabled? && owner_whatsapp_number.present?
   end
 
   private
@@ -75,5 +82,9 @@ class Account < ApplicationRecord
     end
 
     self.slug = candidate
+  end
+
+  def normalize_owner_whatsapp_number
+    self.owner_whatsapp_number = owner_whatsapp_number.to_s.gsub(/\Awhatsapp:/, "").strip.presence
   end
 end

@@ -29,7 +29,7 @@ module Alerts
         guest: @conversation.guest,
         alert_type: (@decision.alert_type.presence || "other").to_s,
         title: @decision.alert_title.presence || "El huésped necesita atención del propietario",
-        description: @decision.alert_description,
+        description: alert_description,
         priority: PRIORITY_BY_TYPE.fetch(@decision.alert_type.to_s, "medium"),
         ai_suggested_action: @decision.suggested_owner_action
       )
@@ -38,11 +38,37 @@ module Alerts
         OwnerAlertEmailJob.perform_later(alert.id)
       end
 
+      Whatsapp::OwnerEscalationNotifier.call(alert: alert) if account.ai_automation_enabled?("send_owner_whatsapp_escalations")
+
       alert
     end
 
     def account
       @account ||= @conversation.property.account
+    end
+
+    def alert_description
+      latest_guest_message = clean_guest_question(@conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
+      text = if @decision.alert_type.to_s == "unknown_question"
+        latest_guest_message.presence || @decision.alert_description
+      else
+        @decision.alert_description.presence || latest_guest_message
+      end
+
+      AI::Translator.call(
+        text: text,
+        source_language: @decision.language || @conversation.guest.language,
+        target_language: AI::LanguageHelper.owner_language(account),
+        context: "Owner-facing alert description for a short-term rental host."
+      )
+    end
+
+    def clean_guest_question(text)
+      text.to_s
+        .delete_prefix(@conversation.property.whatsapp_reference)
+        .gsub(@conversation.property.whatsapp_reference, "")
+        .strip
+        .presence
     end
   end
 end

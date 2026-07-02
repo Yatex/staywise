@@ -5,6 +5,11 @@ module Whatsapp
         Rails.logger.info("[whatsapp-null] to=#{to} body=#{body}")
         true
       end
+
+      def send_template(to:, template_sid:, variables: {})
+        Rails.logger.info("[whatsapp-null-template] to=#{to} template_sid=#{template_sid} variables=#{variables.inspect}")
+        true
+      end
     end
   end
 end

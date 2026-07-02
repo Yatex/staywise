@@ -18,17 +18,20 @@ module Whatsapp
       return failure("El huésped no tiene teléfono de WhatsApp configurado.") if guest_phone.blank?
       return failure("WhatsApp no está conectado. Configurá Twilio antes de responder desde Ayla.") if null_provider?
 
-      delivery = @provider.send_message(to: guest_phone, body: @body)
+      guest_body = translated_body
+      delivery = @provider.send_message(to: guest_phone, body: guest_body)
       return failure(delivery_error(delivery)) unless delivery_success?(delivery)
 
       message = @conversation.messages.create!(
         sender: "owner",
         channel: "whatsapp",
-        body: @body,
+        body: guest_body,
         metadata: {
           sent_by_user_id: @user.id,
           sent_by_user_name: @user.name,
-          sent_via: "ayla_dashboard"
+          sent_via: "ayla_dashboard",
+          original_owner_body: @body,
+          translated_to: guest_language
         }.merge(
           delivery_metadata(delivery)
         ).compact
@@ -68,6 +71,20 @@ module Whatsapp
 
     def guest_phone
       @conversation.guest&.phone_number
+    end
+
+    def translated_body
+      AI::Translator.call(
+        text: @body,
+        source_language: AI::LanguageHelper.owner_language(@conversation.property.account),
+        target_language: guest_language,
+        context: "Translate the host's dashboard reply before sending it to the guest on WhatsApp."
+      )
+    end
+
+    def guest_language
+      @guest_language ||= @conversation.guest.language.presence ||
+        AI::LanguageHelper.detect(@conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
     end
 
     def failure(error)

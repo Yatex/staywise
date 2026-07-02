@@ -52,4 +52,24 @@
         class: @account.ai_active? ? "inline-flex items-center justify-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700" : primary_button_class %>
     </div>
   </section>
+
+  <%= form_with model: @account, scope: :account, url: settings_path, method: :patch, class: "mt-6" do |form| %>
+    <section class="<%= card_class %> p-5">
+      <h2 class="text-base font-semibold text-slate-950">Escalaciones por WhatsApp</h2>
+      <p class="mt-1 text-sm text-slate-500">Ayla puede avisarle al anfitrión por WhatsApp cuando no sabe responder, y usar su respuesta para contestarle al huésped.</p>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :owner_whatsapp_number, "WhatsApp del anfitrión", class: label_class %>
+          <%= form.telephone_field :owner_whatsapp_number, value: @account.owner_whatsapp_number, class: field_class, placeholder: "+598..." %>
+        </div>
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+          <%= form.check_box :owner_whatsapp_escalations_enabled, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+          Recibir preguntas escaladas por WhatsApp
+        </label>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <%= form.submit "Guardar WhatsApp", class: secondary_button_class %>
+      </div>
+    </section>
+  <% end %>
 </div>

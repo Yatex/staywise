@@ -6,6 +6,10 @@ module Whatsapp
       def send_message(to:, body:)
         raise NotImplementedError
       end
+
+      def send_template(to:, template_sid:, variables: {})
+        raise NotImplementedError
+      end
     end
   end
 end
