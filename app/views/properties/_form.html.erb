@@ -1,4 +1,4 @@
-<%= form_with model: property, multipart: true, class: "space-y-6" do |form| %>
+<%= form_with model: property, multipart: true, class: "space-y-6", data: { controller: "property-import", action: "turbo:submit-start->property-import#submitStart turbo:submit-end->property-import#submitEnd" } do |form| %>
   <% if property.errors.any? %>
     <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
       <%= property.errors.full_messages.to_sentence %>
@@ -11,9 +11,20 @@
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">Importar información con Ayla</h2>
         <p class="mt-1 text-sm text-slate-500">Subí una imagen, PDF o archivo de texto con datos de la propiedad. Ayla completa los campos que pueda detectar para que los revises antes de guardar.</p>
+        <% if defined?(@property_import_notice) && @property_import_notice.present? %>
+          <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+            <%= @property_import_notice %>
+          </div>
+        <% end %>
+        <% if defined?(@property_import_error) && @property_import_error.present? %>
+          <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            <%= @property_import_error %>
+          </div>
+        <% end %>
+        <div class="mt-4 hidden rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700" data-property-import-target="status"></div>
         <div class="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
           <%= file_field_tag "property_import[file]", accept: "image/*,.pdf,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml", class: field_class %>
-          <%= button_tag "Leer archivo con IA", type: "submit", name: "preview_import", value: "1", formnovalidate: true, class: secondary_button_class %>
+          <%= button_tag "Leer archivo con IA", type: "submit", name: "preview_import", value: "1", formnovalidate: true, class: secondary_button_class, data: { property_import_target: "button" } %>
         </div>
       </div>
     </div>

@@ -247,12 +247,14 @@ class PropertiesController < ApplicationController
     @property.assign_attributes(result.property_attributes)
     @initial_faqs = merge_imported_faqs(result.faqs, @initial_faqs)
     @source_properties = current_account.properties.order(:name) if template == :new
-    flash.now[:notice] = import_notice_for(result)
+    @property_import_notice = import_notice_for(result)
+    flash.now[:notice] = @property_import_notice
     render template, status: :ok
   rescue AI::PropertyImportService::ImportError => error
     @source_properties = current_account.properties.order(:name) if template == :new
     @initial_faqs = blank_initial_faqs if template == :new && Array(@initial_faqs).blank?
-    flash.now[:alert] = error.message
+    @property_import_error = error.message
+    flash.now[:alert] = @property_import_error
     render template, status: :unprocessable_entity
   end
 

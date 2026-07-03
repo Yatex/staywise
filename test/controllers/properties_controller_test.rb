@@ -175,6 +175,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='property[wifi_password]'][value='Pippa123']"
     assert_includes @response.body, "¿Cómo bajo a la pileta?"
     assert_includes @response.body, "Ayla leyó el archivo"
+    assert_select ".bg-emerald-50", text: /Ayla leyó el archivo/
   end
 
   test "property import preview button bypasses required fields" do
@@ -182,6 +183,26 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "button[name='preview_import'][formnovalidate]"
+    assert_select "form[data-controller='property-import']"
+    assert_select "[data-property-import-target='status']"
+  end
+
+  test "property import preview shows inline error" do
+    AI::PropertyImportService.stub(:call, ->(**) { raise AI::PropertyImportService::ImportError, "No pude leer este archivo." }) do
+      post properties_path, params: {
+        preview_import: "1",
+        property: {
+          name: ""
+        },
+        property_import: {
+          file: uploaded_text_file
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes @response.body, "No pude leer este archivo."
+    assert_select ".bg-rose-50", text: /No pude leer este archivo/
   end
 
   test "previews property import on edit without updating until saved" do

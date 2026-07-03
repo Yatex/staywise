@@ -39,11 +39,15 @@ module AI
     end
 
     def call
-      raise ImportError, "El servicio de IA no está configurado para leer archivos." if ENV["AI_SERVICE_URL"].blank?
-
       document = Properties::UploadTextExtractor.new(@upload).call
-      result = remote_import(document)
-      raise ImportError, "No pude extraer campos útiles del archivo. Probá con una imagen más clara o un documento con más texto." unless result.useful?
+      result = import_document(document)
+      unless result.useful?
+        if document[:text].to_s.strip.present?
+          raise ImportError, "Ayla pudo leer el archivo, pero no encontró datos claros para completar la propiedad. Revisá que el archivo tenga nombre, dirección, horarios, WiFi, reglas o FAQs."
+        end
+
+        raise ImportError, "No pude extraer campos útiles del archivo. Probá con una imagen más clara o un documento con más texto."
+      end
 
       result
     rescue Properties::UploadTextExtractor::ExtractionError => error
@@ -58,6 +62,17 @@ module AI
     end
 
     private
+
+    def import_document(document)
+      return local_import(document) if ENV["AI_SERVICE_URL"].blank?
+
+      remote_import(document)
+    rescue StandardError => error
+      fallback = local_import(document)
+      return fallback if fallback.useful?
+
+      raise error
+    end
 
     def remote_import(document)
       uri = URI.join(ENV.fetch("AI_SERVICE_URL"), "/property_import")
@@ -102,6 +117,64 @@ module AI
         faqs: faqs,
         source_summary: body["source_summary"].to_s
       )
+    end
+
+    def local_import(document)
+      text = document[:text].to_s
+      attributes = {
+        "name" => first_label_value(text, /nombre de la propiedad/i),
+        "internal_nickname" => first_label_value(text, /nombre interno|alias interno/i),
+        "address" => first_label_value(text, /direcci[oó]n|direccion/i),
+        "check_in_time" => first_time_after(text, /check-?in|entrada/i),
+        "checkout_time" => first_time_after(text, /check-?out|salida/i),
+        "wifi_name" => first_label_value(text, /nombre de red|red wifi/i),
+        "wifi_password" => first_label_value(text, /contrase[nñ]a|clave/i),
+        "house_rules" => section_between(text, /reglas de la casa/i, /emergencias|notas [uú]tiles|electrodom[eé]sticos|recomendaciones|faqs/i),
+        "access_instructions" => section_between(text, /acceso al edificio|instrucciones de acceso/i, /estacionamiento|reglas de la casa|emergencias/i),
+        "parking_instructions" => section_between(text, /estacionamiento/i, /reglas de la casa|emergencias|notas [uú]tiles/i),
+        "emergency_information" => section_between(text, /emergencias/i, /notas [uú]tiles|electrodom[eé]sticos|recomendaciones|faqs/i),
+        "ai_general_notes" => [
+          section_between(text, /notas [uú]tiles/i, /electrodom[eé]sticos|recomendaciones|faqs/i),
+          section_between(text, /electrodom[eé]sticos y gu[ií]as de uso/i, /recomendaciones|faqs/i)
+        ].compact_blank.join("\n\n")
+      }.compact_blank
+
+      Result.new(
+        property_attributes: attributes,
+        faqs: local_faqs(text),
+        source_summary: "Datos extraídos localmente del archivo."
+      )
+    end
+
+    def first_label_value(text, label_pattern)
+      match = text.match(/(?:#{label_pattern.source})\s*:?\s*\n?\s*([^\n]+)/i)
+      match&.[](1).to_s.strip.presence
+    end
+
+    def first_time_after(text, label_pattern)
+      line = text.lines.find { |item| item.match?(label_pattern) }
+      return unless line
+
+      line[/\b([01]?\d|2[0-3])[:.][0-5]\d\b/].to_s.tr(".", ":").presence
+    end
+
+    def section_between(text, start_pattern, end_pattern)
+      match = text.match(/(?:#{start_pattern.source})\s*:?\s*(.*?)(?=\n\s*(?:#{end_pattern.source})\s*:|\z)/im)
+      clean_section(match&.[](1))
+    end
+
+    def clean_section(value)
+      value.to_s.lines.map(&:strip).reject(&:blank?).join("\n").presence
+    end
+
+    def local_faqs(text)
+      text.scan(/Pregunta:\s*(.*?)\s*Respuesta:\s*(.*?)(?=\n\s*Pregunta:|\z)/im).map do |question, answer|
+        {
+          "question" => question.to_s.strip,
+          "answer" => answer.to_s.strip,
+          "category" => nil
+        }.compact_blank
+      end.select { |row| row["question"].present? && row["answer"].present? }
     end
 
     def report_error(error)
