@@ -176,6 +176,9 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "¿Cómo bajo a la pileta?"
     assert_includes @response.body, "Ayla leyó el archivo"
     assert_select ".bg-emerald-50", text: /Ayla leyó el archivo/
+    assert_includes @response.body, "Campos completados"
+    assert_includes @response.body, "nombre"
+    assert_includes @response.body, "contraseña de WiFi"
   end
 
   test "property import preview button bypasses required fields" do
@@ -185,6 +188,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_select "button[name='preview_import'][formnovalidate]"
     assert_select "form[data-controller='property-import']"
     assert_select "[data-property-import-target='status']"
+    assert_select "[data-property-import-target='overlay']", text: /Ayla está leyendo el archivo/
   end
 
   test "property import preview shows inline error" do

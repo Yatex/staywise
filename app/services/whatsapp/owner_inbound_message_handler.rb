@@ -1,7 +1,7 @@
 module Whatsapp
   class OwnerInboundMessageHandler
-    COMMAND_HOLD = /\A(hold|pausar|pausa|dejar en espera|en espera|saltar|skip|next|siguiente)\z/i
-    COMMAND_OK = /\A(ok|dale|si|sí|ver|detalle|ver detalle|ver_detalle|ver consulta|ver_consulta|details?|view details?|view_details?|responder|responder ahora)\z/i
+    COMMAND_HOLD = /\A(2|hold|pausar|pausa|dejar en espera|en espera|saltar|skip|next|siguiente)\z/i
+    COMMAND_OK = /\A(1|ok|dale|si|sí|ver|detalle|ver detalle|ver_detalle|ver consulta|ver_consulta|details?|view details?|view_details?|responder|responder ahora)\z/i
 
     def self.owner_message?(parsed)
       Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: parsed.from).exists?

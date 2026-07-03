@@ -1,4 +1,16 @@
 <%= form_with model: property, multipart: true, class: "space-y-6", data: { controller: "property-import", action: "turbo:submit-start->property-import#submitStart turbo:submit-end->property-import#submitEnd" } do |form| %>
+  <div class="fixed inset-0 z-50 hidden bg-slate-950/30 backdrop-blur-sm" data-property-import-target="overlay" role="status" aria-live="polite" aria-label="Ayla está leyendo el archivo">
+    <div class="flex min-h-full items-center justify-center p-4">
+      <div class="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-xl">
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+          <div class="h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600"></div>
+        </div>
+        <p class="mt-4 text-base font-semibold text-slate-950">Ayla está leyendo el archivo</p>
+        <p class="mt-2 text-sm leading-6 text-slate-500">Está detectando datos de la propiedad, FAQs y notas útiles. Esto puede tardar unos segundos.</p>
+      </div>
+    </div>
+  </div>
+
   <% if property.errors.any? %>
     <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
       <%= property.errors.full_messages.to_sentence %>
@@ -14,6 +26,12 @@
         <% if defined?(@property_import_notice) && @property_import_notice.present? %>
           <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             <%= @property_import_notice %>
+          </div>
+        <% end %>
+        <% if defined?(@property_import_fields) && @property_import_fields.present? %>
+          <div class="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+            <p class="font-semibold text-slate-950">Campos completados</p>
+            <p class="mt-1"><%= @property_import_fields.to_sentence %></p>
           </div>
         <% end %>
         <% if defined?(@property_import_error) && @property_import_error.present? %>

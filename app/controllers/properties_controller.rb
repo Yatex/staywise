@@ -247,6 +247,7 @@ class PropertiesController < ApplicationController
     @property.assign_attributes(result.property_attributes)
     @initial_faqs = merge_imported_faqs(result.faqs, @initial_faqs)
     @source_properties = current_account.properties.order(:name) if template == :new
+    @property_import_fields = imported_field_labels(result.property_attributes)
     @property_import_notice = import_notice_for(result)
     flash.now[:notice] = @property_import_notice
     render template, status: :ok
@@ -276,9 +277,35 @@ class PropertiesController < ApplicationController
 
   def import_notice_for(result)
     count = result.faqs.count
-    message = "Ayla leyó el archivo y completó los campos que pudo detectar. Revisá todo antes de guardar."
+    fields = imported_field_labels(result.property_attributes)
+    if fields.any?
+      message = "Ayla leyó el archivo y completó: #{fields.to_sentence}. Revisá todo antes de guardar."
+    else
+      message = "Ayla leyó el archivo. No encontró campos principales, pero preparó contenido para revisar."
+    end
     return message if count.zero?
 
     "#{message} También preparó #{count} FAQ#{'s' if count != 1} para agregar."
+  end
+
+  def imported_field_labels(attributes)
+    labels = {
+      "name" => "nombre",
+      "address" => "dirección",
+      "internal_nickname" => "alias interno",
+      "check_in_time" => "check-in",
+      "checkout_time" => "checkout",
+      "wifi_name" => "nombre de WiFi",
+      "wifi_password" => "contraseña de WiFi",
+      "house_rules" => "reglas",
+      "access_instructions" => "acceso",
+      "parking_instructions" => "estacionamiento",
+      "emergency_information" => "emergencias",
+      "owner_contact_instructions" => "cuándo consultar al propietario",
+      "ai_general_notes" => "notas útiles",
+      "tag_list" => "etiquetas"
+    }
+
+    attributes.to_h.filter_map { |key, value| labels[key.to_s] if value.present? }
   end
 end

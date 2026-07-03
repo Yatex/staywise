@@ -1,5 +1,6 @@
 require "json"
 require "net/http"
+require "set"
 
 module AI
   class PropertyImportService
@@ -66,12 +67,33 @@ module AI
     def import_document(document)
       return local_import(document) if ENV["AI_SERVICE_URL"].blank?
 
-      remote_import(document)
+      merge_results(remote_import(document), local_import(document))
     rescue StandardError => error
       fallback = local_import(document)
       return fallback if fallback.useful?
 
       raise error
+    end
+
+    def merge_results(primary, fallback)
+      return primary unless fallback.useful?
+
+      Result.new(
+        property_attributes: fallback.property_attributes.merge(primary.property_attributes),
+        faqs: merge_faqs(primary.faqs, fallback.faqs),
+        source_summary: [primary.source_summary, fallback.source_summary].compact_blank.join(" ")
+      )
+    end
+
+    def merge_faqs(primary_faqs, fallback_faqs)
+      seen = Set.new
+      (Array(primary_faqs) + Array(fallback_faqs)).filter_map do |row|
+        key = row["question"].to_s.downcase.strip
+        next if key.blank? || seen.include?(key)
+
+        seen << key
+        row
+      end
     end
 
     def remote_import(document)

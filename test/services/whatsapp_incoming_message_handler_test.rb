@@ -369,6 +369,45 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "awaiting_ack", second.session.reload.state
   end
 
+  test "owner whatsapp quick reply numeric ids are accepted" do
+    @account.update!(owner_whatsapp_number: "+15559990006", owner_whatsapp_escalations_enabled: true)
+    guest = @account.guests.create!(phone_number: "+15550000123", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "escalated")
+    alert = conversation.alerts.create!(
+      property: @property,
+      guest: guest,
+      alert_type: "unknown_question",
+      title: "Question one",
+      description: "Question one",
+      status: "in_progress"
+    )
+    session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_ack")
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990006",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "1"
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    assert_equal "awaiting_answer", session.reload.state
+
+    session.update!(state: "awaiting_ack")
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990006",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "2"
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    assert_equal "on_hold", session.reload.state
+  end
+
   test "owner whatsapp queues alerts across accounts when the same owner phone is reused" do
     owner_phone = "+15559990002"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)

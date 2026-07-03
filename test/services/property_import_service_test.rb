@@ -32,6 +32,27 @@ class PropertyImportServiceTest < ActiveSupport::TestCase
     assert_includes result.faqs.second["answer"], "No"
   end
 
+  test "merges ai import with local extraction when ai misses obvious text fields" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    service_class = Class.new(AI::PropertyImportService) do
+      define_method(:remote_import) do |_document|
+        AI::PropertyImportService::Result.new(
+          property_attributes: { "checkout_time" => "11:30" },
+          faqs: [],
+          source_summary: "AI extracted checkout only."
+        )
+      end
+    end
+    service = service_class.new(account: @account, property: @property, upload: uploaded_text_file)
+
+    result = service.call
+
+    assert_equal "Studio Palermo Soho", result.property_attributes["name"]
+    assert_equal "Pippa", result.property_attributes["wifi_name"]
+    assert_equal "11:30", result.property_attributes["checkout_time"]
+    assert_operator result.faqs.count, :>, 1
+  end
+
   private
 
   def uploaded_text_file
