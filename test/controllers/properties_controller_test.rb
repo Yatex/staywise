@@ -169,7 +169,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_response :success
+    assert_response :unprocessable_content
     assert_select "input[name='property[name]'][value='Pippa Loft']"
     assert_select "input[name='property[wifi_name]'][value='Pippa']"
     assert_select "input[name='property[wifi_password]'][value='Pippa123']"
@@ -204,7 +204,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :unprocessable_entity
+    assert_response :unprocessable_content
     assert_includes @response.body, "No pude leer este archivo."
     assert_select ".bg-rose-50", text: /No pude leer este archivo/
   end
@@ -238,7 +238,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :success
+    assert_response :unprocessable_content
     assert_select "input[name='property[wifi_name]'][value='Pippa']"
     assert_includes @response.body, "Preguntas frecuentes para agregar"
     assert_includes @response.body, "¿Cómo uso el lavarropas?"

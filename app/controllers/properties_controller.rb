@@ -250,13 +250,13 @@ class PropertiesController < ApplicationController
     @property_import_fields = imported_field_labels(result.property_attributes)
     @property_import_notice = import_notice_for(result)
     flash.now[:notice] = @property_import_notice
-    render template, status: :ok
+    render template, status: :unprocessable_content
   rescue AI::PropertyImportService::ImportError => error
     @source_properties = current_account.properties.order(:name) if template == :new
     @initial_faqs = blank_initial_faqs if template == :new && Array(@initial_faqs).blank?
     @property_import_error = error.message
     flash.now[:alert] = @property_import_error
-    render template, status: :unprocessable_entity
+    render template, status: :unprocessable_content
   end
 
   def merge_imported_faqs(imported_faqs, existing_faqs)
