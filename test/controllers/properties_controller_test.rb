@@ -177,6 +177,13 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Ayla leyó el archivo"
   end
 
+  test "property import preview button bypasses required fields" do
+    get new_property_path
+
+    assert_response :success
+    assert_select "button[name='preview_import'][formnovalidate]"
+  end
+
   test "previews property import on edit without updating until saved" do
     result = AI::PropertyImportService::Result.new(
       property_attributes: {

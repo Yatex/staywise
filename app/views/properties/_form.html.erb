@@ -13,7 +13,7 @@
         <p class="mt-1 text-sm text-slate-500">Subí una imagen, PDF o archivo de texto con datos de la propiedad. Ayla completa los campos que pueda detectar para que los revises antes de guardar.</p>
         <div class="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
           <%= file_field_tag "property_import[file]", accept: "image/*,.pdf,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml", class: field_class %>
-          <%= button_tag "Leer archivo con IA", type: "submit", name: "preview_import", value: "1", class: secondary_button_class %>
+          <%= button_tag "Leer archivo con IA", type: "submit", name: "preview_import", value: "1", formnovalidate: true, class: secondary_button_class %>
         </div>
       </div>
     </div>
