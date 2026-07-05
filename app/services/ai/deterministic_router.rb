@@ -20,6 +20,10 @@ module AI
       intro_decision || simple_acknowledgement_decision || human_handoff_decision || emergency_decision
     end
 
+    def fallback
+      exact_fact_decision || directions_decision || sensitive_fact_decision || reusable_knowledge_decision
+    end
+
     private
 
     def intro_decision
@@ -139,6 +143,8 @@ module AI
     end
 
     def exact_fact_decision
+      return if approval_or_booking_change_request?
+
       fact =
         if @text.match?(/check.?in|entrada|ingreso/) || (@text.match?(/llegar|arrival|arrive/) && time_question?)
           ["check_in_time", "Check-in time"]
@@ -313,6 +319,10 @@ module AI
       return false if @text.match?(/pileta|piscina|pool/)
 
       @text.match?(/como llego|cómo llego|gu[ií]a.*llegar|llegar.*edificio|ubicaci[oó]n|direcci[oó]n|maps|mapa/)
+    end
+
+    def approval_or_booking_change_request?
+      @text.match?(/late checkout|salir.*tarde|checkout.*tarde|check.?out.*tarde|tarde.*checkout|early check.?in|entrar.*antes|check.?in.*antes|antes.*check.?in|extender.*reserva|extender la reserva|alargar.*reserva/)
     end
 
     def evidence_for(source, claim)

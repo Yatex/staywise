@@ -53,6 +53,16 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "queued", owner_message.metadata["delivery_status"]
   end
 
+  test "show page marks conversation panels for automatic refresh" do
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "[data-controller='conversation-refresh']"
+    assert_select "[data-conversation-refresh-target='messages']"
+    assert_select "[data-conversation-refresh-target='alerts']"
+    assert_select "[data-conversation-refresh-target='status']"
+  end
+
   test "null whatsapp provider does not store owner reply as sent" do
     assert_no_difference -> { @conversation.messages.count } do
       post reply_conversation_path(@conversation), params: {

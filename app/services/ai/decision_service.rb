@@ -43,6 +43,11 @@ module AI
       end
 
       if (decision = remote_decision(payload))
+        if (fallback = local_safe_reply_for_generic_escalation(decision))
+          audit("local_safe_reply_after_ai_escalation", fallback, started_at, validator_result: "accepted")
+          return fallback
+        end
+
         validation = DecisionValidator.new(conversation: @conversation, decision: decision, source: "ai").call
         if validation.valid?
           audit("remote_ai", decision, started_at, validator_result: "accepted")
@@ -100,6 +105,9 @@ module AI
     end
 
     def conservative_local_decision
+      router_decision = DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).fallback
+      return router_decision if router_decision
+
       registry = SourceRegistry.new(conversation: @conversation)
       faq = registry.exact_faq_for(@guest_message.body)
 
@@ -115,6 +123,14 @@ module AI
       end
 
       safe_escalation("AI service unavailable and no exact FAQ match was found.")
+    end
+
+    def local_safe_reply_for_generic_escalation(decision)
+      return unless decision.escalation_required
+      return if decision.alert_type.present? && decision.alert_type != "unknown_question"
+      return if decision.proposed_action.present?
+
+      DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).fallback
     end
 
     def safe_escalation(description)

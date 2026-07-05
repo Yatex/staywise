@@ -128,6 +128,36 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes conversation.messages.where(sender: "ai").last.body, "este chat está compartido con el dueño de la propiedad"
   end
 
+  test "guest follow up after qr intro stays in same conversation and answers check in" do
+    @property.update!(check_in_time: "15:00")
+    from = "whatsapp:+15550000018"
+
+    intro_result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => from,
+        "To" => "whatsapp:+15550009999",
+        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+    conversation = intro_result.fetch(:conversation)
+
+    follow_up_result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => from,
+        "To" => "whatsapp:+15550009999",
+        "Body" => "a que hora es el check in"
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    assert_equal conversation, follow_up_result.fetch(:conversation)
+    assert_equal 4, conversation.reload.messages.count
+    assert_includes conversation.messages.where(sender: "guest").last.body, "check in"
+    assert_includes conversation.messages.where(sender: "ai").last.body, "El check-in es a las 15:00"
+    assert_nil follow_up_result.fetch(:alert)
+  end
+
   test "first concrete ai answer also discloses that chat is shared with owner" do
     @property.update!(checkout_time: "11:00")
 
