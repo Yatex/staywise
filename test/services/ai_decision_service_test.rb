@@ -279,6 +279,28 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["faq.#{faq.id}"], decision.evidence_ids
   end
 
+  test "accepts ai reply using late checkout faq for spanish wording" do
+    faq = @property.faqs.create!(
+      question: "Can I request late checkout?",
+      answer: "Late checkout depends on availability. Ask the host before confirming.",
+      category: "checkout",
+      active: true
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "Puedo hacer más tarde el checkout?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "El late checkout depende de disponibilidad. Lo tenemos que confirmar con el anfitrión antes de aprobarlo.",
+      evidence_ids: ["faq.#{faq.id}"],
+      detected_intents: [{ type: "faq", status: "answered" }]
+    ))
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "depende de disponibilidad"
+    assert_not decision.escalation_required
+    assert_equal ["faq.#{faq.id}"], decision.evidence_ids
+  end
+
   test "does not use pool directions faq to answer visitor permission question" do
     @property.faqs.create!(
       question: "Como bajo a la pileta?",

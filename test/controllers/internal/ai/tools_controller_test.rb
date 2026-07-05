@@ -75,6 +75,26 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Andá al -1 y después subí por la ventana.", body.first["value"]
   end
 
+  test "search property knowledge matches spanish late checkout wording to faq" do
+    faq = @property.faqs.create!(
+      question: "Can I request late checkout?",
+      answer: "Late checkout depends on availability. Ask the host before confirming.",
+      category: "checkout",
+      active: true
+    )
+
+    post "/internal/ai/tools/search_property_knowledge", params: {
+      decision_context_id: @decision_context_id,
+      query: "Puedo hacer más tarde el checkout?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "faq:#{faq.id}", body.first["source_id"]
+    assert_equal "faq.#{faq.id}", body.first["evidence_id"]
+    assert_equal "Late checkout depends on availability. Ask the host before confirming.", body.first["value"]
+  end
+
   test "approved recommendations returns scoped recommendations" do
     recommendation = @property.recommendations.create!(
       name: "Cafe Tools",

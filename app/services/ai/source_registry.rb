@@ -385,7 +385,7 @@ module AI
     end
 
     def source_matches_intent?(message_tokens, source_tokens)
-      if (message_tokens & %w[visitors permission]).any?
+      if message_tokens.include?("visitors")
         return false if (source_tokens & %w[visitors permission]).blank?
       end
 
@@ -446,7 +446,11 @@ module AI
     end
 
     def search_tokens(value)
-      tokens = ActiveSupport::Inflector.transliterate(value.to_s.downcase)
+      normalized = ActiveSupport::Inflector.transliterate(value.to_s.downcase)
+        .gsub(/check[\s_-]*in/, "checkin")
+        .gsub(/check[\s_-]*out/, "checkout")
+
+      tokens = normalized
         .gsub(/\bq\b/, " que ")
         .scan(/[a-z0-9]+/)
         .reject { |word| word.length < 4 || SEARCH_STOPWORDS.include?(word) }
@@ -464,6 +468,7 @@ module AI
       expanded << "permission" if (tokens & PERMISSION_TOKENS).any?
       expanded << "checkin" if (tokens & %w[checkin entrada ingreso arrival arrive llegar]).any?
       expanded << "checkout" if (tokens & %w[checkout salida salir leave departure]).any?
+      expanded.concat(%w[late late_checkout]) if tokens.include?("checkout") && (tokens & %w[tarde later late extender extenderla extension]).any?
 
       expanded
     end
