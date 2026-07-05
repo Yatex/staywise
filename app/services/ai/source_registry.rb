@@ -25,6 +25,12 @@ module AI
       "access_instructions" => :access_instructions
     }.freeze
 
+    SENSITIVE_SOURCE_IDS = {
+      "wifi_name" => "sensitive_wifi_name",
+      "wifi_password" => "sensitive_wifi_password",
+      "access_instructions" => "sensitive_access_instructions"
+    }.freeze
+
     def initialize(conversation:, guest_message: nil)
       @conversation = conversation
       @property = conversation.property
@@ -58,6 +64,46 @@ module AI
           can_view_wifi: @authorization.sensitive_access_authorized?
         },
         evidence: context_evidence
+      }
+    end
+
+    def property_brain(guest_message: nil, conversation_summary: nil, limit: 8)
+      query = [guest_message.presence || @guest_message&.body, conversation_summary].compact_blank.join(" ")
+      matched_sources = property_brain_sources(query: query, limit: limit)
+
+      {
+        guest_authorized: @authorization.sensitive_access_authorized?,
+        property: {
+          id: @property.public_token,
+          name: @property.display_name,
+          city: nil,
+          language: LanguageHelper.owner_language(@property.account)
+        },
+        stay: {
+          status: @authorization.reservation_status,
+          check_in_date: @guest.check_in_date&.iso8601,
+          check_out_date: @guest.checkout_date&.iso8601,
+          check_in_time: @property.check_in_time,
+          check_out_time: @property.checkout_time
+        },
+        matched_sources: matched_sources,
+        policies: policies.transform_values { |source| public_source(source) },
+        recommendations: property_brain_recommendations(query: query, limit: limit)
+      }
+    end
+
+    def sensitive_access_info(guest_message: nil)
+      unless @authorization.sensitive_access_authorized?
+        return {
+          authorized: false,
+          reason: "guest_not_authorized",
+          sources: []
+        }
+      end
+
+      {
+        authorized: true,
+        sources: sensitive_access_sources(query: guest_message.presence || @guest_message&.body)
       }
     end
 
@@ -137,26 +183,26 @@ module AI
       item = item.to_h.stringify_keys
       source_type = item["source_type"]
       source_id = item["source_id"].to_s
-      evidence_id = item["evidence_id"].presence || source_id
+      evidence_id = item["id"].presence || item["evidence_id"].presence || source_id
 
       case source_type.presence || source_type_from_evidence_id(evidence_id)
       when "property_fact"
-        field = evidence_id.to_s.delete_prefix("property.").delete_prefix("property_fact:")
+        field = property_field_from_reference(evidence_id)
         property_fact(field).present?
       when "reservation_fact"
-        field = evidence_id.to_s.delete_prefix("reservation.").delete_prefix("reservation_fact:")
+        field = reservation_field_from_reference(evidence_id)
         reservation_fact(field).present?
       when "faq"
-        id = evidence_id.to_s.delete_prefix("faq.").delete_prefix("faq:").to_i
+        id = record_id_from_reference(evidence_id, "faq")
         @property.faqs.exists?(id: id)
       when "knowledge_block"
-        id = evidence_id.to_s.delete_prefix("guide.").delete_prefix("knowledge_block:").to_i
+        id = record_id_from_reference(evidence_id, "guide", "knowledge_block")
         @property.knowledge_blocks.exists?(id: id)
       when "recommendation"
-        id = evidence_id.to_s.delete_prefix("recommendation.").delete_prefix("recommendation:").to_i
+        id = record_id_from_reference(evidence_id, "recommendation")
         @property.recommendations.exists?(id: id)
       when "policy"
-        evidence_id.to_s.start_with?("policy.", "policy:")
+        policy_field_from_reference(evidence_id).present?
       else
         false
       end
@@ -171,7 +217,7 @@ module AI
       source = evidence_source(item)
       return false if source.blank?
 
-      case item["source_type"].presence || source_type_from_evidence_id(item["evidence_id"].presence || item["source_id"])
+      case item["source_type"].presence || source_type_from_evidence_id(item["id"].presence || item["evidence_id"].presence || item["source_id"])
       when "property_fact", "reservation_fact", "policy"
         fact_relevant?(source, message)
       when "recommendation"
@@ -185,6 +231,8 @@ module AI
 
     def tool_context
       {
+        property_brain: property_brain(guest_message: @guest_message&.body),
+        sensitive_access_info: sensitive_access_info(guest_message: @guest_message&.body),
         safe_property_facts: SAFE_PROPERTY_FACTS.keys.index_with { |field| property_fact(field) }.compact,
         reservation_facts: {
           "reservation_status" => reservation_fact("reservation_status"),
@@ -237,6 +285,74 @@ module AI
 
     private
 
+    def property_brain_sources(query:, limit:)
+      candidates = [
+        SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
+        reservation_fact("reservation_status"),
+        reservation_fact("reservation_dates"),
+        policies.values,
+        @property.faqs.active.map { |faq| faq_source(faq) },
+        @property.knowledge_blocks.active.map { |block| knowledge_source(block) },
+        recommendation_candidates_for_brain(query)
+      ].flatten.compact
+
+      sources = if query.present?
+        search_sources(candidates, query).first(limit)
+      else
+        candidates.first(limit)
+      end
+
+      sources.map { |source| public_source(source) }
+    end
+
+    def property_brain_recommendations(query:, limit:)
+      return [] unless recommendation_intent?(search_tokens(query))
+
+      sources = @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
+      sources = search_sources(sources, query) if query.present?
+      sources.first(limit).map { |source| public_source(source) }
+    end
+
+    def recommendation_candidates_for_brain(query)
+      return [] unless recommendation_intent?(search_tokens(query))
+
+      @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
+    end
+
+    def sensitive_access_sources(query:)
+      sources = SENSITIVE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) }
+      return sources.map { |source| public_source(source) } if query.blank?
+
+      matched = search_sources(sources, query)
+      matched = sources if matched.blank?
+      matched.map { |source| public_source(source) }
+    end
+
+    def public_source(source)
+      source.slice(
+        "id",
+        "type",
+        "title",
+        "content",
+        "confidence",
+        "source_type",
+        "source_id",
+        "evidence_id",
+        "label",
+        "field",
+        "value",
+        "excerpt",
+        "scope",
+        "updated_at",
+        "category",
+        "address",
+        "distance_or_walking_time",
+        "google_maps_url",
+        "website_url",
+        "phone_number"
+      ).compact
+    end
+
     def context_evidence
       [
         SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
@@ -248,40 +364,42 @@ module AI
 
     def evidence_source(item)
       source_id = item["source_id"].to_s
-      evidence_id = item["evidence_id"].presence || source_id
+      evidence_id = item["id"].presence || item["evidence_id"].presence || source_id
 
       case item["source_type"].presence || source_type_from_evidence_id(evidence_id)
       when "property_fact"
-        property_fact(evidence_id.delete_prefix("property.").delete_prefix("property_fact:"))
+        property_fact(property_field_from_reference(evidence_id))
       when "reservation_fact"
-        reservation_fact(evidence_id.delete_prefix("reservation.").delete_prefix("reservation_fact:"))
+        reservation_fact(reservation_field_from_reference(evidence_id))
       when "faq"
-        faq = @property.faqs.active.find_by(id: evidence_id.delete_prefix("faq.").delete_prefix("faq:").to_i)
+        faq = @property.faqs.active.find_by(id: record_id_from_reference(evidence_id, "faq"))
         faq_source(faq)
       when "knowledge_block"
-        block = @property.knowledge_blocks.active.find_by(id: evidence_id.delete_prefix("guide.").delete_prefix("knowledge_block:").to_i)
+        block = @property.knowledge_blocks.active.find_by(id: record_id_from_reference(evidence_id, "guide", "knowledge_block"))
         knowledge_source(block)
       when "recommendation"
-        recommendation = @property.recommendations.find_by(id: evidence_id.delete_prefix("recommendation.").delete_prefix("recommendation:").to_i)
+        recommendation = @property.recommendations.find_by(id: record_id_from_reference(evidence_id, "recommendation"))
         recommendation_source(recommendation)
       when "policy"
-        property_policy(evidence_id.delete_prefix("policy.").delete_prefix("policy:"))
+        property_policy(policy_field_from_reference(evidence_id))
       end
     end
 
     def source_type_from_evidence_id(evidence_id)
       case evidence_id.to_s
-      when /\Aproperty\./
+      when /\Aproperty[._]/
         "property_fact"
-      when /\Areservation\./
+      when /\Asensitive_/
+        "property_fact"
+      when /\Areservation[._]/
         "reservation_fact"
-      when /\Afaq\./
+      when /\Afaq[._]/
         "faq"
-      when /\Aguide\./
+      when /\Aguide[._]/
         "knowledge_block"
-      when /\Arecommendation\./
+      when /\Arecommendation[._]/
         "recommendation"
-      when /\Apolicy\./
+      when /\Apolicy[._]/
         "policy"
       end
     end
@@ -303,10 +421,17 @@ module AI
     end
 
     def source(type, id, label, value, record: nil, evidence_id: nil)
+      evidence = evidence_id.presence || id
+      modern_id = modern_source_id(type, evidence, label)
       {
+        "id" => modern_id,
+        "type" => type,
+        "title" => label,
+        "content" => value.to_s,
+        "confidence" => nil,
         "source_type" => type,
         "source_id" => id,
-        "evidence_id" => evidence_id.presence || id,
+        "evidence_id" => evidence,
         "label" => label,
         "field" => label,
         "value" => value.to_s,
@@ -314,6 +439,64 @@ module AI
         "scope" => type.to_s.in?(%w[reservation_fact]) ? "reservation" : "property",
         "updated_at" => (record&.updated_at || @property.updated_at).iso8601
       }
+    end
+
+    def modern_source_id(type, evidence_id, label)
+      case type
+      when "property_fact"
+        field = property_field_from_reference(evidence_id.presence || label)
+        SENSITIVE_SOURCE_IDS[field] || "property_#{field}"
+      when "reservation_fact"
+        reservation_field_from_reference(evidence_id.presence || label)
+      when "faq"
+        "faq_#{record_id_from_reference(evidence_id, "faq")}"
+      when "knowledge_block"
+        "guide_#{record_id_from_reference(evidence_id, "guide", "knowledge_block")}"
+      when "recommendation"
+        "recommendation_#{record_id_from_reference(evidence_id, "recommendation")}"
+      when "policy"
+        "policy_#{policy_field_from_reference(evidence_id.presence || label)}"
+      else
+        evidence_id.to_s.tr(".:", "_")
+      end
+    end
+
+    def property_field_from_reference(reference)
+      value = reference.to_s
+      sensitive_match = SENSITIVE_SOURCE_IDS.invert[value]
+      return sensitive_match if sensitive_match.present?
+
+      value
+        .delete_prefix("property.")
+        .delete_prefix("property_")
+        .delete_prefix("property_fact:")
+    end
+
+    def reservation_field_from_reference(reference)
+      value = reference.to_s
+      return value if value.in?(%w[reservation_status reservation_dates])
+
+      value
+        .delete_prefix("reservation.")
+        .delete_prefix("reservation_")
+        .delete_prefix("reservation_fact:")
+    end
+
+    def record_id_from_reference(reference, *prefixes)
+      value = reference.to_s
+      prefixes.each do |prefix|
+        value = value.delete_prefix("#{prefix}.")
+        value = value.delete_prefix("#{prefix}_")
+        value = value.delete_prefix("#{prefix}:")
+      end
+      value.to_i
+    end
+
+    def policy_field_from_reference(reference)
+      reference.to_s
+        .delete_prefix("policy.")
+        .delete_prefix("policy_")
+        .delete_prefix("policy:")
     end
 
     def best_record_for(message, records)

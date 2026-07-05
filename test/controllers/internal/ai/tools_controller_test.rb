@@ -55,6 +55,52 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["property.check_in_time", "reservation.reservation_status"], body.map { |item| item["evidence_id"] }
   end
 
+  test "property brain returns relevant non-sensitive sources with stable ids" do
+    faq = @property.faqs.create!(
+      question: "Como bajo a la pileta?",
+      answer: "Andá al -1 y después subí por la ventana.",
+      category: "amenities",
+      active: true
+    )
+
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Cómo llego q pileta?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["guest_authorized"]
+    assert_equal @property.public_token, body.dig("property", "id")
+    assert_equal "Tools Apartment", body.dig("property", "name")
+    source = body.fetch("matched_sources").find { |item| item["id"] == "faq_#{faq.id}" }
+    assert source
+    assert_equal "faq", source["type"]
+    assert_equal "Como bajo a la pileta?", source["title"]
+    assert_equal "Andá al -1 y después subí por la ventana.", source["content"]
+    assert_not_includes body.fetch("matched_sources").map { |item| item["id"] }, "sensitive_wifi_password"
+  end
+
+  test "property brain matches spanish late checkout wording to faq" do
+    faq = @property.faqs.create!(
+      question: "Can I request late checkout?",
+      answer: "Late checkout depends on availability. Ask the host before confirming.",
+      category: "checkout",
+      active: true
+    )
+
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Puedo hacer más tarde el checkout?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    source_ids = body.fetch("matched_sources").map { |item| item["id"] }
+    assert_includes source_ids, "faq_#{faq.id}"
+    assert_includes source_ids, "policy_late_checkout"
+  end
+
   test "search property knowledge returns approximate faq matches" do
     faq = @property.faqs.create!(
       question: "Como bajo a la pileta?",
@@ -133,5 +179,33 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     denied = JSON.parse(response.body)
     assert_equal true, denied["denied"]
+  end
+
+  test "sensitive access info is returned only when authorized" do
+    post "/internal/ai/tools/sensitive_access_info", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "What is the WiFi password?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["authorized"]
+    assert_includes body.fetch("sources").map { |item| item["id"] }, "sensitive_wifi_password"
+    assert_equal "tools-secret", body.fetch("sources").find { |item| item["id"] == "sensitive_wifi_password" }["content"]
+
+    @guest.update!(check_in_date: Date.current + 10.days, checkout_date: Date.current + 12.days)
+    new_message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
+    decision_context_id = AI::DecisionContext.issue(conversation: @conversation, guest_message: new_message)
+
+    post "/internal/ai/tools/sensitive_access_info", params: {
+      decision_context_id: decision_context_id,
+      guest_message: "What is the WiFi password?"
+    }
+
+    assert_response :success
+    denied = JSON.parse(response.body)
+    assert_equal false, denied["authorized"]
+    assert_equal "guest_not_authorized", denied["reason"]
+    assert_empty denied["sources"]
   end
 end

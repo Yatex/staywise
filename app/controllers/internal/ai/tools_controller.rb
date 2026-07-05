@@ -4,6 +4,20 @@ module Internal
       before_action :authenticate_ai_service!
       before_action :set_conversation
 
+      def property_brain
+        render json: registry.property_brain(
+          guest_message: params[:guest_message],
+          conversation_summary: params[:conversation_summary],
+          limit: params.fetch(:limit, 8).to_i.clamp(1, 20)
+        )
+      end
+
+      def sensitive_access_info
+        render json: registry.sensitive_access_info(
+          guest_message: params[:guest_message]
+        )
+      end
+
       def guest_context
         render json: registry.guest_context(query: params[:query])
       end

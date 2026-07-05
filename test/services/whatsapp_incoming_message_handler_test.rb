@@ -108,29 +108,42 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "urgent", alert.priority
   end
 
-  test "default qr intro gets ai greeting without creating alert" do
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000008",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+  test "default qr intro is handled as routing without calling ai decision service" do
+    provider = RecordingProvider.new
+    ai_called = false
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(**_args) { ai_called = true; raise "AI should not process routing init messages" }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000008",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+        },
+        provider: provider
+      ).call
+    end
 
     conversation = result.fetch(:conversation)
 
+    assert_not ai_called
+    assert result.fetch(:routing_init)
     assert result.fetch(:replied)
+    assert_nil result.fetch(:decision)
     assert_nil result.fetch(:alert)
     assert_equal 0, conversation.alerts.count
-    assert_equal "ask_clarifying_question", result.fetch(:decision).outcome
-    assert_includes conversation.messages.where(sender: "ai").last.body, "¿En qué puedo ayudarte?"
-    assert_includes conversation.messages.where(sender: "ai").last.body, "este chat está compartido con el dueño de la propiedad"
+    assert_equal 0, conversation.messages.where(sender: "ai").count
+    assert_equal "routing_init", conversation.messages.where(sender: "guest").first.metadata["message_type"]
+    assert_equal 1, conversation.messages.where(sender: "system").count
+    assert_equal "routing_greeting", conversation.messages.where(sender: "system").last.metadata["message_type"]
+    assert_includes provider.sent_messages.last.fetch(:body), "Ya vinculé este chat"
+    assert_includes provider.sent_messages.last.fetch(:body), "este chat está compartido con el dueño de la propiedad"
   end
 
   test "guest follow up after qr intro stays in same conversation and answers check in" do
     @property.update!(check_in_time: "15:00")
     from = "whatsapp:+15550000018"
+    ai_calls = 0
 
     intro_result = Whatsapp::IncomingMessageHandler.new(
       {
@@ -142,16 +155,36 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     ).call
     conversation = intro_result.fetch(:conversation)
 
-    follow_up_result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => from,
-        "To" => "whatsapp:+15550009999",
-        "Body" => "a que hora es el check in"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    follow_up_result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "El check-in es a las 15:00.",
+        intent_summary: "check in",
+        detected_intents: [{ type: "check_in", status: "answered" }],
+        evidence_ids: ["property.check_in_time"],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false, reason_code: nil, summary_for_host: nil },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      follow_up_result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "a que hora es el check in"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     assert_equal conversation, follow_up_result.fetch(:conversation)
+    assert_equal 1, ai_calls
     assert_equal 4, conversation.reload.messages.count
     assert_includes conversation.messages.where(sender: "guest").last.body, "check in"
     assert_includes conversation.messages.where(sender: "ai").last.body, "El check-in es a las 15:00"

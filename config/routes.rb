@@ -67,6 +67,8 @@ Rails.application.routes.draw do
   namespace :internal do
     namespace :ai do
       scope "tools", controller: :tools do
+        post :property_brain
+        post :sensitive_access_info
         post :guest_context
         post :stay_facts
         post :search_property_knowledge

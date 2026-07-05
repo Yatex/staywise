@@ -3,11 +3,12 @@ import { gateway, generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
 const DecisionSchema = z.object({
-  decision: z.enum([
+  outcome: z.enum([
     "reply",
     "ask_clarifying_question",
     "escalate",
     "propose_action",
+    "ignore",
     "no_reply",
   ]),
   language: z.string(),
@@ -22,6 +23,7 @@ const DecisionSchema = z.object({
       "escalated",
     ]),
   })).default([]),
+  used_source_ids: z.array(z.string()).default([]),
   evidence_ids: z.array(z.string()).default([]),
   required_capabilities: z.array(z.string()).default([]),
   proposed_action: z
@@ -42,6 +44,9 @@ const DecisionSchema = z.object({
     reason_code: z.string().nullable(),
     summary_for_host: z.string().nullable(),
   }),
+  escalation_required: z.boolean(),
+  escalation_reason: z.string().nullable(),
+  sensitive_info_used: z.boolean().default(false),
   missing_information: z.array(z.string()).default([]),
   safety_flags: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1),
@@ -123,9 +128,13 @@ const server = createServer(async (request, response) => {
       system: [
         "You are Ayla, an AI guest assistant for short-term rentals.",
         "You are tool-first: use tools to understand and answer factual questions. Do not answer factual property or reservation questions from memory.",
-        "You must call guest_context before answering any factual property, reservation, policy, access, WiFi, recommendation, or guide question.",
+        "You must use property_brain first for property, reservation, policy, FAQ, guide, amenity, appliance, recommendation, and operational questions.",
+        "If the guest asks about WiFi, passwords, codes, keys, lockboxes, exact access instructions, entrance, or other sensitive access details, you must also call sensitive_access_info.",
+        "If the answer needs owner approval or the available evidence does not directly answer the guest, call create_escalation_draft and return outcome escalate or propose_action.",
         "Answer only from provided tool results.",
-        "Every factual reply must cite one or more evidence_ids from those tool results.",
+        "Every factual reply must cite one or more used_source_ids from property_brain or sensitive_access_info.",
+        "Do not invent source IDs. used_source_ids must match source.id values returned by tools.",
+        "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
         "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
         "Use recommendations only when the guest asks for places, restaurants, transport, pharmacies, supermarkets, attractions, money exchange, or similar local recommendations.",
         "Never answer a building guide, laundry, visitor, pool permission, booking change, or appliance question with unrelated check-in, checkout, YouTube music, map, restaurant, or money-exchange content.",
@@ -134,6 +143,7 @@ const server = createServer(async (request, response) => {
         "For ambiguous time questions like 'what time can I go?' or 'a qué hora puedo ir?', ask whether the guest means arrival/check-in or departure/checkout.",
         "Do not invent source IDs, property facts, rules, prices, availability, refunds, or policies.",
         "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
+        "For late checkout, early check-in, reservation changes, refunds, discounts, visitors, pets, or exceptions, do not promise approval. Escalate or propose an action unless a returned policy explicitly says the request is allowed without owner approval.",
         "Escalate or propose an action requiring approval only when information is truly missing, the guest asks for an exception/approval, or a clarification cannot resolve the request.",
         "Guest-facing message_body must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
         "Owner-facing escalation.summary_for_host must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
@@ -313,6 +323,7 @@ function fallbackDecision(payload: any) {
   const guestText = payload?.guest_message || "";
   const ownerLanguage = payload?.owner_language || payload?.owner_instructions?.ai_preferred_language || "es";
   return {
+    outcome: "escalate",
     decision: "escalate",
     language: normalizeLanguage(payload?.guest_language) || detectLanguage(guestText),
     message_body: safeAckFor(guestText, payload?.guest_language),
@@ -323,6 +334,7 @@ function fallbackDecision(payload: any) {
         status: "escalated",
       },
     ],
+    used_source_ids: [],
     evidence_ids: [],
     required_capabilities: [],
     proposed_action: null,
@@ -336,6 +348,9 @@ function fallbackDecision(payload: any) {
         "The guest asked a question the AI service could not answer.",
       ),
     },
+    escalation_required: true,
+    escalation_reason: "ai_service_fallback",
+    sensitive_info_used: false,
     missing_information: [payload?.guest_message || "guest_message"],
     safety_flags: ["fallback"],
   };
@@ -423,7 +438,9 @@ async function collectToolResults(payload: any) {
     model: gatewayModel(),
     system: [
       "You select the minimum read-only Ayla tools needed to answer or classify the guest message.",
-      "Always treat guest_context as the source of capabilities and authorization.",
+      "property_brain is already loaded and is the source of non-sensitive property knowledge.",
+      "Call sensitive_access_info only for WiFi, passwords, keys, access codes, entrance instructions, lockboxes, or other sensitive access details.",
+      "Call create_escalation_draft if the evidence is missing, ambiguous after one clarification, or needs owner approval.",
       "Never request arbitrary record IDs. Tools are scoped by the signed decision_context_id.",
       "Do not provide a final guest answer. Return a short retrieval summary after tool calls.",
     ].join("\n"),
@@ -446,9 +463,17 @@ async function mandatoryToolResults(payload: any) {
   if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
     return [
       {
-        toolName: "guest_context",
-        input: { query: payload?.guest_message },
-        result: await callRailsTool(payload.tool_endpoint, "guest_context", { query: payload?.guest_message }),
+        toolName: "property_brain",
+        input: {
+          guest_message: payload?.guest_message,
+          conversation_summary: conversationSummary(payload?.conversation_history),
+          limit: 8,
+        },
+        result: await callRailsTool(payload.tool_endpoint, "property_brain", {
+          guest_message: payload?.guest_message,
+          conversation_summary: conversationSummary(payload?.conversation_history),
+          limit: 8,
+        }),
       },
     ];
   }
@@ -456,9 +481,13 @@ async function mandatoryToolResults(payload: any) {
   if (payload?.tool_context) {
     return [
       {
-        toolName: "guest_context",
-        input: { query: payload?.guest_message },
-        result: payload.tool_context,
+        toolName: "property_brain",
+        input: {
+          guest_message: payload?.guest_message,
+          conversation_summary: conversationSummary(payload?.conversation_history),
+          limit: 8,
+        },
+        result: payload.tool_context.property_brain || payload.tool_context,
       },
     ];
   }
@@ -466,101 +495,36 @@ async function mandatoryToolResults(payload: any) {
   return [];
 }
 
+function conversationSummary(history: any) {
+  if (!Array.isArray(history)) return "";
+
+  return history
+    .slice(-6)
+    .map((message: any) => `${message?.sender || "unknown"}: ${message?.body || ""}`)
+    .filter((line: string) => line.trim().length > 0)
+    .join("\n");
+}
+
 function buildTools(toolContext: any) {
   const remoteTools = buildRemoteTools(toolContext?.tool_endpoint);
   if (remoteTools) return remoteTools;
 
   return {
-    guest_context: {
-      description: "Get the scoped, safe guest/property/reservation context and capabilities. This must be consulted before factual replies.",
+    property_brain: {
+      description: "Get compiled, relevant, non-sensitive property facts, reservation status, policies, FAQs, guides, amenities, and approved recommendations for the current guest message.",
       inputSchema: z.object({
-        query: z.string().optional(),
+        guest_message: z.string().optional(),
+        conversation_summary: z.string().optional(),
+        limit: z.number().int().min(1).max(20).optional(),
       }),
-      execute: async () => toolContext,
+      execute: async () => toolContext.property_brain || toolContext,
     },
-    get_stay_facts: {
-      description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
+    sensitive_access_info: {
+      description: "Get sensitive access information only if Rails authorized it for this guest and reservation window. Includes WiFi passwords, codes, keys, lockbox, and entrance instructions.",
       inputSchema: z.object({
-        requested_fields: z.array(
-          z.enum([
-            "check_in_time",
-            "check_out_time",
-            "address",
-            "parking",
-            "rules",
-            "reservation_dates",
-            "reservation_status",
-          ]),
-        ),
+        guest_message: z.string().optional(),
       }),
-      execute: async ({ requested_fields }: { requested_fields: string[] }) => {
-        return requested_fields
-          .map((field) => {
-            if (field === "reservation_dates" || field === "reservation_status") {
-              return toolContext.reservation_facts?.[field];
-            }
-            return toolContext.safe_property_facts?.[field];
-          })
-          .filter(Boolean);
-      },
-    },
-    search_property_knowledge: {
-      description: "Search owner-provided FAQs and guide blocks scoped to the current property. Only use results that directly answer the latest guest question.",
-      inputSchema: z.object({
-        query: z.string(),
-        topic: z.enum(["faq", "house_rules", "appliances", "troubleshooting", "general"]).optional(),
-      }),
-      execute: async ({ query, topic }: { query: string; topic?: string }) => {
-        const candidates = [
-          ...(toolContext.faqs || []),
-          ...(toolContext.knowledge_blocks || []),
-        ];
-        return searchSources(candidates, query, topic).slice(0, 5);
-      },
-    },
-    get_approved_recommendations: {
-      description: "Get owner-approved local recommendations scoped to the current property. Use only for guest requests about local places, services, transport, restaurants, supermarkets, pharmacies, attractions, or money exchange.",
-      inputSchema: z.object({
-        category: z.enum([
-          "restaurant",
-          "breakfast",
-          "coffee",
-          "pharmacy",
-          "transport",
-          "supermarket",
-          "activities",
-        ]),
-      }),
-      execute: async ({ category }: { category: string }) => {
-        const normalizedCategory = category === "coffee" ? "cafe" : category === "activities" ? "attraction" : category;
-        return (toolContext.recommendations || [])
-          .filter((source: any) => source.value?.toLowerCase().includes(normalizedCategory) || source.label?.toLowerCase().includes(normalizedCategory))
-          .slice(0, 5);
-      },
-    },
-    get_access_instructions: {
-      description: "Get sensitive access instructions only when Rails has authorized disclosure for this guest and reservation window.",
-      inputSchema: z.object({}),
-      execute: async () => {
-        if (!toolContext.sensitive_access_authorized) {
-          return { denied: true, reason: "Sensitive access is not authorized for this guest/reservation window." };
-        }
-        return Object.values(toolContext.sensitive_property_facts || {});
-      },
-    },
-    get_property_policy: {
-      description: "Get owner policy scoped to this account/property. Policies do not grant approval by themselves.",
-      inputSchema: z.object({
-        policy_type: z.enum(["early_checkin", "late_checkout", "refund", "maintenance", "access"]),
-      }),
-      execute: async ({ policy_type }: { policy_type: string }) => {
-        return toolContext.policies?.[policy_type] || {
-          source_type: "policy",
-          source_id: `policy:${policy_type}`,
-          label: policy_type,
-          value: "Escalate to the host for approval.",
-        };
-      },
+      execute: async () => toolContext.sensitive_access_info || { authorized: false, reason: "not_available", sources: [] },
     },
     create_escalation_draft: {
       description: "Create an escalation draft. This does not write to the database; Rails decides whether to create the real alert.",
@@ -581,70 +545,23 @@ function buildRemoteTools(toolEndpoint: any) {
   if (!toolEndpoint?.base_url || !toolEndpoint?.decision_context_id) return null;
 
   return {
-    guest_context: {
-      description: "Get the scoped, safe guest/property/reservation context and capabilities. This must be consulted before factual replies.",
+    property_brain: {
+      description: "Get compiled, relevant, non-sensitive property facts, reservation status, policies, FAQs, guides, amenities, and approved recommendations for the current guest message.",
       inputSchema: z.object({
-        query: z.string().optional(),
+        guest_message: z.string().optional(),
+        conversation_summary: z.string().optional(),
+        limit: z.number().int().min(1).max(20).optional(),
       }),
-      execute: async (input: { query?: string }) =>
-        callRailsTool(toolEndpoint, "guest_context", input),
+      execute: async (input: { guest_message?: string; conversation_summary?: string; limit?: number }) =>
+        callRailsTool(toolEndpoint, "property_brain", input),
     },
-    get_stay_facts: {
-      description: "Get exact, non-sensitive stay or property facts scoped to the current conversation.",
+    sensitive_access_info: {
+      description: "Get sensitive access information only if Rails authorized it for this guest and reservation window. Includes WiFi passwords, codes, keys, lockbox, and entrance instructions.",
       inputSchema: z.object({
-        requested_fields: z.array(
-          z.enum([
-            "check_in_time",
-            "check_out_time",
-            "address",
-            "parking",
-            "rules",
-            "reservation_dates",
-            "reservation_status",
-          ]),
-        ),
+        guest_message: z.string().optional(),
       }),
-      execute: async (input: { requested_fields: string[] }) =>
-        callRailsTool(toolEndpoint, "stay_facts", input),
-    },
-    search_property_knowledge: {
-      description: "Search owner-provided FAQs and guide blocks scoped to the current property. Use this for approximate wording, typos, amenities, appliance guides, and general property questions.",
-      inputSchema: z.object({
-        query: z.string(),
-        topic: z.enum(["faq", "house_rules", "appliances", "troubleshooting", "general"]).optional(),
-      }),
-      execute: async (input: { query: string; topic?: string }) =>
-        callRailsTool(toolEndpoint, "search_property_knowledge", input),
-    },
-    get_approved_recommendations: {
-      description: "Get owner-approved local recommendations scoped to the current property. Use only for guest requests about local places, services, transport, restaurants, supermarkets, pharmacies, attractions, or money exchange.",
-      inputSchema: z.object({
-        category: z.enum([
-          "restaurant",
-          "breakfast",
-          "coffee",
-          "pharmacy",
-          "transport",
-          "supermarket",
-          "activities",
-          "other",
-        ]),
-      }),
-      execute: async (input: { category: string }) =>
-        callRailsTool(toolEndpoint, "approved_recommendations", input),
-    },
-    get_access_instructions: {
-      description: "Get sensitive access instructions only when Rails has authorized disclosure for this guest and reservation window.",
-      inputSchema: z.object({}),
-      execute: async () => callRailsTool(toolEndpoint, "access_instructions", {}),
-    },
-    get_property_policy: {
-      description: "Get owner policy scoped to this account/property. Policies do not grant approval by themselves.",
-      inputSchema: z.object({
-        policy_type: z.enum(["early_checkin", "late_checkout", "refund", "maintenance", "access"]),
-      }),
-      execute: async (input: { policy_type: string }) =>
-        callRailsTool(toolEndpoint, "property_policy", input),
+      execute: async (input: { guest_message?: string }) =>
+        callRailsTool(toolEndpoint, "sensitive_access_info", input),
     },
     create_escalation_draft: {
       description: "Create an escalation draft. This does not write to the database; Rails decides whether to create the real alert.",
@@ -803,8 +720,8 @@ function summarizeToolResults(toolResults: any[]) {
     toolName: item.toolName,
     evidence_ids: collectEvidenceIds(item.result),
     source_ids: Array.isArray(item.result)
-      ? item.result.map((source: any) => source?.source_id).filter(Boolean)
-      : [item.result?.source_id].filter(Boolean),
+      ? item.result.map((source: any) => source?.id || source?.source_id).filter(Boolean)
+      : [item.result?.id || item.result?.source_id].filter(Boolean),
   }));
 }
 
@@ -815,7 +732,7 @@ function collectEvidenceIds(result: any): string[] {
   }
   if (typeof result !== "object") return [];
 
-  const own = result.evidence_id ? [result.evidence_id] : [];
+  const own = [result.id, result.evidence_id, result.source_id].filter(Boolean);
   const nested = Object.values(result).flatMap((value) => collectEvidenceIds(value));
   return Array.from(new Set([...own, ...nested]));
 }

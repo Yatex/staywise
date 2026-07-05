@@ -1,6 +1,8 @@
 module Whatsapp
   class IncomingMessageHandler
     MISSING_PROPERTY_CONTEXT_REPLY = "I need the property details before I can answer safely. Please scan the property QR code again or open the property link and send your message from there.".freeze
+    ROUTING_INIT_MESSAGE_TYPE = "routing_init".freeze
+    ROUTING_GREETING_MESSAGE_TYPE = "routing_greeting".freeze
 
     def initialize(params, provider: ProviderFactory.build)
       @params = params
@@ -25,8 +27,13 @@ module Whatsapp
         sender: "guest",
         channel: "whatsapp",
         body: parsed.body,
-        metadata: parsed.metadata
+        metadata: guest_message_metadata(parsed, property)
       )
+
+      if routing_init_message?(parsed, property)
+        replied = maybe_reply_to_routing_init(conversation, guest, parsed)
+        return { conversation: conversation, message: guest_message, decision: nil, alert: nil, replied: replied, routing_init: true }
+      end
 
       unless account.ai_active? && property.ai_enabled?
         conversation.update!(ai_enabled: false)
@@ -66,6 +73,68 @@ module Whatsapp
         guest.conversations.create!(property: property, status: "active", ai_enabled: true)
     end
 
+    def guest_message_metadata(parsed, property)
+      metadata = parsed.metadata.to_h
+      return metadata unless routing_init_message?(parsed, property)
+
+      metadata.merge(
+        "message_type" => ROUTING_INIT_MESSAGE_TYPE,
+        "routing_init" => true,
+        "property_token" => parsed.property_token,
+        "handled_by" => "whatsapp_routing"
+      )
+    end
+
+    def routing_init_message?(parsed, property)
+      return false if parsed.property_token.blank?
+
+      text = parsed.body.to_s.gsub(InboundMessageParser::PUBLIC_TOKEN_PATTERN, "")
+      [property.display_name, property.name].compact_blank.uniq.each do |name|
+        text = text.gsub(name.to_s, "")
+      end
+
+      text = text
+        .downcase
+        .gsub(/[[:punct:]¿?¡!]+/, " ")
+        .squish
+
+      return true if text.blank?
+
+      normalized = text.gsub(/\b(hola|hello|hi|hey|buenas|buenos dias|buenos días|buenas tardes|buenas noches|tengo|una|un|consulta|sobre|del|de|la|el|para|por|favor|gracias)\b/i, " ").squish
+      normalized.blank?
+    end
+
+    def maybe_reply_to_routing_init(conversation, guest, parsed)
+      return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
+
+      body = routing_greeting_for(conversation.property, parsed.body)
+      delivery = @provider.send_message(to: guest.phone_number, body: body)
+      return false unless delivery_success?(delivery)
+
+      conversation.messages.create!(
+        sender: "system",
+        channel: "whatsapp",
+        body: body,
+        metadata: {
+          "message_type" => ROUTING_GREETING_MESSAGE_TYPE,
+          "handled_by" => "rails",
+          "owner_disclosure" => true
+        }.merge(delivery_metadata(delivery))
+      )
+      true
+    end
+
+    def routing_greeting_for(property, text)
+      property_name = property.display_name
+
+      case AI::LanguageHelper.detect(text, fallback: property.account.ai_preferred_language)
+      when "es"
+        "Ya vinculé este chat con #{property_name}. Escribime tu consulta y te ayudo.\n\nTené en cuenta que este chat está compartido con el dueño de la propiedad."
+      else
+        "This chat is now linked to #{property_name}. Send me your question and I will help.\n\nPlease note that this chat is shared with the property owner."
+      end
+    end
+
     def maybe_reply(conversation, guest, decision, alert:)
       return false unless conversation.ai_enabled?
       return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
@@ -82,13 +151,19 @@ module Whatsapp
 
     def ai_response_body(conversation, decision, alert:)
       response_text = safe_response_text_for(decision, alert: alert, conversation: conversation)
-      return response_text if conversation.messages.where(sender: "ai").exists?
+      return response_text if owner_disclosure_already_sent?(conversation)
 
       AI::LanguageHelper.with_owner_disclosure(
         response_text,
         text: conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
         fallback_language: conversation.guest.language
       )
+    end
+
+    def owner_disclosure_already_sent?(conversation)
+      return true if conversation.messages.where(sender: "ai").exists?
+
+      conversation.messages.any? { |message| ActiveModel::Type::Boolean.new.cast(message.metadata.to_h["owner_disclosure"]) }
     end
 
     def safe_response_text_for(decision, alert:, conversation:)

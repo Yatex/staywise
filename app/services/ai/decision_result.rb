@@ -7,6 +7,7 @@ module AI
       intent_summary
       detected_intents
       evidence_ids
+      used_source_ids
       required_capabilities
       missing_information
       safety_flags
@@ -18,6 +19,8 @@ module AI
       audit
       should_reply
       escalation_required
+      escalation_reason
+      sensitive_info_used
       alert_type
       alert_title
       alert_description
@@ -30,7 +33,9 @@ module AI
       normalized = hash.to_h.transform_keys(&:to_s)
       decision = normalized["decision"].presence || normalized["outcome"]
       message_body = normalized["message_body"].presence || normalized["response_text"]
+      used_source_ids = Array(normalized["used_source_ids"]).compact_blank
       evidence_ids = Array(normalized["evidence_ids"]).presence ||
+        used_source_ids.presence ||
         Array(normalized["evidence"]).filter_map { |item| item.to_h["evidence_id"].presence || item.to_h["source_id"] }
 
       new(
@@ -40,6 +45,7 @@ module AI
         intent_summary: normalized["intent_summary"],
         detected_intents: normalized.fetch("detected_intents", []),
         evidence_ids: evidence_ids,
+        used_source_ids: used_source_ids,
         required_capabilities: normalized.fetch("required_capabilities", []),
         missing_information: normalized.fetch("missing_information", []),
         safety_flags: normalized.fetch("safety_flags", []),
@@ -51,6 +57,8 @@ module AI
         audit: normalized.fetch("audit", {}),
         should_reply: normalized["should_reply"],
         escalation_required: normalized["escalation_required"],
+        escalation_reason: normalized["escalation_reason"],
+        sensitive_info_used: normalized["sensitive_info_used"],
         alert_type: normalized["alert_type"],
         alert_title: normalized["alert_title"],
         alert_description: normalized["alert_description"],
@@ -66,6 +74,7 @@ module AI
       @outcome = normalized_outcome
       @evidence = Array(@evidence).map { |item| item.to_h.stringify_keys }
       @evidence_ids = Array(@evidence_ids.presence || @evidence.map { |item| item["evidence_id"].presence || item["source_id"] }).compact_blank
+      @used_source_ids = Array(@used_source_ids.presence || @evidence_ids).compact_blank
       @detected_intents = Array(@detected_intents).map { |item| item.to_h.stringify_keys }
       @required_capabilities = Array(@required_capabilities)
       @missing_information = Array(@missing_information)
@@ -73,6 +82,7 @@ module AI
       @escalation = @escalation.to_h.stringify_keys if @escalation.present?
       @proposed_action = @proposed_action.to_h.stringify_keys if @proposed_action.present?
       @audit = @audit.to_h.stringify_keys
+      @sensitive_info_used = ActiveModel::Type::Boolean.new.cast(@sensitive_info_used)
     end
 
     def to_h
@@ -114,6 +124,7 @@ module AI
 
     def normalized_outcome
       value = @outcome.to_s
+      return "no_reply" if value == "ignore"
       return value if value.in?(%w[reply ask_clarifying_question escalate propose_action no_reply])
 
       @escalation_required ? "escalate" : "reply"

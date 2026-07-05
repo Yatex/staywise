@@ -66,7 +66,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     decision = run_with_remote_decision(message, ai_reply(
       language: "en",
       message_body: "The WiFi network is Test WiFi and the password is secret.",
-      evidence_ids: ["property.wifi_name", "property.wifi_password"],
+      used_source_ids: ["sensitive_wifi_name", "sensitive_wifi_password"],
+      sensitive_info_used: true,
       detected_intents: [{ type: "wifi", status: "answered" }]
     ))
 
@@ -75,7 +76,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_includes decision.response_text, "secret"
     assert_includes decision.response_text, "password"
     assert_not decision.escalation_required
-    assert_includes decision.evidence_ids, "property.wifi_password"
+    assert_includes decision.used_source_ids, "sensitive_wifi_password"
   end
 
   test "qr property guest without reservation dates receives wifi details in spanish" do
@@ -85,7 +86,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     decision = run_with_remote_decision(message, ai_reply(
       language: "es",
       message_body: "La red de WiFi es Test WiFi y la contraseña es secret.",
-      evidence_ids: ["property.wifi_name", "property.wifi_password"],
+      used_source_ids: ["sensitive_wifi_name", "sensitive_wifi_password"],
+      sensitive_info_used: true,
       detected_intents: [{ type: "wifi", status: "answered" }]
     ))
 
@@ -279,7 +281,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["faq.#{faq.id}"], decision.evidence_ids
   end
 
-  test "accepts ai reply using late checkout faq for spanish wording" do
+  test "rejects direct late checkout request reply even when an faq mentions the policy" do
     faq = @property.faqs.create!(
       question: "Can I request late checkout?",
       answer: "Late checkout depends on availability. Ask the host before confirming.",
@@ -291,14 +293,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     decision = run_with_remote_decision(message, ai_reply(
       language: "es",
       message_body: "El late checkout depende de disponibilidad. Lo tenemos que confirmar con el anfitrión antes de aprobarlo.",
-      evidence_ids: ["faq.#{faq.id}"],
+      used_source_ids: ["faq_#{faq.id}"],
       detected_intents: [{ type: "faq", status: "answered" }]
     ))
 
-    assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "depende de disponibilidad"
-    assert_not decision.escalation_required
-    assert_equal ["faq.#{faq.id}"], decision.evidence_ids
+    assert_equal "escalate", decision.outcome
+    assert decision.escalation_required
+    assert_not_includes decision.response_text, "depende de disponibilidad"
   end
 
   test "does not use pool directions faq to answer visitor permission question" do
@@ -453,6 +454,81 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_includes result.response_text, "Western Union"
   end
 
+  test "accepts ai reply using property brain faq source id" do
+    faq = @property.faqs.create!(
+      question: "How do I use the pool?",
+      answer: "Take the elevator to level -1.",
+      category: "amenities",
+      active: true
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "How do I use the pool?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "Take the elevator to level -1.",
+      used_source_ids: ["faq_#{faq.id}"],
+      detected_intents: [{ type: "faq", status: "answered" }]
+    ))
+
+    assert_equal "reply", decision.outcome
+    assert_equal ["faq_#{faq.id}"], decision.used_source_ids
+    assert_equal ["faq_#{faq.id}"], decision.evidence_ids
+  end
+
+  test "accepts approved recommendation through property brain source id" do
+    recommendation = @property.recommendations.create!(
+      name: "Western Union",
+      category: "other",
+      description: "Good place to exchange money to pesos.",
+      address: "Scalabrini Ortiz 2354"
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "Where can I exchange money?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "The host recommends Western Union for exchanging money to pesos.",
+      used_source_ids: ["recommendation_#{recommendation.id}"],
+      detected_intents: [{ type: "recommendation", status: "answered" }]
+    ))
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "Western Union"
+    assert_not decision.escalation_required
+  end
+
+  test "guest outside reservation window cannot receive wifi even if ai cites sensitive source" do
+    @guest.update!(check_in_date: Date.current + 10.days, checkout_date: Date.current + 12.days)
+    message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "The WiFi password is secret.",
+      used_source_ids: ["sensitive_wifi_password"],
+      sensitive_info_used: true,
+      detected_intents: [{ type: "wifi", status: "answered" }]
+    ))
+
+    assert_equal "escalate", decision.outcome
+    assert decision.escalation_required
+    assert_not_includes decision.response_text, "secret"
+  end
+
+  test "sensitive reply without sensitive flag is rejected" do
+    message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "The WiFi password is secret.",
+      used_source_ids: ["sensitive_wifi_password"],
+      sensitive_info_used: false,
+      detected_intents: [{ type: "wifi", status: "answered" }]
+    ))
+
+    assert_equal "escalate", decision.outcome
+    assert decision.escalation_required
+    assert_not_includes decision.response_text, "secret"
+  end
+
   private
 
   def run_with_remote_decision(message, decision_hash)
@@ -464,17 +540,21 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     service_class.new(conversation: @conversation, guest_message: message).call
   end
 
-  def ai_reply(language:, message_body:, evidence_ids:, detected_intents:)
+  def ai_reply(language:, message_body:, detected_intents:, evidence_ids: nil, used_source_ids: nil, sensitive_info_used: false)
     {
-      decision: "reply",
+      outcome: "reply",
       language: language,
       message_body: message_body,
       intent_summary: detected_intents.map { |intent| intent[:type] }.join(", "),
       detected_intents: detected_intents,
-      evidence_ids: evidence_ids,
+      evidence_ids: Array(evidence_ids),
+      used_source_ids: Array(used_source_ids),
       required_capabilities: [],
       proposed_action: nil,
       escalation: { required: false, reason_code: nil, summary_for_host: nil },
+      escalation_required: false,
+      escalation_reason: nil,
+      sensitive_info_used: sensitive_info_used,
       missing_information: [],
       safety_flags: [],
       confidence: 0.95

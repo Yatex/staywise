@@ -49,6 +49,7 @@ module ApplicationHelper
       "member" => "Miembro",
       "guest" => "Huésped",
       "ai" => "IA",
+      "system" => "Sistema",
       "starter" => "Starter",
       "growth" => "Growth",
       "pro" => "Scale",
