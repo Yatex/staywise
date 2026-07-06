@@ -13,7 +13,7 @@ module AI
 
       {
         guest_message: @guest_message.body,
-        guest_language: LanguageHelper.detect(@guest_message.body, fallback: @guest.language),
+        guest_language_fallback: LanguageHelper.normalize_code(@guest.language),
         owner_language: LanguageHelper.owner_language(@property.account),
         guest: guest_payload,
         property: property_payload,
@@ -33,7 +33,7 @@ module AI
 
     def guest_payload
       {
-        language: LanguageHelper.detect(@guest_message.body, fallback: @guest.language)
+        persisted_language: LanguageHelper.normalize_code(@guest.language)
       }
     end
 
@@ -71,7 +71,9 @@ module AI
     def safety_rules
       [
         "Return only structured JSON matching the decision contract.",
-        "Always write response_text in guest_language. Owner-facing alert fields and suggested_owner_action must stay in owner_language.",
+        "Determine language from the latest guest message and write response_text in that language.",
+        "If the guest changes language, change the response language too. Use guest_language_fallback only when the latest message is too short or unclear.",
+        "Owner-facing alert fields and suggested_owner_action must stay in owner_language.",
         "Use property_brain before factual replies and cite used_source_ids from returned source ids.",
         "Use sensitive_access_info for WiFi, passwords, keys, codes, lockboxes, and access instructions.",
         "Do not answer without evidence from a provided tool result.",

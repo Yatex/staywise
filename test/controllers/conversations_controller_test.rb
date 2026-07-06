@@ -104,6 +104,35 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Aceptado por Twilio"
   end
 
+  test "show page includes guest messages referenced by ai trace logs" do
+    legacy_conversation = @guest.conversations.create!(property: @property, status: "active")
+    traced_message = legacy_conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "a que hora es el check in?"
+    )
+    AIDecisionLog.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      conversation: @conversation,
+      message: traced_message,
+      original_message: traced_message,
+      route: "remote_ai",
+      decision: "escalate",
+      final_outcome: "escalate",
+      language: "es",
+      fallback_reason: "legacy_trace_message_mismatch",
+      payload: { "whatsapp_delivery" => { "delivery_status" => "not_sent" } }
+    )
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "#message-#{traced_message.id}", count: 1
+    assert_includes @response.body, "a que hora es el check in?"
+  end
+
   test "ai trace panel is only visible to internal admins on conversation show" do
     message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "a que hora es el check in?")
     AIDecisionLog.create!(

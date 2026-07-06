@@ -43,4 +43,16 @@ class AiContextBuilderTest < ActiveSupport::TestCase
 
     assert_equal bodies + [latest.body], payload.fetch(:conversation_history).map { |message| message["body"] || message[:body] }
   end
+
+  test "uses persisted guest language only as a fallback hint" do
+    @guest.update!(language: "es")
+    french_message = @conversation.messages.create!(sender: "guest", body: "À quelle heure est le check-in ?", channel: "whatsapp")
+
+    payload = AI::ContextBuilder.new(conversation: @conversation, guest_message: french_message).call
+
+    assert_not payload.key?(:guest_language)
+    assert_equal "es", payload.fetch(:guest_language_fallback)
+    assert_equal "es", payload.dig(:guest, :persisted_language)
+    assert_includes payload.fetch(:safety_rules), "Determine language from the latest guest message and write response_text in that language."
+  end
 end

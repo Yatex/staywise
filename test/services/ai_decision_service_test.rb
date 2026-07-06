@@ -44,6 +44,110 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["property.check_in_time"], decision.evidence_ids
   end
 
+  test "spanish check in question uses mandatory tools and valid evidence" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora es el check in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "El check-in es a las 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "3:00 PM"
+    assert_equal ["property.check_in_time"], decision.evidence_ids
+    assert_not_includes decision.detected_intents.map { |intent| intent["type"] }, "unknown"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "guest_context"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "stay_facts"
+    assert_equal 0, @conversation.alerts.count
+    assert_equal "es", @guest.reload.language
+  end
+
+  test "french check in question uses mandatory tools and answers in french" do
+    message = @conversation.messages.create!(sender: "guest", body: "À quelle heure est le check-in ?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "fr",
+      message_body: "Le check-in est à 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "Le check-in est"
+    assert_equal ["property.check_in_time"], decision.evidence_ids
+    assert_not_includes decision.detected_intents.map { |intent| intent["type"] }, "unknown"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "guest_context"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "stay_facts"
+    assert_equal 0, @conversation.alerts.count
+    assert_equal "fr", @guest.reload.language
+  end
+
+  test "english shorthand check in question uses mandatory tools and valid evidence" do
+    message = @conversation.messages.create!(sender: "guest", body: "check in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "Check-in is at 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "3:00 PM"
+    assert_equal ["property.check_in_time"], decision.evidence_ids
+    assert_not_includes decision.detected_intents.map { |intent| intent["type"] }, "unknown"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "guest_context"
+    assert_includes audit.tool_calls.map { |tool| tool["tool_name"] }, "stay_facts"
+    assert_equal 0, @conversation.alerts.count
+    assert_equal "en", @guest.reload.language
+  end
+
+  test "ai language follows the latest clear message even when local fallback would choose another language" do
+    @guest.update!(language: "es")
+    @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
+    message = @conversation.messages.create!(sender: "guest", body: "Merci, but when is check-in?", channel: "whatsapp")
+
+    assert_equal "fr", AI::LanguageHelper.detect(message.body, fallback: @guest.language)
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "en",
+      message_body: "Check-in is at 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ))
+
+    assert_equal "reply", decision.outcome
+    assert_equal "en", decision.language
+    assert_includes decision.response_text, "Check-in is at"
+    assert_equal "en", @guest.reload.language
+  end
+
+  test "missing ai language is rejected and only then uses local defensive fallback" do
+    message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: nil,
+      message_body: "El check-in es a las 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "escalate", decision.outcome
+    assert_equal "es", decision.language
+    assert_includes audit.validation_results["reasons"], "missing_language"
+    assert_equal "es", @guest.reload.language
+  end
+
   test "accepts ai address reply with valid evidence" do
     message = @conversation.messages.create!(sender: "guest", body: "Can you send the address?", channel: "whatsapp")
 
@@ -103,14 +207,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     decision = run_with_remote_decision(message, ai_reply(
       language: "es",
-      message_body: "El checkout es a las 11:00 AM. Si necesitás salir más tarde, tiene que confirmarlo el anfitrión.",
+      message_body: "El checkout es a las 11:00 AM.",
       evidence_ids: ["property.check_out_time"],
       detected_intents: [{ type: "checkout", status: "answered" }]
     ))
 
     assert_equal "reply", decision.outcome
     assert_includes decision.response_text, "El checkout es a las 11:00 AM"
-    assert_includes decision.response_text, "Si necesitás salir más tarde"
     assert_not_equal "11:00 AM", decision.response_text
   end
 
@@ -282,7 +385,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["faq.#{faq.id}"], decision.evidence_ids
   end
 
-  test "rejects direct late checkout request reply even when an faq mentions the policy" do
+  test "contract failure blocks direct late checkout request reply without whatsapp fallback" do
     faq = @property.faqs.create!(
       question: "Can I request late checkout?",
       answer: "Late checkout depends on availability. Ask the host before confirming.",
@@ -298,9 +401,110 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       detected_intents: [{ type: "faq", status: "answered" }]
     ))
 
-    assert_equal "escalate", decision.outcome
-    assert decision.escalation_required
-    assert_not_includes decision.response_text, "depende de disponibilidad"
+    assert_equal "no_reply", decision.outcome
+    assert_not decision.should_reply
+    assert_not decision.escalation_required
+    assert_nil decision.response_text
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal "remote_ai_contract_rejected", audit.route
+    assert_equal "contract_validation_failed", audit.validator_result
+    assert_includes audit.validation_results["reasons"], "contract_reply_claims_host_consult_without_alert_or_action"
+    assert OperationalError.where(source: "ai_contract", message: "AI contract validation failed").exists?
+  end
+
+  test "blocks real guest decision without mandatory tools" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora es el check in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "El check-in es a las 3:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }],
+      audit: { tool_calls: [] }
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "no_reply", decision.outcome
+    assert_not decision.should_reply
+    assert_equal "remote_ai_tool_mandatory_rejected", audit.route
+    assert_equal "tool_mandatory_failed", audit.validator_result
+    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
+    assert OperationalError.where(source: "ai_tools", message: "real_guest_message_without_tools").exists?
+  end
+
+  test "blocks unknown escalation without tools and records metrics" do
+    message = @conversation.messages.create!(sender: "guest", body: "when is check-in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_escalation(
+      language: "en",
+      message_body: "Thanks for your message. I'm checking this with the host and will get back to you shortly.",
+      reason_code: "unknown_question",
+      detected_intents: [{ type: "unknown", status: "escalated" }],
+      audit: { tool_calls: [] }
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "no_reply", decision.outcome
+    assert_equal "remote_ai_tool_mandatory_rejected", audit.route
+    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:unknown_intent_without_tools"
+    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:escalation_without_tools"
+    assert OperationalError.where(source: "ai_tools", message: "unknown_intent_without_tools").exists?
+    assert OperationalError.where(source: "ai_tools", message: "escalation_without_tools").exists?
+  end
+
+  test "contract failure blocks escalate when escalation required is not true" do
+    message = @conversation.messages.create!(sender: "guest", body: "À quelle heure est le check-in ?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, {
+      decision: "escalate",
+      language: "fr",
+      message_body: "Merci pour votre message. Je vérifie cela avec l'hôte et je vous répondrai bientôt.",
+      intent_summary: "check_in",
+      detected_intents: [{ type: "check_in", status: "escalated" }],
+      evidence_ids: [],
+      required_capabilities: [],
+      proposed_action: nil,
+      escalation: { required: false, reason_code: "unknown_question", summary_for_host: "Question de check-in non répondue." },
+      escalation_required: false,
+      missing_information: ["check_in_time"],
+      safety_flags: [],
+      confidence: 0.9
+    })
+
+    assert_equal "no_reply", decision.outcome
+    assert_not decision.should_reply
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal "remote_ai_contract_rejected", audit.route
+    assert_includes audit.validation_results["reasons"], "contract_escalate_requires_escalation_required_true"
+    assert OperationalError.where(source: "ai_contract", message: "AI contract validation failed").exists?
+  end
+
+  test "contract failure blocks no reply that attempts to send whatsapp" do
+    message = @conversation.messages.create!(sender: "guest", body: "please keep this conversation open for later", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, {
+      decision: "no_reply",
+      language: "es",
+      message_body: "De nada.",
+      should_reply: true,
+      intent_summary: "closure",
+      detected_intents: [{ type: "closure", status: "answered" }],
+      evidence_ids: [],
+      required_capabilities: [],
+      proposed_action: nil,
+      escalation: { required: false },
+      missing_information: [],
+      safety_flags: [],
+      confidence: 0.9
+    })
+
+    assert_equal "no_reply", decision.outcome
+    assert_not decision.should_reply
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal "remote_ai_contract_rejected", audit.route
+    assert_includes audit.validation_results["reasons"], "contract_no_reply_must_not_send_whatsapp"
   end
 
   test "does not use pool directions faq to answer visitor permission question" do
@@ -375,7 +579,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test "uses fallback decision from non-success ai service response" do
+  test "blocks non-success ai service fallback response when mandatory tools are missing" do
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     message = @conversation.messages.create!(sender: "guest", body: "Quisiera saber si hay piscina", channel: "whatsapp")
     response = Struct.new(:code, :body).new(
@@ -402,10 +606,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     begin
       decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
 
-      assert_equal "escalate", decision.outcome
-      assert_equal "unknown_question", decision.alert_type
-      assert_includes decision.response_text, "Gracias por tu mensaje"
-      assert_not_includes decision.response_text, "Thanks for your message"
+      audit = AIDecisionLog.where(message: message).last
+
+      assert_equal "no_reply", decision.outcome
+      assert_not decision.should_reply
+      assert_nil decision.response_text
+      assert_equal "remote_ai_tool_mandatory_rejected", audit.route
+      assert_equal "tool_mandatory_failed", audit.validator_result
+      assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
     ensure
       Net::HTTP.define_singleton_method(:post, original_post)
     end
@@ -418,10 +626,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       confidence: 0.9,
       evidence: [],
       escalation: { required: false, category: nil, urgency: nil, summary: nil },
-      proposed_action: nil
+      proposed_action: nil,
+      audit: default_tool_audit
     )
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| decision }
+      define_method(:remote_decision) do |_payload|
+        instance_variable_set(:@tool_calls, Array(decision.audit["tool_calls"]))
+        decision
+      end
     end
     service = service_class.new(conversation: @conversation, guest_message: @conversation.messages.create!(sender: "guest", body: "Tell me about the TV", channel: "whatsapp"))
 
@@ -445,10 +657,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       confidence: 0.9,
       evidence: [{ source_type: "faq", source_id: "faq:#{other_faq.id}", claim: "Gym information" }],
       escalation: { required: false, category: nil, urgency: nil, summary: nil },
-      proposed_action: nil
+      proposed_action: nil,
+      audit: default_tool_audit
     )
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| decision }
+      define_method(:remote_decision) do |_payload|
+        instance_variable_set(:@tool_calls, Array(decision.audit["tool_calls"]))
+        decision
+      end
     end
     service = service_class.new(conversation: @conversation, guest_message: message)
 
@@ -472,10 +688,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       confidence: 0.9,
       evidence: [{ source_type: "recommendation", source_id: "recommendation:#{recommendation.id}", claim: "Money exchange nearby." }],
       escalation: { required: false, category: nil, urgency: nil, summary: nil },
-      proposed_action: nil
+      proposed_action: nil,
+      audit: default_tool_audit
     )
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| decision }
+      define_method(:remote_decision) do |_payload|
+        instance_variable_set(:@tool_calls, Array(decision.audit["tool_calls"]))
+        decision
+      end
     end
     service = service_class.new(conversation: @conversation, guest_message: message)
 
@@ -518,7 +738,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     decision = run_with_remote_decision(message, ai_reply(
       language: "en",
-      message_body: "The host recommends Western Union for exchanging money to pesos.",
+      message_body: "Western Union is recommended for exchanging money to pesos.",
       used_source_ids: ["recommendation_#{recommendation.id}"],
       detected_intents: [{ type: "recommendation", status: "answered" }]
     ))
@@ -566,13 +786,17 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
   def run_with_remote_decision(message, decision_hash)
     decision = AI::DecisionResult.from_hash(decision_hash)
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| decision }
+      define_method(:remote_decision) do |_payload|
+        instance_variable_set(:@tool_calls, Array(decision.audit["tool_calls"]))
+        instance_variable_set(:@ai_response_payload, decision_hash)
+        decision
+      end
     end
 
     service_class.new(conversation: @conversation, guest_message: message).call
   end
 
-  def ai_reply(language:, message_body:, detected_intents:, evidence_ids: nil, used_source_ids: nil, sensitive_info_used: false)
+  def ai_reply(language:, message_body:, detected_intents:, evidence_ids: nil, used_source_ids: nil, sensitive_info_used: false, audit: default_tool_audit)
     {
       outcome: "reply",
       language: language,
@@ -589,11 +813,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       sensitive_info_used: sensitive_info_used,
       missing_information: [],
       safety_flags: [],
-      confidence: 0.95
+      confidence: 0.95,
+      audit: audit
     }
   end
 
-  def ai_clarification(language:, message_body:, detected_intents:)
+  def ai_clarification(language:, message_body:, detected_intents:, audit: default_tool_audit)
     {
       decision: "ask_clarifying_question",
       language: language,
@@ -606,11 +831,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       escalation: { required: false, reason_code: nil, summary_for_host: nil },
       missing_information: ["ambiguous_intent"],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      audit: audit
     }
   end
 
-  def ai_action(language:, message_body:, action_type:, reason_code:, detected_intents:)
+  def ai_action(language:, message_body:, action_type:, reason_code:, detected_intents:, audit: default_tool_audit)
     {
       decision: "propose_action",
       language: language,
@@ -623,11 +849,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       escalation: { required: true, reason_code: reason_code, summary_for_host: message_body },
       missing_information: [],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      audit: audit
     }
   end
 
-  def ai_escalation(language:, message_body:, reason_code:, detected_intents:)
+  def ai_escalation(language:, message_body:, reason_code:, detected_intents:, audit: default_tool_audit)
     {
       decision: "escalate",
       language: language,
@@ -640,7 +867,17 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       escalation: { required: true, reason_code: reason_code, summary_for_host: message_body },
       missing_information: [],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      audit: audit
+    }
+  end
+
+  def default_tool_audit
+    {
+      tool_calls: [
+        { tool_name: "guest_context", input: { query: "guest message" }, output_summary: { keys: ["property", "reservation"] }, error: nil, latency_ms: 1 },
+        { tool_name: "stay_facts", input: { requested_fields: ["check_in_time"] }, output_summary: { evidence_ids: ["property.check_in_time"] }, error: nil, latency_ms: 1 }
+      ]
     }
   end
 end

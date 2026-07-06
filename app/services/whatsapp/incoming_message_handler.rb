@@ -42,6 +42,7 @@ module Whatsapp
 
       decision = AI::DecisionService.call(conversation: conversation, guest_message: guest_message)
       alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
+      report_missing_alert(conversation: conversation, decision: decision) if decision.escalation_required && alert.blank?
       replied = maybe_reply(conversation, guest, decision, alert: alert)
       conversation.update!(status: "escalated") if alert.present?
       finalize_ai_trace(guest_message: guest_message, decision: decision, alert: alert, replied: replied)
@@ -195,6 +196,24 @@ module Whatsapp
       }
     end
 
+    def report_missing_alert(conversation:, decision:)
+      ErrorReporter.report(
+        source: "ai_service",
+        severity: "warning",
+        account: conversation.property.account,
+        property: conversation.property,
+        message: "AI requested escalation but Rails did not create an alert",
+        context: {
+          conversation_id: conversation.id,
+          guest_id: conversation.guest_id,
+          decision: decision.outcome,
+          alert_type: decision.alert_type,
+          create_alerts_enabled: conversation.property.account.ai_automation_enabled?("create_alerts"),
+          alert_type_enabled: conversation.property.account.ai_escalates?(decision.alert_type)
+        }
+      )
+    end
+
     def finalize_ai_trace(guest_message:, decision:, alert:, replied:)
       log = AIDecisionLog.where(message: guest_message).order(created_at: :desc).first
       return unless log
@@ -217,7 +236,11 @@ module Whatsapp
           visible_for_owner: Alert.joins(:property).where(properties: { account_id: alert.property.account_id }).open.where(id: alert.id).exists?
         }
       else
-        { created: false }
+        {
+          created: false,
+          expected: decision.escalation_required,
+          reason: decision.escalation_required ? "rails_did_not_create_alert" : nil
+        }.compact
       end
 
       whatsapp_payload = {

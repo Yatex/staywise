@@ -99,9 +99,10 @@ module AI
     end
 
     def escalation_required
+      return true if outcome.in?(%w[escalate propose_action])
       return @escalation_required unless @escalation_required.nil?
 
-      escalation.present? ? escalation.fetch("required", false) : outcome.in?(%w[escalate propose_action])
+      escalation.present? ? escalation.fetch("required", false) : false
     end
 
     def alert_type

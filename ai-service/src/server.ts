@@ -153,7 +153,10 @@ const server = createServer(async (request, response) => {
         "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
         "For late checkout, early check-in, reservation changes, refunds, discounts, visitors, pets, or exceptions, do not promise approval. Escalate or propose an action unless a returned policy explicitly says the request is allowed without owner approval.",
         "Escalate or propose an action requiring approval only when information is truly missing, the guest asks for an exception/approval, or a clarification cannot resolve the request.",
-        "Guest-facing message_body must be written in the guest language from base_context.guest_language or inferred from base_context.guest_message.",
+        "Determine the language of the latest guest message yourself and set the language field to that language.",
+        "Write guest-facing message_body in the language of the latest guest message.",
+        "If the guest changes language, change language and message_body to the new language even when earlier conversation messages used another language.",
+        "Use base_context.guest_language_fallback only when the latest guest message is too short or unclear to identify a language.",
         "Owner-facing escalation.summary_for_host must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
         "Never use owner-facing Spanish as the guest reply when the guest wrote in another language.",
         "If multiple intents are present, every intent must be answered, marked needs_clarification, requires_host_approval, or escalated.",
@@ -335,12 +338,13 @@ function propertyImportContent(payload: any, document: any) {
 
 function fallbackDecision(payload: any) {
   const guestText = payload?.guest_message || "";
+  const guestLanguage = fallbackGuestLanguage(guestText, payload?.guest_language_fallback);
   const ownerLanguage = payload?.owner_language || payload?.owner_instructions?.ai_preferred_language || "es";
   return {
     outcome: "escalate",
     decision: "escalate",
-    language: normalizeLanguage(payload?.guest_language) || detectLanguage(guestText),
-    message_body: safeAckFor(guestText, payload?.guest_language),
+    language: guestLanguage,
+    message_body: safeAckFor(guestText, guestLanguage),
     intent_summary: "AI service fallback",
     detected_intents: [
       {
@@ -372,11 +376,12 @@ function fallbackDecision(payload: any) {
 
 function closureDecision(payload: any) {
   const guestText = payload?.guest_message || "";
+  const guestLanguage = fallbackGuestLanguage(guestText, payload?.guest_language_fallback);
 
   return {
     outcome: "no_reply",
     decision: "no_reply",
-    language: normalizeLanguage(payload?.guest_language) || detectLanguage(guestText),
+    language: guestLanguage,
     message_body: null,
     intent_summary: "Conversational closure or acknowledgement",
     detected_intents: [
@@ -403,10 +408,16 @@ function closureDecision(payload: any) {
   };
 }
 
+function fallbackGuestLanguage(text: string, persistedLanguage?: string) {
+  return text.trim().length > 0
+    ? detectLanguage(text)
+    : normalizeLanguage(persistedLanguage) || "en";
+}
+
 function safeBaseContext(payload: any) {
   return {
     guest_message: payload?.guest_message,
-    guest_language: payload?.guest_language,
+    guest_language_fallback: payload?.guest_language_fallback,
     owner_language: payload?.owner_language,
     guest: payload?.guest,
     property: payload?.property,
@@ -555,44 +566,71 @@ async function collectToolResults(payload: any, toolTrace: any[] = []) {
 }
 
 async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
-  if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
-    const input = {
-      guest_message: payload?.guest_message,
-      conversation_summary: conversationSummary(payload?.conversation_history),
-      limit: 8,
-    };
-    const startedAt = Date.now();
-    const result = await callRailsTool(payload.tool_endpoint, "property_brain", input);
-    toolTrace.push(traceToolResult("property_brain", input, result, undefined, Date.now() - startedAt));
+  const guestContextInput = {
+    query: payload?.guest_message,
+  };
+  const stayFactsInput = {
+    requested_fields: [
+      "check_in_time",
+      "check_out_time",
+      "address",
+      "parking",
+      "rules",
+      "emergency_information",
+      "reservation_status",
+      "reservation_dates",
+    ],
+  };
+  const propertyBrainInput = {
+    guest_message: payload?.guest_message,
+    conversation_summary: conversationSummary(payload?.conversation_history),
+    limit: 8,
+  };
 
-    return [
-      {
-        toolName: "property_brain",
-        input,
-        result,
-      },
-    ];
+  if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
+    return Promise.all([
+      tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace),
+      tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace),
+      tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace),
+    ]);
   }
 
   if (payload?.tool_context) {
-    const input = {
-      guest_message: payload?.guest_message,
-      conversation_summary: conversationSummary(payload?.conversation_history),
-      limit: 8,
+    const guestContext = payload.tool_context.guest_context || {
+      property: payload.tool_context.property_brain?.property,
+      reservation: payload.tool_context.property_brain?.stay,
+      public_facts: Object.values(payload.tool_context.safe_property_facts || {}),
+      relevant_faqs: payload.tool_context.faqs || [],
+      relevant_guides: payload.tool_context.knowledge_blocks || [],
     };
-    const result = payload.tool_context.property_brain || payload.tool_context;
-    toolTrace.push(traceToolResult("property_brain", input, result, undefined, 0));
+    const stayFacts = payload.tool_context.stay_facts ||
+      Object.values(payload.tool_context.safe_property_facts || {}).concat(Object.values(payload.tool_context.reservation_facts || {}));
+    const propertyBrain = payload.tool_context.property_brain || payload.tool_context;
+
+    toolTrace.push(traceToolResult("guest_context", guestContextInput, guestContext, undefined, 0));
+    toolTrace.push(traceToolResult("stay_facts", stayFactsInput, stayFacts, undefined, 0));
+    toolTrace.push(traceToolResult("property_brain", propertyBrainInput, propertyBrain, undefined, 0));
 
     return [
-      {
-        toolName: "property_brain",
-        input,
-        result,
-      },
+      { toolName: "guest_context", input: guestContextInput, result: guestContext },
+      { toolName: "stay_facts", input: stayFactsInput, result: stayFacts },
+      { toolName: "property_brain", input: propertyBrainInput, result: propertyBrain },
     ];
   }
 
   return [];
+}
+
+async function tracedMandatoryRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>, toolTrace: any[]) {
+  const startedAt = Date.now();
+  const result = await callRailsTool(toolEndpoint, toolName, input);
+  toolTrace.push(traceToolResult(toolName, input, result, result?.error, Date.now() - startedAt));
+
+  return {
+    toolName,
+    input,
+    result,
+  };
 }
 
 function conversationSummary(history: any) {
@@ -610,6 +648,33 @@ function buildTools(toolContext: any, toolTrace: any[] = []) {
   if (remoteTools) return remoteTools;
 
   return {
+    guest_context: {
+      description: "Get scoped guest, reservation, language, property, and authorization context for this conversation.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+      }),
+      execute: async (input: { query?: string }) => {
+        const result = toolContext.guest_context || {
+          property: toolContext.property_brain?.property,
+          reservation: toolContext.property_brain?.stay,
+          public_facts: Object.values(toolContext.safe_property_facts || {}),
+        };
+        toolTrace.push(traceToolResult("guest_context", input, result, undefined, 0));
+        return result;
+      },
+    },
+    stay_facts: {
+      description: "Get scoped stay and property facts such as check-in, checkout, address, parking, rules, and reservation status.",
+      inputSchema: z.object({
+        requested_fields: z.array(z.string()).optional(),
+      }),
+      execute: async (input: { requested_fields?: string[] }) => {
+        const result = toolContext.stay_facts ||
+          Object.values(toolContext.safe_property_facts || {}).concat(Object.values(toolContext.reservation_facts || {}));
+        toolTrace.push(traceToolResult("stay_facts", input, result, undefined, 0));
+        return result;
+      },
+    },
     property_brain: {
       description: "Get compiled, relevant, non-sensitive property facts, reservation status, policies, FAQs, guides, amenities, and approved recommendations for the current guest message.",
       inputSchema: z.object({
@@ -657,6 +722,22 @@ function buildRemoteTools(toolEndpoint: any, toolTrace: any[] = []) {
   if (!toolEndpoint?.base_url || !toolEndpoint?.decision_context_id) return null;
 
   return {
+    guest_context: {
+      description: "Get scoped guest, reservation, language, property, and authorization context for this conversation.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+      }),
+      execute: async (input: { query?: string }) =>
+        tracedRailsTool(toolEndpoint, "guest_context", input, toolTrace),
+    },
+    stay_facts: {
+      description: "Get scoped stay and property facts such as check-in, checkout, address, parking, rules, and reservation status.",
+      inputSchema: z.object({
+        requested_fields: z.array(z.string()).optional(),
+      }),
+      execute: async (input: { requested_fields?: string[] }) =>
+        tracedRailsTool(toolEndpoint, "stay_facts", input, toolTrace),
+    },
     property_brain: {
       description: "Get compiled, relevant, non-sensitive property facts, reservation status, policies, FAQs, guides, amenities, and approved recommendations for the current guest message.",
       inputSchema: z.object({

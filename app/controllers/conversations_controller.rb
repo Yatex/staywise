@@ -35,7 +35,7 @@ class ConversationsController < ApplicationController
     @conversation = scoped_conversations
       .includes(:guest, :property, :alerts, messages: [])
       .find(params[:id])
-    @messages = @conversation.messages.order(:created_at, :id)
+    @messages = complete_message_history_for(@conversation)
     @alerts = @conversation.alerts.order(created_at: :desc)
     @ai_decision_logs = if current_user.admin_like?
       AIDecisionLog.where(conversation: @conversation).includes(:message, :original_message).order(:created_at, :id)
@@ -46,5 +46,24 @@ class ConversationsController < ApplicationController
 
   def reply_params
     params.require(:reply).permit(:body)
+  end
+
+  def complete_message_history_for(conversation)
+    direct_messages = conversation.messages.to_a
+    traced_message_ids = AIDecisionLog
+      .where(conversation: conversation)
+      .pluck(:message_id, :original_message_id)
+      .flatten
+      .compact
+      .uniq
+
+    traced_messages = Message
+      .joins(conversation: :property)
+      .where(id: traced_message_ids, properties: { account_id: current_account.id })
+      .to_a
+
+    (direct_messages + traced_messages)
+      .uniq(&:id)
+      .sort_by { |message| [message.created_at, message.id] }
   end
 end

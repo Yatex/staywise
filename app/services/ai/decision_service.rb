@@ -11,11 +11,10 @@ module AI
       @conversation = conversation
       @guest_message = guest_message
       @property = conversation.property
-      @guest_language = LanguageHelper.detect(guest_message.body, fallback: conversation.guest.language)
+      @fallback_language = LanguageHelper.detect(guest_message.body, fallback: conversation.guest.language)
       @ai_request_payload = {}
       @ai_response_payload = {}
       @tool_calls = []
-      conversation.guest.update_column(:language, @guest_language) if @guest_language.present? && conversation.guest.language != @guest_language
     end
 
     def call
@@ -44,6 +43,38 @@ module AI
         end
 
         Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
+        if validation.contract_failed?
+          report_contract_validation_failure(decision, validation)
+          fallback = safe_no_reply("AI contract validation failed: #{validation.reasons.join(", ")}")
+          audit(
+            "remote_ai_contract_rejected",
+            fallback,
+            started_at,
+            validator_result: "contract_validation_failed",
+            rejection_reason: validation.reasons.join(", "),
+            rejected_decision: decision,
+            fallback_reason: "contract_validation_failed",
+            validation_results: validation_payload(validation, decision)
+          )
+          return fallback
+        end
+
+        if validation.tool_mandatory_failed?
+          report_tool_mandatory_failure(decision, validation)
+          fallback = safe_no_reply("AI mandatory tool validation failed: #{validation.reasons.join(", ")}", flag: "tool_mandatory_failed")
+          audit(
+            "remote_ai_tool_mandatory_rejected",
+            fallback,
+            started_at,
+            validator_result: "tool_mandatory_failed",
+            rejection_reason: validation.reasons.join(", "),
+            rejected_decision: decision,
+            fallback_reason: "tool_mandatory_failed",
+            validation_results: validation_payload(validation, decision)
+          )
+          return fallback
+        end
+
         fallback = safe_escalation("AI decision rejected: #{validation.reasons.join(", ")}")
         audit(
           "remote_ai_rejected",
@@ -107,7 +138,7 @@ module AI
     def safe_escalation(description)
       DecisionResult.from_hash(
         decision: "escalate",
-        language: @guest_language,
+        language: @fallback_language,
         message_body: guest_safe_ack,
         intent_summary: description,
         detected_intents: [{ type: "unknown", status: "escalated" }],
@@ -134,7 +165,71 @@ module AI
       )
     end
 
+    def safe_no_reply(description, flag: "contract_validation_failed")
+      DecisionResult.from_hash(
+        decision: "no_reply",
+        language: @fallback_language,
+        message_body: nil,
+        intent_summary: description,
+        detected_intents: [{ type: flag, status: "blocked" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        missing_information: [],
+        safety_flags: [flag],
+        should_reply: false,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { required: false },
+        proposed_action: nil
+      )
+    end
+
+    def report_tool_mandatory_failure(decision, validation)
+      tool_metrics_for(validation).each do |metric|
+        ErrorReporter.report(
+          source: "ai_tools",
+          severity: "warning",
+          account: @property.account,
+          property: @property,
+          message: metric,
+          context: ai_context.merge(
+            decision: decision.outcome,
+            alert_type: decision.alert_type,
+            reasons: validation.reasons,
+            rejected_decision: rejected_decision_payload(decision),
+            tool_calls: @tool_calls
+          )
+        )
+      end
+    end
+
+    def tool_metrics_for(validation)
+      metrics = []
+      metrics << "real_guest_message_without_tools" if validation.reasons.include?("tool_mandatory_failed:real_guest_message_without_tools")
+      metrics << "unknown_intent_without_tools" if validation.reasons.include?("tool_mandatory_failed:unknown_intent_without_tools")
+      metrics << "escalation_without_tools" if validation.reasons.include?("tool_mandatory_failed:escalation_without_tools")
+      metrics << "tool_mandatory_failed" if metrics.blank?
+      metrics
+    end
+
+    def report_contract_validation_failure(decision, validation)
+      ErrorReporter.report(
+        source: "ai_contract",
+        severity: "warning",
+        account: @property.account,
+        property: @property,
+        message: "AI contract validation failed",
+        context: ai_context.merge(
+          decision: decision.outcome,
+          alert_type: decision.alert_type,
+          reasons: validation.reasons,
+          rejected_decision: rejected_decision_payload(decision)
+        )
+      )
+    end
+
     def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil, validation_results: nil, fallback_reason: nil)
+      persist_decision_language(decision)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       evidence_ids = decision.evidence_ids.presence || decision.evidence.map { |item| item["evidence_id"].presence || item["source_id"] }
       payload = {
@@ -179,7 +274,7 @@ module AI
         original_message: @guest_message,
         route: payload.fetch(:route),
         decision: decision.outcome,
-        language: decision.language || @guest_language,
+        language: decision.language || @fallback_language,
         validator_result: payload[:validator_result],
         rejection_reason: payload[:rejection_reason],
         escalation_required: decision.escalation_required,
@@ -203,7 +298,14 @@ module AI
     end
 
     def guest_safe_ack(text = @guest_message.body)
-      LanguageHelper.safe_ack_for(text, fallback_language: @guest_language)
+      LanguageHelper.safe_ack_for(text, fallback_language: @fallback_language)
+    end
+
+    def persist_decision_language(decision)
+      language = LanguageHelper.normalize_code(decision.language).presence || @fallback_language
+      return if language.blank? || @conversation.guest.language == language
+
+      @conversation.guest.update_column(:language, language)
     end
 
     def ai_context
@@ -219,6 +321,7 @@ module AI
       parsed = JSON.parse(response.body)
       return unless parsed.is_a?(Hash) && parsed["outcome"].present?
 
+      @tool_calls = Array(parsed.dig("audit", "tool_calls"))
       DecisionResult.from_hash(parsed)
     rescue JSON::ParserError
       nil
@@ -245,10 +348,22 @@ module AI
     end
 
     def validation_payload(validation, decision)
+      status = if validation.valid?
+        "accepted"
+      elsif validation.contract_failed?
+        "contract_validation_failed"
+      elsif validation.tool_mandatory_failed?
+        "tool_mandatory_failed"
+      else
+        "rejected"
+      end
+
       {
-        status: validation.valid? ? "accepted" : "rejected",
+        status: status,
         passed: validation.valid?,
         failed: !validation.valid?,
+        contract_failed: validation.contract_failed?,
+        tool_mandatory_failed: validation.tool_mandatory_failed?,
         reasons: validation.reasons,
         evidence: evidence_validation(decision)
       }
@@ -301,7 +416,7 @@ module AI
 
       {
         label: "CHECKIN_TRACE",
-        detected_language: decision.language || @guest_language,
+        detected_language: decision.language || @fallback_language,
         detected_intents: decision.detected_intents,
         guest_context_called: tool_names.include?("guest_context"),
         stay_facts_called: tool_names.include?("stay_facts") || tool_names.include?("property_brain"),
