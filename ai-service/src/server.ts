@@ -247,12 +247,26 @@ const server = createServer(async (request, response) => {
     }
     const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     const finalDecision = groundedDecision.decision;
+    const finalDecisionAudit = {
+      ...((finalDecision as any).audit || {}),
+    };
+    if (finalDecisionAudit.grounded_decision_builder) {
+      finalDecisionAudit.grounded_decision_builder = {
+        ...finalDecisionAudit.grounded_decision_builder,
+        final_decision_source: {
+          model: !groundingRetry && !groundedDecision.override?.applied,
+          retry_model: groundingRetry && !groundedDecision.override?.applied,
+          grounded_override: Boolean(groundedDecision.override?.applied),
+          fallback: false,
+        },
+      };
+    }
 
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
       ...finalDecision,
       audit: {
-        ...(finalDecision as any).audit,
+        ...finalDecisionAudit,
         model: gatewayModelId(),
         token_usage: result.usage,
         tool_calls: toolTrace,
@@ -1039,6 +1053,12 @@ function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace:
     ...decision,
     audit: {
       ...(decision?.audit || {}),
+      final_decision_source: {
+        model: false,
+        retry_model: false,
+        grounded_override: false,
+        fallback: true,
+      },
       tool_calls: toolTrace,
       tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
     },

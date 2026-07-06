@@ -18,6 +18,48 @@ type Candidate = {
   score: number;
 };
 
+type RepairDecisionDiagnostic = {
+  value: boolean;
+  reason: string;
+};
+
+type CandidateAudit = {
+  evidence_id: string;
+  field: string | null;
+  label: string | null;
+  value: unknown;
+  content: string | null;
+  excerpt: string | null;
+  score: number;
+  matched_terms: string[];
+  source_type: string | null;
+  reason_included_or_excluded: string;
+};
+
+type SufficientCandidateAudit = {
+  evidence_id: string;
+  sufficiency_score: number;
+  reason: string;
+};
+
+type GroundedDecisionBuilderAudit = {
+  should_repair_decision: RepairDecisionDiagnostic;
+  evidence_catalog_size: number;
+  ranked_candidates: CandidateAudit[];
+  sufficient_candidates: SufficientCandidateAudit[];
+  grounded_decision_result: {
+    override_created: boolean;
+    override_type: string | null;
+    reason_if_null: string | null;
+  };
+  final_decision_source: {
+    model: boolean;
+    retry_model: boolean;
+    grounded_override: boolean;
+    fallback: boolean;
+  };
+};
+
 const STOPWORDS = new Set([
   "a",
   "al",
@@ -92,35 +134,69 @@ export function buildGroundedDecision(
   evidenceCatalog: EvidenceCatalogEntry[],
 ): GroundedDecisionBuild {
   const previousOutcome = String(decision?.outcome || decision?.decision || "") || null;
-  if (!shouldRepairDecision(decision)) return { decision, override: null };
+  const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
+  const candidateAudit = rankedCandidateAudit(payload?.guest_message || "", evidenceCatalog);
+  const baseAudit = {
+    should_repair_decision: repairDiagnostic,
+    evidence_catalog_size: evidenceCatalog.length,
+    ranked_candidates: candidateAudit,
+  };
 
-  const candidates = rankedCandidates(payload?.guest_message || "", evidenceCatalog);
-  if (candidates.length === 0) return { decision, override: null };
-
-  const sufficient = sufficientCandidates(candidates);
-  if (sufficient.length > 0) {
-    if (sufficient.some((candidate) => approvalRequired(candidate.evidence))) {
-      return approvalDecision(decision, payload, sufficient, previousOutcome);
-    }
-
-    return replyDecision(decision, payload, sufficient, previousOutcome);
+  if (!repairDiagnostic.value) {
+    return withGroundedAudit(
+      { decision, override: null },
+      buildAudit(baseAudit, [], null, "decision_does_not_need_repair"),
+    );
   }
 
-  return clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
+  const candidates = rankedCandidates(payload?.guest_message || "", evidenceCatalog);
+  if (candidates.length === 0) {
+    return withGroundedAudit(
+      { decision, override: null },
+      buildAudit(baseAudit, sufficientCandidateAudit(candidates, []), null, "no_ranked_candidates"),
+    );
+  }
+
+  const sufficient = sufficientCandidates(candidates);
+  const sufficiencyAudit = sufficientCandidateAudit(candidates, sufficient);
+  if (sufficient.length > 0) {
+    if (sufficient.some((candidate) => approvalRequired(candidate.evidence))) {
+      return withGroundedAudit(
+        approvalDecision(decision, payload, sufficient, previousOutcome),
+        buildAudit(baseAudit, sufficiencyAudit, "approval_required", null),
+      );
+    }
+
+    return withGroundedAudit(
+      replyDecision(decision, payload, sufficient, previousOutcome),
+      buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null),
+    );
+  }
+
+  return withGroundedAudit(
+    clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome),
+    buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null),
+  );
 }
 
 function shouldRepairDecision(decision: any) {
+  return shouldRepairDecisionDiagnostic(decision).value;
+}
+
+function shouldRepairDecisionDiagnostic(decision: any): RepairDecisionDiagnostic {
   const outcome = String(decision?.outcome || decision?.decision || "");
   const hasCitations = arrayOf(decision?.evidence_ids).concat(arrayOf(decision?.used_source_ids)).length > 0;
   const unknownIntent = arrayOf(decision?.detected_intents).some((intent: any) => intent?.type === "unknown");
   const fallback = arrayOf(decision?.safety_flags).some((flag) => String(flag) === "fallback");
 
-  return (
-    ["escalate", "propose_action"].includes(outcome) ||
-    unknownIntent ||
-    fallback ||
-    (outcome === "reply" && !hasCitations)
-  );
+  if (["escalate", "propose_action"].includes(outcome)) {
+    return { value: true, reason: `outcome_${outcome}_requires_grounding_check` };
+  }
+  if (unknownIntent) return { value: true, reason: "unknown_intent_requires_grounding_check" };
+  if (fallback) return { value: true, reason: "fallback_flag_requires_grounding_check" };
+  if (outcome === "reply" && !hasCitations) return { value: true, reason: "reply_without_evidence_ids" };
+
+  return { value: false, reason: "decision_already_grounded_or_not_repairable" };
 }
 
 function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry[]) {
@@ -145,6 +221,10 @@ function sufficientCandidates(candidates: Candidate[]) {
 }
 
 function scoreEvidence(queryTokens: string[], evidence: EvidenceCatalogEntry) {
+  return scoreEvidenceWithDebug(queryTokens, evidence).score;
+}
+
+function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalogEntry) {
   const evidenceTokens = tokens([
     evidence.field,
     evidence.label,
@@ -152,16 +232,34 @@ function scoreEvidence(queryTokens: string[], evidence: EvidenceCatalogEntry) {
     evidence.source_type,
     evidence.text,
   ].filter(Boolean).join(" "));
-  if (evidenceTokens.length === 0) return 0;
+  if (evidenceTokens.length === 0) {
+    return {
+      score: 0,
+      matched_terms: [] as string[],
+      reason: "no_evidence_tokens",
+    };
+  }
 
-  return queryTokens.reduce((score, queryToken) => {
-    if (evidenceTokens.includes(queryToken)) return score + 3;
-    if (queryToken.length >= 5 && evidenceTokens.some((evidenceToken) => editDistanceAtMostOne(queryToken, evidenceToken))) {
-      return score + 2;
+  const matchedTerms: string[] = [];
+  const score = queryTokens.reduce((sum, queryToken) => {
+    if (evidenceTokens.includes(queryToken)) {
+      matchedTerms.push(queryToken);
+      return sum + 3;
+    }
+    const fuzzyMatch = queryToken.length >= 5 && evidenceTokens.find((evidenceToken) => editDistanceAtMostOne(queryToken, evidenceToken));
+    if (fuzzyMatch) {
+      matchedTerms.push(`${queryToken}~${fuzzyMatch}`);
+      return sum + 2;
     }
 
-    return score;
+    return sum;
   }, 0);
+
+  return {
+    score,
+    matched_terms: unique(matchedTerms),
+    reason: score > 0 ? "matched_query_terms" : "no_query_terms_matched_evidence",
+  };
 }
 
 function replyDecision(
@@ -417,6 +515,95 @@ function normalizedLanguage(language?: string) {
 
 function removeFallbackFlag(flags: unknown) {
   return arrayOf(flags).filter((flag) => String(flag) !== "fallback");
+}
+
+function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogEntry[]): CandidateAudit[] {
+  const queryTokens = tokens(message);
+  return evidenceCatalog
+    .map((evidence) => {
+      const debug = queryTokens.length === 0
+        ? { score: 0, matched_terms: [] as string[], reason: "no_query_tokens" }
+        : scoreEvidenceWithDebug(queryTokens, evidence);
+
+      return {
+        evidence_id: evidence.evidence_id,
+        field: evidence.field || null,
+        label: evidence.label || null,
+        value: evidence.value ?? null,
+        content: evidence.text || null,
+        excerpt: String(evidence.metadata?.excerpt || evidence.text || "").slice(0, 500) || null,
+        score: debug.score,
+        matched_terms: debug.matched_terms,
+        source_type: evidence.source_type || null,
+        reason_included_or_excluded: debug.score > 0 ? "included_score_positive" : `excluded_${debug.reason}`,
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
+function sufficientCandidateAudit(candidates: Candidate[], sufficient: Candidate[]): SufficientCandidateAudit[] {
+  if (candidates.length === 0) return [];
+
+  const sufficientIds = new Set(sufficient.map((candidate) => candidate.evidence.evidence_id));
+  const topScore = candidates[0]?.score || 0;
+  const topCandidates = candidates.filter((candidate) => candidate.score === topScore);
+  const distinctLabels = unique(topCandidates.map((candidate) => humanLabel(candidate.evidence)));
+
+  return topCandidates.map((candidate) => {
+    let reason = "top_score_meets_threshold_single_label";
+    if (!sufficientIds.has(candidate.evidence.evidence_id)) {
+      if (topScore < 3) {
+        reason = "score_below_sufficiency_threshold";
+      } else if (distinctLabels.length > 1) {
+        reason = "ambiguous_top_candidates";
+      } else {
+        reason = "not_selected_as_sufficient";
+      }
+    }
+
+    return {
+      evidence_id: candidate.evidence.evidence_id,
+      sufficiency_score: candidate.score,
+      reason,
+    };
+  });
+}
+
+function buildAudit(
+  base: Pick<GroundedDecisionBuilderAudit, "should_repair_decision" | "evidence_catalog_size" | "ranked_candidates">,
+  sufficientCandidates: SufficientCandidateAudit[],
+  overrideType: string | null,
+  reasonIfNull: string | null,
+): GroundedDecisionBuilderAudit {
+  const overrideCreated = overrideType != null;
+  return {
+    ...base,
+    sufficient_candidates: sufficientCandidates,
+    grounded_decision_result: {
+      override_created: overrideCreated,
+      override_type: overrideType,
+      reason_if_null: reasonIfNull,
+    },
+    final_decision_source: {
+      model: !overrideCreated,
+      retry_model: false,
+      grounded_override: overrideCreated,
+      fallback: false,
+    },
+  };
+}
+
+function withGroundedAudit(build: GroundedDecisionBuild, audit: GroundedDecisionBuilderAudit): GroundedDecisionBuild {
+  return {
+    ...build,
+    decision: {
+      ...build.decision,
+      audit: {
+        ...(build.decision?.audit || {}),
+        grounded_decision_builder: audit,
+      },
+    },
+  };
 }
 
 function unique(values: string[]) {

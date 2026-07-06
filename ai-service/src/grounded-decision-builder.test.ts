@@ -21,6 +21,11 @@ test("structured fact evidence answers check-in without unknown escalation", () 
   assert.notEqual(result.decision.detected_intents[0].type, "unknown");
   assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
   assert.match(result.decision.message_body, /15:00/);
+  assert.equal(result.decision.audit.grounded_decision_builder.should_repair_decision.value, true);
+  assert.equal(result.decision.audit.grounded_decision_builder.evidence_catalog_size, 1);
+  assert.equal(result.decision.audit.grounded_decision_builder.ranked_candidates[0].evidence_id, "property.check_in_time");
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.override_created, true);
+  assert.equal(result.decision.audit.grounded_decision_builder.final_decision_source.grounded_override, true);
 });
 
 test("structured fact evidence answers checkout", () => {
@@ -155,8 +160,10 @@ test("no evidence leaves the escalation untouched", () => {
   }, []);
 
   assert.equal(result.override, null);
-  assert.equal(result.decision, original);
   assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.audit.grounded_decision_builder.evidence_catalog_size, 0);
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.reason_if_null, "no_ranked_candidates");
+  assert.equal(result.decision.audit.grounded_decision_builder.final_decision_source.model, true);
 });
 
 test("sufficient evidence never remains unknown and evidence ids are present", () => {
