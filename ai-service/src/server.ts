@@ -83,6 +83,28 @@ const TranslationSchema = z.object({
   translated_text: z.string(),
 }).strict();
 
+type MandatoryToolName = "guest_context" | "stay_facts" | "property_brain";
+
+type MandatoryToolStatus = {
+  attempted: boolean;
+  success: boolean;
+  error: string | null;
+};
+
+type ToolMandatoryTrace = {
+  message_received: string | null;
+  is_real_guest_message: boolean;
+  should_run_tools: boolean;
+  skip_reason: string | null;
+  decision_context_id_present: boolean;
+  tool_endpoint_present: boolean;
+  guest_context: MandatoryToolStatus;
+  stay_facts: MandatoryToolStatus;
+  property_brain: MandatoryToolStatus;
+  tool_execution_time_ms: number | null;
+  final_tools: any[];
+};
+
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, { ok: true });
@@ -100,10 +122,13 @@ const server = createServer(async (request, response) => {
   }
 
   let payload: any = {};
+  const toolTrace: any[] = [];
+  let mandatoryTrace = newToolMandatoryTrace(payload);
 
   try {
     const body = await readBody(request);
     payload = JSON.parse(body || "{}");
+    mandatoryTrace = newToolMandatoryTrace(payload);
 
     if (request.url === "/property_import") {
       await handlePropertyImport(payload, response);
@@ -116,17 +141,20 @@ const server = createServer(async (request, response) => {
     }
 
     if (isConversationalClosure(payload?.guest_message)) {
+      mandatoryTrace.skip_reason = "conversational_closure";
+      emitToolMandatoryTrace(mandatoryTrace, toolTrace);
       sendJson(response, 200, closureDecision(payload));
       return;
     }
 
     if (!gatewayConfigured()) {
-      sendJson(response, 200, fallbackDecision(payload));
+      mandatoryTrace.skip_reason = "gateway_not_configured";
+      emitToolMandatoryTrace(mandatoryTrace, toolTrace);
+      sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace));
       return;
     }
 
-    const toolTrace: any[] = [];
-    const toolResults = await collectToolResults(payload, toolTrace);
+    const toolResults = await collectToolResults(payload, toolTrace, mandatoryTrace);
     const result = await generateObject({
       model: gatewayModel(),
       schema: DecisionSchema,
@@ -169,6 +197,7 @@ const server = createServer(async (request, response) => {
       }),
     });
 
+    emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
       ...result.object,
       audit: {
@@ -176,11 +205,13 @@ const server = createServer(async (request, response) => {
         model: gatewayModelId(),
         token_usage: result.usage,
         tool_calls: toolTrace,
+        tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
       },
     });
   } catch (error) {
     console.error("[ai-service]", error);
-    sendJson(response, 200, fallbackDecision(payload));
+    emitToolMandatoryTrace(mandatoryTrace, toolTrace);
+    sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace));
   }
 });
 
@@ -529,10 +560,14 @@ function ownerText(language: string, spanish: string, english: string) {
   return normalizeLanguage(language) === "en" ? english : spanish;
 }
 
-async function collectToolResults(payload: any, toolTrace: any[] = []) {
-  if (process.env.AI_TOOLS_ENABLED === "false") return [];
+async function collectToolResults(payload: any, toolTrace: any[] = [], mandatoryTrace = newToolMandatoryTrace(payload)) {
+  if (process.env.AI_TOOLS_ENABLED === "false") {
+    mandatoryTrace.should_run_tools = false;
+    mandatoryTrace.skip_reason = "ai_tools_disabled";
+    return [];
+  }
 
-  const initialToolResults = await mandatoryToolResults(payload, toolTrace);
+  const initialToolResults = await mandatoryToolResults(payload, toolTrace, mandatoryTrace);
   const result = await generateText({
     model: gatewayModel(),
     system: [
@@ -565,7 +600,8 @@ async function collectToolResults(payload: any, toolTrace: any[] = []) {
   }));
 }
 
-async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
+async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandatoryTrace = newToolMandatoryTrace(payload)) {
+  const mandatoryStartedAt = Date.now();
   const guestContextInput = {
     query: payload?.guest_message,
   };
@@ -588,14 +624,21 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
   };
 
   if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
-    return Promise.all([
-      tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace),
-      tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace),
-      tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace),
-    ]);
+    try {
+      return await Promise.all([
+        tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace, mandatoryTrace),
+        tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace, mandatoryTrace),
+        tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace, mandatoryTrace),
+      ]);
+    } finally {
+      mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
+    }
   }
 
   if (payload?.tool_context) {
+    markMandatoryAttempt(mandatoryTrace, "guest_context");
+    markMandatoryAttempt(mandatoryTrace, "stay_facts");
+    markMandatoryAttempt(mandatoryTrace, "property_brain");
     const guestContext = payload.tool_context.guest_context || {
       property: payload.tool_context.property_brain?.property,
       reservation: payload.tool_context.property_brain?.stay,
@@ -610,6 +653,10 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
     toolTrace.push(traceToolResult("guest_context", guestContextInput, guestContext, undefined, 0));
     toolTrace.push(traceToolResult("stay_facts", stayFactsInput, stayFacts, undefined, 0));
     toolTrace.push(traceToolResult("property_brain", propertyBrainInput, propertyBrain, undefined, 0));
+    markMandatoryResult(mandatoryTrace, "guest_context", guestContext);
+    markMandatoryResult(mandatoryTrace, "stay_facts", stayFacts);
+    markMandatoryResult(mandatoryTrace, "property_brain", propertyBrain);
+    mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
 
     return [
       { toolName: "guest_context", input: guestContextInput, result: guestContext },
@@ -618,19 +665,38 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
     ];
   }
 
+  mandatoryTrace.skip_reason = missingMandatoryContextReason(payload);
+  mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
   return [];
 }
 
-async function tracedMandatoryRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>, toolTrace: any[]) {
+async function tracedMandatoryRailsTool(
+  toolEndpoint: any,
+  toolName: MandatoryToolName,
+  input: Record<string, unknown>,
+  toolTrace: any[],
+  mandatoryTrace: ToolMandatoryTrace,
+) {
   const startedAt = Date.now();
-  const result = await callRailsTool(toolEndpoint, toolName, input);
-  toolTrace.push(traceToolResult(toolName, input, result, result?.error, Date.now() - startedAt));
+  markMandatoryAttempt(mandatoryTrace, toolName);
 
-  return {
-    toolName,
-    input,
-    result,
-  };
+  try {
+    const result = await callRailsTool(toolEndpoint, toolName, input);
+    const error = classifyMandatoryToolResult(result);
+    toolTrace.push(traceToolResult(toolName, input, result, error, Date.now() - startedAt));
+    markMandatoryResult(mandatoryTrace, toolName, result, error);
+
+    return {
+      toolName,
+      input,
+      result,
+    };
+  } catch (error: any) {
+    const classifiedError = classifyMandatoryToolException(error);
+    toolTrace.push(traceToolResult(toolName, input, null, classifiedError, Date.now() - startedAt));
+    markMandatoryResult(mandatoryTrace, toolName, null, classifiedError);
+    throw error;
+  }
 }
 
 function conversationSummary(history: any) {
@@ -789,6 +855,104 @@ function traceToolResult(toolName: string, input: any, result: any, error?: any,
     output_summary: summarizeToolOutput(result),
     error: error || null,
     latency_ms: latencyMs ?? null,
+  };
+}
+
+function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
+  const closure = isConversationalClosure(payload?.guest_message);
+  const realGuestMessage = Boolean(payload?.guest_message?.trim()) && !closure;
+
+  return {
+    message_received: payload?.guest_message || null,
+    is_real_guest_message: realGuestMessage,
+    should_run_tools: !closure && process.env.AI_TOOLS_ENABLED !== "false",
+    skip_reason: null,
+    decision_context_id_present: Boolean(payload?.tool_endpoint?.decision_context_id),
+    tool_endpoint_present: Boolean(payload?.tool_endpoint?.base_url),
+    guest_context: emptyMandatoryToolStatus(),
+    stay_facts: emptyMandatoryToolStatus(),
+    property_brain: emptyMandatoryToolStatus(),
+    tool_execution_time_ms: null,
+    final_tools: [],
+  };
+}
+
+function emptyMandatoryToolStatus(): MandatoryToolStatus {
+  return { attempted: false, success: false, error: null };
+}
+
+function markMandatoryAttempt(trace: ToolMandatoryTrace, toolName: MandatoryToolName) {
+  trace[toolName].attempted = true;
+}
+
+function markMandatoryResult(trace: ToolMandatoryTrace, toolName: MandatoryToolName, result: any, error?: string | null) {
+  trace[toolName].success = !error && !result?.error;
+  trace[toolName].error = error || (result?.error ? String(result.error) : null);
+}
+
+function missingMandatoryContextReason(payload: any) {
+  if (!payload?.tool_endpoint?.base_url && !payload?.tool_context) return "missing_tool_endpoint_and_tool_context";
+  if (!payload?.tool_endpoint?.base_url) return "missing_tool_endpoint_base_url";
+  if (!payload?.tool_endpoint?.decision_context_id) return "missing_decision_context_id";
+  return "mandatory_tool_context_unavailable";
+}
+
+function classifyMandatoryToolResult(result: any) {
+  if (!result?.error) return null;
+  if ([401, 403].includes(Number(result.status))) return `authorization_failed:http_${result.status}`;
+  if ([404, 410, 422].includes(Number(result.status))) return `decision_context_or_endpoint_failed:http_${result.status}`;
+  return `${result.error}:http_${result.status || "unknown"}`;
+}
+
+function classifyMandatoryToolException(error: any) {
+  if (error?.name === "AbortError" || error?.name === "TimeoutError") return "tool_timeout";
+  if (error instanceof SyntaxError) return "response_parsing_failed";
+  if (error?.cause?.code) return `http_transport_failed:${error.cause.code}`;
+  return `tool_execution_failed:${error?.message || String(error)}`;
+}
+
+function finalizeToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[]) {
+  trace.final_tools = toolTrace.map((tool) => ({
+    tool_name: tool.tool_name,
+    attempted_at: tool.timestamp,
+    success: !tool.error,
+    error: tool.error || null,
+    latency_ms: tool.latency_ms ?? null,
+  }));
+  return {
+    message_received: trace.message_received,
+    is_real_guest_message: trace.is_real_guest_message,
+    should_run_tools: trace.should_run_tools,
+    skip_reason: trace.skip_reason,
+    decision_context_id_present: trace.decision_context_id_present,
+    tool_endpoint_present: trace.tool_endpoint_present,
+    guest_context_attempted: trace.guest_context.attempted,
+    guest_context_success: trace.guest_context.success,
+    guest_context_error: trace.guest_context.error,
+    stay_facts_attempted: trace.stay_facts.attempted,
+    stay_facts_success: trace.stay_facts.success,
+    stay_facts_error: trace.stay_facts.error,
+    property_brain_attempted: trace.property_brain.attempted,
+    property_brain_success: trace.property_brain.success,
+    property_brain_error: trace.property_brain.error,
+    tool_execution_time: trace.tool_execution_time_ms,
+    final_tools: trace.final_tools,
+  };
+}
+
+function emitToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[]) {
+  const finalized = finalizeToolMandatoryTrace(trace, toolTrace);
+  console.log("TOOL_MANDATORY_TRACE", JSON.stringify(finalized));
+}
+
+function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace: ToolMandatoryTrace) {
+  return {
+    ...decision,
+    audit: {
+      ...(decision?.audit || {}),
+      tool_calls: toolTrace,
+      tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
+    },
   };
 }
 
