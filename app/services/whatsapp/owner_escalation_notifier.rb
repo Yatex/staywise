@@ -13,7 +13,7 @@ module Whatsapp
       session ||= scope.where(state: "on_hold").order(:updated_at).first
       return unless session
 
-      new(alert: session.alert, provider: provider).start_session(session)
+      new(alert: session.alert, provider: provider).notify_session(session)
     end
 
     def self.drain_queue_for_owner(owner_whatsapp_number:, provider: ProviderFactory.build, except_session: nil)
@@ -26,7 +26,7 @@ module Whatsapp
       session ||= scope.where(state: "on_hold").order(:updated_at).first
       return unless session
 
-      new(alert: session.alert, provider: provider).start_session(session)
+      new(alert: session.alert, provider: provider).notify_session(session)
     end
 
     def initialize(alert:, provider:)
@@ -39,25 +39,31 @@ module Whatsapp
       return Result.new(sent?: false, session: nil, error: "owner_whatsapp_not_configured") unless @account.owner_whatsapp_configured?
 
       session = @account.owner_whatsapp_sessions.find_or_create_by!(alert: @alert)
-      return Result.new(sent?: false, session: session, error: "another_alert_active") if active_other_session?(session)
-      return Result.new(sent?: false, session: session, error: "already_active") if session.active?
+      return Result.new(sent?: false, session: session, error: "already_resolved") if session.state.in?(%w[resolved failed])
 
-      start_session(session)
+      notify_session(session)
     end
 
-    def start_session(session)
+    def notify_session(session)
       delivery = deliver_initial_notice(session.alert)
       unless delivery_success?(delivery)
-        session.update!(state: "failed", metadata: session.metadata.merge("error" => delivery_error(delivery)))
+        session.update!(
+          state: "queued",
+          metadata: session.metadata.merge(
+            "last_notification_error" => delivery_error(delivery),
+            "last_notification_failed_at" => Time.current.iso8601
+          )
+        )
+        session.append_event!("owner_alert_notification_failed", error: delivery_error(delivery))
         return Result.new(sent?: false, session: session, error: delivery_error(delivery))
       end
 
-      session.alert.update!(status: "in_progress") if session.alert.status == "open"
       session.update!(
-        state: "awaiting_ack",
+        state: session.state.in?(%w[awaiting_answer resolved failed]) ? session.state : "queued",
         last_prompted_at: Time.current,
         metadata: session.metadata.merge(delivery_metadata(delivery)).compact
       )
+      session.append_event!("owner_alert_notification_sent", alert_id: session.alert_id, property_id: session.alert.property_id)
 
       Result.new(sent?: true, session: session, error: nil)
     end
@@ -79,15 +85,8 @@ module Whatsapp
       @provider.send_message(to: @account.owner_whatsapp_number, body: template_message(alert))
     end
 
-    def active_other_session?(session)
-      OwnerWhatsappSession.joins(:account).active.where(accounts: {
-        owner_whatsapp_escalations_enabled: true,
-        owner_whatsapp_number: @account.owner_whatsapp_number
-      }).where.not(id: session.id).exists?
-    end
-
     def template_message(alert)
-      "Ayla Manager: hay una consulta pendiente para #{alert.property.display_name}. Respondé OK para ver el detalle o HOLD para dejarla en espera."
+      "Nueva alerta de huésped en #{alert.property.display_name}. Respondé ALERTAS para verla."
     end
 
     def delivery_success?(delivery)

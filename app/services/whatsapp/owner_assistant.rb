@@ -1,10 +1,10 @@
 module Whatsapp
   class OwnerAssistant
-    QUERY_PATTERN = /\b(ayla|resumen|estado|stats|estad[ií]sticas|reporte|consultas|pendientes|alertas|preguntas|c[oó]mo vienen|como vienen|actividad)\b/i
+    QUERY_PATTERN = /\Aayla\s+(resumen|summary|stats|estad[ií]sticas|reporte|pendientes|alertas)\b/i
 
     def self.query?(body)
       normalized = body.to_s.strip
-      normalized.match?(/\Aayla\b/i) || normalized.match?(QUERY_PATTERN)
+      normalized.match?(QUERY_PATTERN)
     end
 
     def self.call(owner_whatsapp_number:, body:, provider: ProviderFactory.build)

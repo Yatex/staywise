@@ -18,6 +18,11 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       @sent_messages << { to: to, body: body }
       super
     end
+
+    def send_template(to:, template_sid:, variables: {})
+      @sent_messages << { to: to, body: variables.values.compact.join(" "), template_sid: template_sid, variables: variables }
+      super
+    end
   end
 
   setup do
@@ -373,9 +378,11 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "late_checkout_request", result.fetch(:conversation).alerts.first.alert_type
   end
 
-  test "owner can answer escalated alert by whatsapp and response is saved for future property questions" do
+  test "new alert sends owner notification without opening an active reply session" do
+    previous_template_sid = ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"]
+    ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"] = nil
     @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
-    @property.update!(checkout_time: "11:00")
+    provider = RecordingProvider.new
 
     guest_result = with_ai_decision(ai_unknown_decision) do
       Whatsapp::IncomingMessageHandler.new(
@@ -384,25 +391,68 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
           "To" => "whatsapp:+15550009999",
           "Body" => "#{@property.whatsapp_reference} ¿Puedo invitar gente a la pileta?"
         },
-        provider: Whatsapp::Providers::NullProvider.new
+        provider: provider
       ).call
     end
 
     alert = guest_result.fetch(:alert)
     session = @account.owner_whatsapp_sessions.find_by!(alert: alert)
-    assert_equal "awaiting_ack", session.state
+    assert_equal "queued", session.state
+    assert_equal "open", alert.reload.status
+    owner_notice = provider.sent_messages.find { |message| message.fetch(:to) == "+15559990000" }
+    assert_includes owner_notice.fetch(:body), "Nueva alerta de huésped en #{@property.display_name}"
+    assert_includes owner_notice.fetch(:body), "Respondé ALERTAS"
+    assert_equal "owner_alert_notification_sent", session.metadata["events"].last["type"]
+  ensure
+    ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"] = previous_template_sid
+  end
+
+  test "owner can list select and answer an alert by whatsapp" do
+    @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
+    provider = RecordingProvider.new
+
+    guest_result = with_ai_decision(ai_unknown_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000012",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Puedo invitar gente a la pileta?"
+        },
+        provider: provider
+      ).call
+    end
+
+    alert = guest_result.fetch(:alert)
+    session = @account.owner_whatsapp_sessions.find_by!(alert: alert)
+
+    list_result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990000",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "ALERTAS"
+      },
+      provider: provider
+    ).call
+
+    assert list_result.fetch(:inbox)
+    assert_includes provider.sent_messages.last.fetch(:body), "Alertas abiertas:"
+    assert_includes provider.sent_messages.last.fetch(:body), "1. 15550000012"
+    assert_includes provider.sent_messages.last.fetch(:body), "¿Puedo invitar gente a la pileta?"
+    assert_equal 1, session.reload.metadata["last_listed_position"]
 
     detail_result = Whatsapp::IncomingMessageHandler.new(
       {
         "From" => "whatsapp:+15559990000",
         "To" => "whatsapp:+15550009999",
-        "Body" => "Ver detalle"
+        "Body" => "1"
       },
-      provider: Whatsapp::Providers::NullProvider.new
+      provider: provider
     ).call
 
-    assert detail_result.fetch(:owner_message)
+    assert detail_result.fetch(:selected)
     assert_equal "awaiting_answer", session.reload.state
+    assert_equal "in_progress", alert.reload.status
+    assert_includes provider.sent_messages.last.fetch(:body), "Último mensaje del huésped:"
 
     answer_result = Whatsapp::IncomingMessageHandler.new(
       {
@@ -410,7 +460,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         "To" => "whatsapp:+15550009999",
         "Body" => "No se pueden invitar personas a la pileta."
       },
-      provider: Whatsapp::Providers::NullProvider.new
+      provider: provider
     ).call
 
     assert answer_result.fetch(:owner_message)
@@ -453,7 +503,16 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         {
           "From" => "whatsapp:+15559990003",
           "To" => "whatsapp:+15550009999",
-          "Body" => "Ver detalle"
+          "Body" => "ALERTAS"
+        },
+        provider: provider
+      ).call
+
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15559990003",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "1"
         },
         provider: provider
       ).call
@@ -478,7 +537,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     end
   end
 
-  test "owner whatsapp handles one active alert at a time and can hold the current one" do
+  test "owner whatsapp lists multiple alerts and only answers the selected one" do
     @account.update!(owner_whatsapp_number: "+15559990001", owner_whatsapp_escalations_enabled: true)
     property_two = @account.properties.create!(name: "Second Apartment")
     guest_one = @account.guests.create!(phone_number: "+15550000101", property: @property)
@@ -487,29 +546,57 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation_two = guest_two.conversations.create!(property: property_two)
     alert_one = conversation_one.alerts.create!(property: @property, guest: guest_one, alert_type: "unknown_question", title: "Question one", description: "Question one")
     alert_two = conversation_two.alerts.create!(property: property_two, guest: guest_two, alert_type: "unknown_question", title: "Question two", description: "Question two")
+    provider = RecordingProvider.new
 
-    first = Whatsapp::OwnerEscalationNotifier.call(alert: alert_one, provider: Whatsapp::Providers::NullProvider.new)
-    second = Whatsapp::OwnerEscalationNotifier.call(alert: alert_two, provider: Whatsapp::Providers::NullProvider.new)
+    first = Whatsapp::OwnerEscalationNotifier.call(alert: alert_one, provider: provider)
+    second = Whatsapp::OwnerEscalationNotifier.call(alert: alert_two, provider: provider)
 
     assert first.sent?
-    assert_not second.sent?
-    assert_equal "awaiting_ack", first.session.reload.state
+    assert second.sent?
+    assert_equal "queued", first.session.reload.state
     assert_equal "queued", second.session.reload.state
 
     Whatsapp::IncomingMessageHandler.new(
       {
         "From" => "whatsapp:+15559990001",
         "To" => "whatsapp:+15550009999",
-        "Body" => "Pausar"
+        "Body" => "ALERTAS"
       },
-      provider: Whatsapp::Providers::NullProvider.new
+      provider: provider
     ).call
 
-    assert_equal "on_hold", first.session.reload.state
-    assert_equal "awaiting_ack", second.session.reload.state
+    list_body = provider.sent_messages.last.fetch(:body)
+    assert_includes list_body, "1. 15550000101"
+    assert_includes list_body, "2. 15550000102"
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990001",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "2"
+      },
+      provider: provider
+    ).call
+
+    assert_equal "queued", first.session.reload.state
+    assert_equal "awaiting_answer", second.session.reload.state
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990001",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "La respuesta es para la segunda propiedad."
+      },
+      provider: provider
+    ).call
+
+    assert_equal 0, conversation_one.messages.where(sender: "owner").count
+    assert_equal 1, conversation_two.messages.where(sender: "owner").count
+    assert_equal "open", alert_one.reload.status
+    assert_equal "resolved", alert_two.reload.status
   end
 
-  test "owner whatsapp quick reply numeric ids are accepted" do
+  test "owner whatsapp numeric selection requires an open alert from the inbox" do
     @account.update!(owner_whatsapp_number: "+15559990006", owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000123", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "escalated")
@@ -521,7 +608,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       description: "Question one",
       status: "in_progress"
     )
-    session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_ack")
+    session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "queued")
 
     Whatsapp::IncomingMessageHandler.new(
       {
@@ -534,8 +621,6 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert_equal "awaiting_answer", session.reload.state
 
-    session.update!(state: "awaiting_ack")
-
     Whatsapp::IncomingMessageHandler.new(
       {
         "From" => "whatsapp:+15559990006",
@@ -545,10 +630,10 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       provider: Whatsapp::Providers::NullProvider.new
     ).call
 
-    assert_equal "on_hold", session.reload.state
+    assert_equal "awaiting_answer", session.reload.state
   end
 
-  test "owner whatsapp queues alerts across accounts when the same owner phone is reused" do
+  test "owner whatsapp inbox lists alerts across accounts when the same owner phone is reused" do
     owner_phone = "+15559990002"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     other_account = Account.create!(name: "Other Owner Account", owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
@@ -559,28 +644,31 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation_two = guest_two.conversations.create!(property: other_property)
     alert_one = conversation_one.alerts.create!(property: @property, guest: guest_one, alert_type: "unknown_question", title: "First", description: "First")
     alert_two = conversation_two.alerts.create!(property: other_property, guest: guest_two, alert_type: "unknown_question", title: "Second", description: "Second")
+    provider = RecordingProvider.new
 
-    first = Whatsapp::OwnerEscalationNotifier.call(alert: alert_one, provider: Whatsapp::Providers::NullProvider.new)
-    second = Whatsapp::OwnerEscalationNotifier.call(alert: alert_two, provider: Whatsapp::Providers::NullProvider.new)
+    first = Whatsapp::OwnerEscalationNotifier.call(alert: alert_one, provider: provider)
+    second = Whatsapp::OwnerEscalationNotifier.call(alert: alert_two, provider: provider)
 
     assert first.sent?
-    assert_not second.sent?
+    assert second.sent?
+    assert_equal "queued", first.session.reload.state
     assert_equal "queued", second.session.reload.state
 
     Whatsapp::IncomingMessageHandler.new(
       {
         "From" => "whatsapp:#{owner_phone}",
         "To" => "whatsapp:+15550009999",
-        "Body" => "HOLD"
+        "Body" => "ALERTAS"
       },
-      provider: Whatsapp::Providers::NullProvider.new
+      provider: provider
     ).call
 
-    assert_equal "on_hold", first.session.reload.state
-    assert_equal "awaiting_ack", second.session.reload.state
+    body = provider.sent_messages.last.fetch(:body)
+    assert_includes body, "Webhook Apartment"
+    assert_includes body, "Other Apartment"
   end
 
-  test "owner can ask assistant stats without answering the active guest alert" do
+  test "owner analytics only runs with explicit ayla trigger while an alert is selected" do
     owner_phone = "+15559990004"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000121", property: @property)
@@ -597,25 +685,42 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_answer")
     provider = RecordingProvider.new
 
+    non_trigger_result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:#{owner_phone}",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "pendientes"
+      },
+      provider: provider
+    ).call
+
+    assert_not non_trigger_result[:owner_assistant]
+    assert_equal "resolved", alert.reload.status
+    assert_equal "resolved", session.reload.state
+    assert_equal 1, conversation.messages.where(sender: "owner").count
+
+    alert.update!(status: "in_progress")
+    session.update!(state: "awaiting_answer", resolved_at: nil)
+
     result = Whatsapp::IncomingMessageHandler.new(
       {
         "From" => "whatsapp:#{owner_phone}",
         "To" => "whatsapp:+15550009999",
-        "Body" => "Ayla, ¿cómo vienen las consultas estos días?"
+        "Body" => "Ayla stats"
       },
       provider: provider
     ).call
 
     assert result.fetch(:owner_assistant)
     assert_equal "awaiting_answer", session.reload.state
-    assert_equal 0, conversation.messages.where(sender: "owner").count
+    assert_equal 1, conversation.messages.where(sender: "owner").count
     assert_includes provider.sent_messages.last.fetch(:body), "Resumen de Ayla"
     assert_includes provider.sent_messages.last.fetch(:body), "Consultas de huéspedes: 1"
     assert_includes provider.sent_messages.last.fetch(:body), "Alertas creadas: 1"
     assert_includes provider.sent_messages.last.fetch(:body), "Pendientes ahora:"
   end
 
-  test "owner assistant can list pending alerts" do
+  test "owner assistant can list pending alerts with explicit trigger" do
     owner_phone = "+15559990005"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000122", property: @property)
@@ -636,7 +741,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       {
         "From" => "whatsapp:#{owner_phone}",
         "To" => "whatsapp:+15550009999",
-        "Body" => "pendientes"
+        "Body" => "Ayla pendientes"
       },
       provider: provider
     ).call

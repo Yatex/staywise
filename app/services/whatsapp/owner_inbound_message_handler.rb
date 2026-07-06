@@ -1,7 +1,7 @@
 module Whatsapp
   class OwnerInboundMessageHandler
-    COMMAND_HOLD = /\A(2|hold|pausar|pausa|dejar en espera|en espera|saltar|skip|next|siguiente)\z/i
-    COMMAND_OK = /\A(1|ok|dale|si|sí|ver|detalle|ver detalle|ver_detalle|ver consulta|ver_consulta|details?|view details?|view_details?|responder|responder ahora)\z/i
+    INBOX_COMMAND = /\Aalertas\z/i
+    NUMERIC_SELECTION = /\A(\d{1,2})\z/
 
     def self.owner_message?(parsed)
       Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: parsed.from).exists?
@@ -14,120 +14,219 @@ module Whatsapp
     end
 
     def call
-      session = active_session
-
       body = @parsed.body.to_s.strip
+
+      return list_alerts if inbox_command?(body)
       return owner_assistant_response(body) if OwnerAssistant.query?(body)
-      return no_active_session unless session
+      return select_alert(body.to_i) if numeric_selection?(body)
 
-      return hold_session(session) if body.match?(COMMAND_HOLD)
-      return send_alert_detail(session) if session.state == "awaiting_ack" || body.match?(COMMAND_OK)
+      if (session = selected_session)
+        return answer_alert(session, body)
+      end
 
-      answer_alert(session, body)
+      send_owner_message("No hay una alerta seleccionada. Respondé ALERTAS para ver las alertas abiertas y elegí una por número.")
+      { owner_message: true, handled: true, session: nil, replied: true }
     end
 
     private
 
-    def active_session
-      OwnerWhatsappSession.joins(:account)
-        .where(accounts: { owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: @owner_whatsapp_number })
-        .active
-        .includes(alert: [:property, :guest, :conversation])
-        .order(:updated_at)
-        .first
+    def inbox_command?(body)
+      body.match?(INBOX_COMMAND)
     end
 
-    def no_active_session
-      next_result = Whatsapp::OwnerEscalationNotifier.drain_queue_for_owner(owner_whatsapp_number: @owner_whatsapp_number, provider: @provider)
-      if next_result&.sent?
-        send_owner_message("No había una consulta activa. Te envié la siguiente consulta pendiente.")
-      else
-        send_owner_message("No tenés consultas activas de Ayla en este momento.")
-      end
-
-      { owner_message: true, handled: true, session: nil, replied: true }
+    def numeric_selection?(body)
+      body.match?(NUMERIC_SELECTION)
     end
 
     def owner_assistant_response(body)
       replied = OwnerAssistant.call(owner_whatsapp_number: @owner_whatsapp_number, body: body, provider: @provider)
 
-      { owner_message: true, handled: true, session: nil, replied: replied, owner_assistant: true }
+      { owner_message: true, handled: true, session: selected_session, replied: replied, owner_assistant: true }
     end
 
-    def hold_session(session)
-      session.update!(state: "on_hold", last_owner_message_at: Time.current)
-      session.alert.update!(status: "open") if session.alert.status == "in_progress"
-      next_result = Whatsapp::OwnerEscalationNotifier.drain_queue_for_owner(owner_whatsapp_number: @owner_whatsapp_number, provider: @provider, except_session: session)
-
-      message = if next_result&.sent?
-        "Dejé esa consulta en espera y te envié la siguiente."
-      else
-        "Dejé esa consulta en espera. No hay otras consultas pendientes ahora."
+    def list_alerts
+      sessions = open_sessions
+      if sessions.blank?
+        send_owner_message("No tenés alertas abiertas en Ayla.")
+        return { owner_message: true, handled: true, session: nil, replied: true, inbox: true }
       end
-      send_owner_message(message)
 
-      { owner_message: true, handled: true, session: session, replied: true }
+      listed_at = Time.current
+      lines = ["Alertas abiertas:"]
+      sessions.each.with_index(1) do |session, index|
+        alert = session.alert
+        session.update!(
+          metadata: session.metadata.merge(
+            "last_listed_position" => index,
+            "last_listed_at" => listed_at.iso8601
+          )
+        )
+        session.append_event!("owner_alert_listed", position: index, alert_id: alert.id)
+
+        lines << "#{index}. #{guest_label(alert)} · #{alert.property.display_name}"
+        lines << "   #{alert_summary(alert)} · #{age_label(alert.created_at)}"
+      end
+      lines << ""
+      lines << "Respondé con el número de la alerta que querés ver."
+
+      send_owner_message(lines.join("\n"))
+      { owner_message: true, handled: true, session: nil, replied: true, inbox: true }
     end
 
-    def send_alert_detail(session)
-      alert = session.alert
-      guest_question = guest_question_for(alert)
-      text = [
-        "Consulta en #{alert.property.display_name}:",
-        guest_question,
-        "",
-        "Respondé con el mensaje que querés enviarle al huésped. Si no sabés todavía, respondé HOLD."
-      ].join("\n")
+    def select_alert(position)
+      session = session_for_position(position)
+      unless session
+        send_owner_message("No encontré esa alerta. Respondé ALERTAS para ver la lista actualizada.")
+        return { owner_message: true, handled: true, session: nil, replied: true, inbox: true }
+      end
 
-      delivery = send_owner_message(text)
-      session.update!(state: "awaiting_answer", last_owner_message_at: Time.current) if delivery
+      selected_session&.update!(state: "queued")
+      session.alert.update!(status: "in_progress") if session.alert.status == "open"
+      session.update!(state: "awaiting_answer", last_owner_message_at: Time.current)
+      session.append_event!("owner_alert_selected", position: position, alert_id: session.alert_id)
 
-      { owner_message: true, handled: true, session: session, replied: delivery }
+      delivery = send_owner_message(alert_detail_text(session.alert))
+      { owner_message: true, handled: true, session: session, replied: delivery, selected: true }
     end
 
     def answer_alert(session, answer)
-      return send_alert_detail(session) if answer.blank?
+      if answer.blank?
+        send_owner_message("Escribí la respuesta que querés enviarle al huésped, o respondé ALERTAS para elegir otra alerta.")
+        return { owner_message: true, handled: true, session: session, replied: true }
+      end
 
       alert = session.alert
       conversation = alert.conversation
+      unless conversation&.guest&.phone_number.present?
+        session.append_event!("owner_guest_reply_failed", error: "missing_guest_phone", alert_id: alert.id)
+        send_owner_message("No pude enviar la respuesta porque esta alerta no tiene un huésped de WhatsApp asociado.")
+        return { owner_message: true, handled: true, session: session, replied: false }
+      end
+
       guest_language = conversation.guest.language.presence || AI::LanguageHelper.detect(conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
       guest_answer = translate_owner_answer(answer, conversation, guest_language)
       delivery = @provider.send_message(to: conversation.guest.phone_number, body: guest_answer)
-      unless delivery_success?(delivery)
-        send_owner_message("No pude enviar esa respuesta al huésped por WhatsApp. Probá de nuevo en unos minutos.")
-        return { owner_message: true, handled: true, session: session, replied: false }
-      end
+      delivered = delivery_success?(delivery)
 
       conversation.messages.create!(
         sender: "owner",
         channel: "whatsapp",
         body: guest_answer,
         metadata: {
-          sent_via: "owner_whatsapp_escalation",
+          sent_via: "owner_whatsapp_alert_inbox",
           owner_phone_number: @owner_whatsapp_number,
           alert_id: alert.id,
           original_owner_body: answer,
           translated_to: guest_language
-        }.merge(delivery_metadata(delivery)).compact
+        }.merge(delivery_metadata(delivery, delivered: delivered)).compact
       )
+
+      unless delivered
+        session.append_event!("owner_guest_reply_failed", error: delivery_error(delivery), alert_id: alert.id)
+        send_owner_message("No pude enviar esa respuesta al huésped por WhatsApp. Quedó auditada en la conversación; probá de nuevo en unos minutos.")
+        return { owner_message: true, handled: true, session: session, replied: false }
+      end
 
       create_reusable_faq!(alert, answer)
       alert.update!(status: "resolved")
       session.update!(state: "resolved", resolved_at: Time.current, last_owner_message_at: Time.current)
-      send_owner_message("Listo, le envié tu respuesta al huésped y guardé esta respuesta para futuras preguntas de esa propiedad.")
-      Whatsapp::OwnerEscalationNotifier.drain_queue_for_owner(owner_whatsapp_number: @owner_whatsapp_number, provider: @provider)
+      session.append_event!("owner_guest_reply_sent", alert_id: alert.id, conversation_id: conversation.id)
+      send_owner_message("Listo, le envié tu respuesta al huésped y cerré la alerta.")
 
       { owner_message: true, handled: true, session: session, replied: true }
     end
 
-    def guest_question_for(alert)
-      alert.description.presence ||
-        alert.conversation&.messages&.where(sender: "guest")&.order(created_at: :desc)&.first&.body ||
-        "El huésped hizo una consulta que Ayla no pudo responder."
+    def selected_session
+      @selected_session ||= owner_sessions.where(state: "awaiting_answer").order(updated_at: :desc).first
+    end
+
+    def session_for_position(position)
+      return if position <= 0
+
+      recent_cutoff = 30.minutes.ago.iso8601
+      owner_sessions
+        .includes(alert: [:property, :guest, :conversation])
+        .where.not(state: %w[resolved failed])
+        .find do |session|
+          session.metadata["last_listed_position"].to_i == position &&
+            session.metadata["last_listed_at"].to_s >= recent_cutoff &&
+            session.alert.status.in?(%w[open in_progress])
+        end || open_sessions[position - 1]
+    end
+
+    def open_sessions
+      @open_sessions ||= begin
+        owner_accounts.flat_map do |account|
+          Alert.joins(:property)
+            .where(properties: { account_id: account.id })
+            .open
+            .includes(:property, :guest, :conversation)
+            .order(created_at: :asc)
+            .map { |alert| account.owner_whatsapp_sessions.find_or_create_by!(alert: alert) }
+        end.sort_by { |session| session.alert.created_at }
+      end
+    end
+
+    def owner_sessions
+      OwnerWhatsappSession.joins(:account).where(accounts: {
+        owner_whatsapp_escalations_enabled: true,
+        owner_whatsapp_number: @owner_whatsapp_number
+      })
+    end
+
+    def owner_accounts
+      @owner_accounts ||= Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: @owner_whatsapp_number).to_a
+    end
+
+    def alert_detail_text(alert)
+      [
+        "Alerta ##{alert.id}",
+        "Propiedad: #{alert.property.display_name}",
+        "Huésped: #{guest_label(alert)}",
+        "Tipo: #{ApplicationController.helpers.enum_label(alert.alert_type)}",
+        "Resumen: #{alert_summary(alert)}",
+        "",
+        "Último mensaje del huésped:",
+        last_guest_message(alert),
+        "",
+        "Contexto / sugerencia:",
+        alert.ai_suggested_action.presence || "Revisá la conversación y respondé con el texto que querés enviarle al huésped.",
+        "",
+        "Respondé ahora con el mensaje que querés enviarle al huésped. Si querés ver otra alerta, respondé ALERTAS."
+      ].join("\n")
+    end
+
+    def guest_label(alert)
+      alert.guest&.phone_number.to_s.delete_prefix("+").presence ||
+        alert.guest&.display_name ||
+        "Huésped de WhatsApp"
+    end
+
+    def alert_summary(alert)
+      alert.description.presence || alert.title
+    end
+
+    def last_guest_message(alert)
+      alert.conversation&.messages&.where(sender: "guest")&.order(created_at: :desc)&.first&.body.presence ||
+        alert.description.presence ||
+        "Sin mensaje de huésped asociado."
+    end
+
+    def age_label(time)
+      seconds = (Time.current - time).to_i
+      if seconds < 60
+        "hace menos de 1 min"
+      elsif seconds < 3600
+        "hace #{seconds / 60} min"
+      elsif seconds < 86_400
+        "hace #{seconds / 3600} h"
+      else
+        "hace #{seconds / 86_400} d"
+      end
     end
 
     def create_reusable_faq!(alert, answer)
-      question = guest_question_for(alert).to_s.strip
+      question = alert.description.presence || last_guest_message(alert).to_s.strip
       return if question.blank?
       return if alert.property.faqs.where("lower(question) = ?", question.downcase).exists?
 
@@ -157,15 +256,34 @@ module Whatsapp
       delivery.respond_to?(:success?) ? delivery.success? : !!delivery
     end
 
-    def delivery_metadata(delivery)
-      return {} unless delivery.respond_to?(:provider_message_id)
+    def delivery_metadata(delivery, delivered:)
+      unless delivered
+        return {
+          delivery_status: "failed",
+          delivery_error: delivery_error(delivery),
+          delivery_status_updated_at: Time.current.iso8601
+        }.compact
+      end
+
+      return {
+        delivery_status: "sent",
+        delivery_status_updated_at: Time.current.iso8601
+      } unless delivery.respond_to?(:provider_message_id)
 
       {
         provider_message_id: delivery.provider_message_id,
         provider_status: delivery.provider_status,
         delivery_status: delivery.provider_status.presence || "accepted_by_provider",
         delivery_status_updated_at: Time.current.iso8601
-      }
+      }.compact
+    end
+
+    def delivery_error(delivery)
+      if delivery.respond_to?(:error) && delivery.error.present?
+        delivery.error
+      else
+        "whatsapp_delivery_failed"
+      end
     end
   end
 end

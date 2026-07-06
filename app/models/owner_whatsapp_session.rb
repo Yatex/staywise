@@ -14,4 +14,18 @@ class OwnerWhatsappSession < ApplicationRecord
   def active?
     state.in?(ACTIVE_STATES)
   end
+
+  def append_event!(type, payload = {})
+    events = Array(metadata["events"])
+    update!(
+      metadata: metadata.merge(
+        "events" => events.last(49) + [
+          payload.compact.merge(
+            "type" => type,
+            "at" => Time.current.iso8601
+          )
+        ]
+      )
+    )
+  end
 end

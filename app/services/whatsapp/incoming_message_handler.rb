@@ -41,7 +41,7 @@ module Whatsapp
       end
 
       decision = AI::DecisionService.call(conversation: conversation, guest_message: guest_message)
-      alert = Alerts::Creator.call(conversation: conversation, decision: decision)
+      alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
       replied = maybe_reply(conversation, guest, decision, alert: alert)
       conversation.update!(status: "escalated") if alert.present?
 

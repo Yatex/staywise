@@ -10,13 +10,14 @@ module Alerts
       "unknown_question" => "medium"
     }.freeze
 
-    def self.call(conversation:, decision:)
-      new(conversation: conversation, decision: decision).call
+    def self.call(conversation:, decision:, owner_whatsapp_provider: nil)
+      new(conversation: conversation, decision: decision, owner_whatsapp_provider: owner_whatsapp_provider).call
     end
 
-    def initialize(conversation:, decision:)
+    def initialize(conversation:, decision:, owner_whatsapp_provider: nil)
       @conversation = conversation
       @decision = decision
+      @owner_whatsapp_provider = owner_whatsapp_provider
     end
 
     def call
@@ -39,7 +40,9 @@ module Alerts
         OwnerAlertEmailJob.perform_later(alert.id)
       end
 
-      Whatsapp::OwnerEscalationNotifier.call(alert: alert) if account.ai_automation_enabled?("send_owner_whatsapp_escalations")
+      if account.ai_automation_enabled?("send_owner_whatsapp_escalations")
+        Whatsapp::OwnerEscalationNotifier.call(alert: alert, provider: @owner_whatsapp_provider || Whatsapp::ProviderFactory.build)
+      end
 
       alert
     end
