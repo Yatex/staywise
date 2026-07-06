@@ -44,6 +44,7 @@ module Whatsapp
       alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
       replied = maybe_reply(conversation, guest, decision, alert: alert)
       conversation.update!(status: "escalated") if alert.present?
+      finalize_ai_trace(guest_message: guest_message, decision: decision, alert: alert, replied: replied)
 
       { conversation: conversation, message: guest_message, decision: decision, alert: alert, replied: replied }
     end
@@ -192,6 +193,49 @@ module Whatsapp
         replied: replied,
         error: "missing_property_context"
       }
+    end
+
+    def finalize_ai_trace(guest_message:, decision:, alert:, replied:)
+      log = AIDecisionLog.where(message: guest_message).order(created_at: :desc).first
+      return unless log
+
+      outbound_message = log.conversation&.messages&.where(sender: "ai")&.where("created_at >= ?", guest_message.created_at)&.order(created_at: :desc)&.first
+      delivery_status = if outbound_message
+        outbound_message.metadata["delivery_status"].presence || outbound_message.metadata["provider_status"].presence || (replied ? "sent" : "failed")
+      elsif decision.should_reply
+        replied ? "sent" : "not_sent"
+      else
+        "not_applicable"
+      end
+
+      alert_payload = if alert.present?
+        {
+          created: true,
+          id: alert.id,
+          type: alert.alert_type,
+          status: alert.status,
+          visible_for_owner: Alert.joins(:property).where(properties: { account_id: alert.property.account_id }).open.where(id: alert.id).exists?
+        }
+      else
+        { created: false }
+      end
+
+      whatsapp_payload = {
+        sent: replied,
+        delivery_status: delivery_status,
+        provider_status: outbound_message&.metadata&.dig("provider_status"),
+        provider_error: outbound_message&.metadata&.dig("delivery_error")
+      }
+
+      log.update!(
+        provider_delivery_status: delivery_status,
+        payload: log.payload.merge(
+          "alert" => alert_payload,
+          "whatsapp_delivery" => whatsapp_payload
+        )
+      )
+    rescue StandardError => error
+      Rails.logger.warn("[ai-audit] finalize_failed #{error.class}: #{error.message}")
     end
 
     def delivery_success?(delivery)

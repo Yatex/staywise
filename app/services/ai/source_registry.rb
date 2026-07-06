@@ -212,6 +212,10 @@ module AI
       valid_evidence?("evidence_id" => evidence_id)
     end
 
+    def source_for_evidence_id(evidence_id)
+      evidence_source("evidence_id" => evidence_id)
+    end
+
     def relevant_evidence?(item, message)
       item = item.to_h.stringify_keys
       source = evidence_source(item)

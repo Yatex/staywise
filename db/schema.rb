@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_02_123100) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_06_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -62,12 +62,24 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_02_123100) do
     t.jsonb "payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "original_message_id"
+    t.jsonb "ai_request_payload", default: {}, null: false
+    t.jsonb "ai_response_payload", default: {}, null: false
+    t.jsonb "tool_calls", default: [], null: false
+    t.jsonb "validation_results", default: {}, null: false
+    t.string "fallback_reason"
+    t.string "final_outcome"
+    t.string "provider_delivery_status"
     t.index ["account_id"], name: "index_ai_decision_logs_on_account_id"
     t.index ["conversation_id"], name: "index_ai_decision_logs_on_conversation_id"
+    t.index ["fallback_reason", "created_at"], name: "index_ai_decision_logs_on_fallback_reason_and_created_at"
+    t.index ["final_outcome", "created_at"], name: "index_ai_decision_logs_on_final_outcome_and_created_at"
     t.index ["guest_id"], name: "index_ai_decision_logs_on_guest_id"
     t.index ["message_id"], name: "index_ai_decision_logs_on_message_id"
+    t.index ["original_message_id"], name: "index_ai_decision_logs_on_original_message_id"
     t.index ["property_id", "created_at"], name: "index_ai_decision_logs_on_property_id_and_created_at"
     t.index ["property_id"], name: "index_ai_decision_logs_on_property_id"
+    t.index ["provider_delivery_status", "created_at"], name: "idx_on_provider_delivery_status_created_at_294904be25"
     t.index ["route", "created_at"], name: "index_ai_decision_logs_on_route_and_created_at"
     t.index ["validator_result", "created_at"], name: "index_ai_decision_logs_on_validator_result_and_created_at"
   end
@@ -291,6 +303,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_02_123100) do
   add_foreign_key "ai_decision_logs", "conversations"
   add_foreign_key "ai_decision_logs", "guests"
   add_foreign_key "ai_decision_logs", "messages"
+  add_foreign_key "ai_decision_logs", "messages", column: "original_message_id"
   add_foreign_key "ai_decision_logs", "properties"
   add_foreign_key "alerts", "conversations"
   add_foreign_key "alerts", "guests"

@@ -229,6 +229,26 @@ module ApplicationHelper
     "mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
   end
 
+  def trace_json(value)
+    JSON.pretty_generate(AIDecisionLog.sanitize_trace(value || {}))
+  rescue JSON::GeneratorError, TypeError
+    AIDecisionLog.sanitize_trace(value).inspect
+  end
+
+  def trace_value(value)
+    return "Sin datos" if value.blank?
+
+    value
+  end
+
+  def trace_evidence_value(evidence)
+    evidence = evidence.to_h
+    field = evidence["field"] || evidence[:field] || "value"
+    value = evidence["value"] || evidence[:value]
+
+    AIDecisionLog.sanitize_trace({ field => value }).values.first.presence || "Sin datos"
+  end
+
   def label_class
     "text-sm font-medium text-slate-700"
   end

@@ -48,6 +48,52 @@
         </div>
       <% end %>
     </div>
+
+    <% if current_user.admin? %>
+      <div class="border-t border-slate-200 bg-white px-5 py-5">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-950">AI Trace</h3>
+            <p class="mt-1 text-sm text-slate-500">Vista interna para auditar qué hizo la IA con cada mensaje de esta conversación.</p>
+          </div>
+          <%= link_to "Ver trazas filtradas", admin_ai_traces_path(conversation_id: @conversation.id), class: secondary_button_class %>
+        </div>
+
+        <div class="mt-4 space-y-3">
+          <% @ai_decision_logs.each do |trace| %>
+            <% trace_payload = trace.payload.to_h %>
+            <%= link_to admin_ai_trace_path(trace, conversation_id: @conversation.id), class: "block rounded-lg border border-slate-200 p-4 transition hover:bg-slate-50" do %>
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(trace.final_outcome || trace.decision) %>"><%= trace.final_outcome || trace.decision || "Sin decisión" %></span>
+                    <% if trace.fallback? %>
+                      <span class="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">Fallback</span>
+                    <% end %>
+                    <% if trace.validation_failed? %>
+                      <span class="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">Validación fallida</span>
+                    <% end %>
+                  </div>
+                  <p class="mt-2 text-sm font-medium text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
+                  <% if trace.checkin_trace.present? %>
+                    <p class="mt-1 text-xs font-semibold text-indigo-700">CHECKIN_TRACE disponible</p>
+                  <% end %>
+                </div>
+                <div class="text-sm text-slate-500 sm:text-right">
+                  <p><%= local_datetime(trace.created_at) %></p>
+                  <p>Tools: <%= trace.tool_calls.size %> · Evidence: <%= Array(trace.evidence_ids).size %></p>
+                  <p>WhatsApp: <%= trace_payload.dig("whatsapp_delivery", "delivery_status") || trace.provider_delivery_status || "sin datos" %></p>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+
+          <% if @ai_decision_logs.blank? %>
+            <p class="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">Todavía no hay trazas de IA para esta conversación.</p>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   </section>
 
   <aside class="space-y-4">

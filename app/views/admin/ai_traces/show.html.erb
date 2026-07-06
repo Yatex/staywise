@@ -1,0 +1,221 @@
+<% content_for :page_title, "AI Trace ##{@trace.id}" %>
+
+<% payload = @trace.payload.to_h %>
+<% validation = @trace.validation_results.presence || payload["validation_results"].presence || {} %>
+<% evidence_trace = payload["evidence_trace"].presence || validation.to_h["evidence"].presence || [] %>
+<% alert_trace = payload["alert"].presence || { "created" => false } %>
+<% whatsapp_trace = payload["whatsapp_delivery"].presence || {} %>
+<% generated_response = @trace.ai_response_payload.to_h["response_text"].presence || @trace.ai_response_payload.to_h["message_body"].presence || payload["rejected_candidate"].to_h["response_text"].presence || payload["outcome"].presence %>
+
+<div class="space-y-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <%= link_to "Volver a AI Trace", admin_ai_traces_path(query_params.except("page")), class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+      <h2 class="mt-2 text-xl font-semibold text-slate-950">AI Trace #<%= @trace.id %></h2>
+      <p class="mt-1 text-sm text-slate-500">Detalle interno sanitizado. No contiene headers de autorización ni secretos en claro.</p>
+    </div>
+    <div class="flex gap-2">
+      <% if @trace.conversation.present? %>
+        <%= link_to "Ver conversación", conversation_path(@trace.conversation), class: secondary_button_class %>
+      <% end %>
+      <% if @trace.property.present? %>
+        <%= link_to "Ver propiedad", property_path(@trace.property), class: secondary_button_class %>
+      <% end %>
+    </div>
+  </div>
+
+  <section class="<%= card_class %> p-5">
+    <div class="grid gap-4 md:grid-cols-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Decisión final</p>
+        <p class="mt-1 text-lg font-semibold text-slate-950"><%= @trace.final_outcome || @trace.decision || "Sin decisión" %></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Idioma detectado</p>
+        <p class="mt-1 text-lg font-semibold text-slate-950"><%= @trace.language.presence || "Sin datos" %></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Ruta</p>
+        <p class="mt-1 text-lg font-semibold text-slate-950"><%= @trace.route %></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Latencia</p>
+        <p class="mt-1 text-lg font-semibold text-slate-950"><%= @trace.latency_ms.present? ? "#{@trace.latency_ms} ms" : "Sin datos" %></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Mensaje original del huésped</h3>
+    <p class="mt-3 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= @trace.original_message&.body || @trace.message&.body || "Mensaje no disponible" %></p>
+    <div class="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
+      <span>Cuenta: <%= @trace.account&.name || "Sin cuenta" %></span>
+      <span>· Propiedad: <%= @trace.property&.display_name || "Sin propiedad" %></span>
+      <span>· Conversación: #<%= @trace.conversation_id || "sin ID" %></span>
+      <span>· <%= local_datetime(@trace.created_at) %></span>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Intenciones detectadas</h3>
+    <% if @trace.detected_intents.present? %>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <% @trace.detected_intents.each do |intent| %>
+          <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"><%= intent.is_a?(Hash) ? intent.values_at("type", "status").compact.join(" · ") : intent %></span>
+        <% end %>
+      </div>
+    <% else %>
+      <p class="mt-3 text-sm text-slate-500">No se registraron intenciones.</p>
+    <% end %>
+    <details class="mt-4 rounded-lg border border-slate-200 p-3">
+      <summary class="cursor-pointer text-sm font-semibold text-slate-700">Ver JSON</summary>
+      <pre class="mt-3 overflow-auto text-xs text-slate-700"><%= trace_json(@trace.detected_intents) %></pre>
+    </details>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Tools llamadas</h3>
+    <% if @trace.tool_calls.present? %>
+      <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Tool</th>
+              <th class="px-3 py-2">Timestamp</th>
+              <th class="px-3 py-2">Latencia</th>
+              <th class="px-3 py-2">Estado</th>
+              <th class="px-3 py-2">Debug</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            <% @trace.tool_calls.each do |tool| %>
+              <tr>
+                <td class="px-3 py-3 font-medium text-slate-950"><%= tool["tool_name"] || tool["toolName"] || "tool" %></td>
+                <td class="px-3 py-3 text-slate-600"><%= tool["timestamp"] || tool["called_at"] || "Sin datos" %></td>
+                <td class="px-3 py-3 text-slate-600"><%= tool["latency_ms"].present? ? "#{tool["latency_ms"]} ms" : "Sin datos" %></td>
+                <td class="px-3 py-3 text-slate-600"><%= tool["error"].present? ? "Error" : "OK" %></td>
+                <td class="px-3 py-3">
+                  <details>
+                    <summary class="cursor-pointer font-semibold text-slate-700">Input/output</summary>
+                    <pre class="mt-2 max-w-xl overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(tool) %></pre>
+                  </details>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="mt-3 text-sm text-slate-500">No se registraron tools para esta decisión.</p>
+    <% end %>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Evidence</h3>
+    <% if evidence_trace.present? %>
+      <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Evidence ID</th>
+              <th class="px-3 py-2">Fuente</th>
+              <th class="px-3 py-2">Campo</th>
+              <th class="px-3 py-2">Valor</th>
+              <th class="px-3 py-2">Rails</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            <% evidence_trace.each do |evidence| %>
+              <% evidence = evidence.to_h %>
+              <tr>
+                <td class="px-3 py-3 font-mono text-xs text-slate-800"><%= evidence["evidence_id"] || evidence[:evidence_id] %></td>
+                <td class="px-3 py-3 text-slate-600"><%= evidence["source"] || evidence[:source] || "Sin fuente" %></td>
+                <td class="px-3 py-3 text-slate-600"><%= evidence["field"] || evidence[:field] || "Sin campo" %></td>
+                <td class="max-w-sm px-3 py-3 text-slate-600"><%= trace_evidence_value(evidence) %></td>
+                <td class="px-3 py-3 text-slate-600">
+                  válido: <%= evidence["valid"].nil? ? "sin datos" : evidence["valid"] %><br>
+                  relevante: <%= evidence["relevant"].nil? ? "sin datos" : evidence["relevant"] %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="mt-3 text-sm text-slate-500">No se registró evidencia.</p>
+    <% end %>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Respuesta y validaciones</h3>
+    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta generada por IA</p>
+        <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= generated_response.presence || "Sin respuesta generada" %></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Validaciones Rails</p>
+        <div class="mt-2 rounded-lg bg-slate-50 p-4 text-sm text-slate-800">
+          <p>Resultado: <strong><%= validation.to_h["status"] || @trace.validator_result || "Sin datos" %></strong></p>
+          <% reasons = validation.to_h["reasons"].presence || Array(@trace.rejection_reason) %>
+          <% if reasons.present? %>
+            <ul class="mt-2 list-disc pl-5">
+              <% Array(reasons).each do |reason| %>
+                <li><%= reason %></li>
+              <% end %>
+            </ul>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    <details class="mt-4 rounded-lg border border-slate-200 p-3">
+      <summary class="cursor-pointer text-sm font-semibold text-slate-700">Ver request/response JSON</summary>
+      <div class="mt-3 grid gap-4 lg:grid-cols-2">
+        <pre class="overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(@trace.ai_request_payload) %></pre>
+        <pre class="overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(@trace.ai_response_payload) %></pre>
+      </div>
+    </details>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Fallback, alerta y WhatsApp</h3>
+    <div class="mt-4 grid gap-4 md:grid-cols-3">
+      <div class="rounded-lg bg-slate-50 p-4 text-sm">
+        <p class="font-semibold text-slate-950">Fallback</p>
+        <p class="mt-2 text-slate-600"><%= @trace.fallback_reason.presence || "No aplicado" %></p>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-4 text-sm">
+        <p class="font-semibold text-slate-950">Alerta</p>
+        <p class="mt-2 text-slate-600">Creada: <%= alert_trace["created"] ? "sí" : "no" %></p>
+        <% if alert_trace["created"] %>
+          <p class="text-slate-600">Tipo: <%= alert_trace["type"] %></p>
+          <p class="text-slate-600">Estado: <%= alert_trace["status"] %></p>
+          <p class="text-slate-600">Visible owner: <%= alert_trace["visible_for_owner"] ? "sí" : "no" %></p>
+        <% end %>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-4 text-sm">
+        <p class="font-semibold text-slate-950">WhatsApp</p>
+        <p class="mt-2 text-slate-600">Enviado: <%= whatsapp_trace["sent"] ? "sí" : "no" %></p>
+        <p class="text-slate-600">Delivery: <%= whatsapp_trace["delivery_status"] || @trace.provider_delivery_status || "Sin datos" %></p>
+        <% if whatsapp_trace["provider_error"].present? %>
+          <p class="text-rose-700">Error: <%= whatsapp_trace["provider_error"] %></p>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <% if @trace.checkin_trace.present? %>
+    <section class="<%= card_class %> p-5 ring-2 ring-indigo-100">
+      <h3 class="text-base font-semibold text-slate-950">CHECKIN_TRACE</h3>
+      <pre class="mt-4 overflow-auto rounded bg-slate-950 p-4 text-xs text-slate-100"><%= trace_json(@trace.checkin_trace) %></pre>
+    </section>
+  <% end %>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Payload completo sanitizado</h3>
+    <details class="mt-4 rounded-lg border border-slate-200 p-3">
+      <summary class="cursor-pointer text-sm font-semibold text-slate-700">Ver JSON</summary>
+      <pre class="mt-3 overflow-auto rounded bg-slate-950 p-4 text-xs text-slate-100"><%= trace_json(payload) %></pre>
+    </details>
+  </section>
+</div>

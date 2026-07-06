@@ -36,6 +36,10 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_errors_path
 
     assert_redirected_to dashboard_path
+
+    get admin_ai_traces_path
+
+    assert_redirected_to dashboard_path
   end
 
   test "admins can access users stats and errors sections" do
@@ -52,6 +56,83 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_errors_path
     assert_response :success
+
+    get admin_ai_traces_path
+    assert_response :success
+    assert_includes response.body, "AI Trace"
+  end
+
+  test "admin can inspect sanitized ai decision trace" do
+    guest = @owner_account.guests.create!(phone_number: "+15550003333", property: @property)
+    conversation = guest.conversations.create!(property: @property)
+    message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "a que hora es el check in?")
+    trace = AIDecisionLog.create!(
+      account: @owner_account,
+      property: @property,
+      guest: guest,
+      conversation: conversation,
+      message: message,
+      original_message: message,
+      route: "remote_ai",
+      decision: "reply",
+      final_outcome: "reply",
+      language: "es",
+      validator_result: "accepted",
+      detected_intents: [{ "type" => "check_in", "status" => "answered" }],
+      evidence_ids: ["property.check_in_time"],
+      ai_request_payload: AIDecisionLog.sanitize_trace({ "Authorization" => "Bearer secret-token", "body" => "a que hora es el check in?" }),
+      ai_response_payload: { "response_text" => "El check-in es a las 15:00." },
+      tool_calls: [
+        {
+          "tool_name" => "stay_facts",
+          "timestamp" => Time.current.iso8601,
+          "input" => { "decision_context_id" => "ctx_123" },
+          "output_summary" => { "check_in_time" => "15:00", "wifi_password" => "SuperSecret123" },
+          "latency_ms" => 42
+        }
+      ].then { |value| AIDecisionLog.sanitize_trace(value) },
+      validation_results: {
+        "status" => "accepted",
+        "passed" => true,
+        "evidence" => [{ "evidence_id" => "property.check_in_time", "valid" => true, "relevant" => true }]
+      },
+      provider_delivery_status: "sent",
+      payload: AIDecisionLog.sanitize_trace(
+        {
+          "checkin_trace" => {
+            "label" => "CHECKIN_TRACE",
+            "detected_language" => "es",
+            "detected_intents" => [{ "type" => "check_in" }],
+            "guest_context_called" => true,
+            "stay_facts_called" => true,
+            "check_in_evidence_found" => true,
+            "evidence_id" => "property.check_in_time",
+            "validation_passed" => true,
+            "final_response_or_fallback" => "El check-in es a las 15:00."
+          },
+          "evidence_trace" => [
+            { "evidence_id" => "property.check_in_time", "source" => "property", "field" => "check_in_time", "value" => "15:00", "valid" => true, "relevant" => true }
+          ],
+          "alert" => { "created" => false },
+          "whatsapp_delivery" => { "sent" => true, "delivery_status" => "sent" }
+        }
+      )
+    )
+
+    sign_in_as(@admin)
+
+    get admin_ai_traces_path(decision: "reply", tool: "stay_facts")
+    assert_response :success
+    assert_includes response.body, "a que hora es el check in?"
+    assert_includes response.body, "stay_facts"
+
+    get admin_ai_trace_path(trace)
+    assert_response :success
+    assert_includes response.body, "CHECKIN_TRACE"
+    assert_includes response.body, "property.check_in_time"
+    assert_includes response.body, "[REDACTED]"
+    assert_not_includes response.body, "SuperSecret123"
+    assert_not_includes response.body, "secret-token"
   end
 
   test "admin can inspect and resolve operational errors" do

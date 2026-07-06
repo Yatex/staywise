@@ -125,7 +125,8 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const toolResults = await collectToolResults(payload);
+    const toolTrace: any[] = [];
+    const toolResults = await collectToolResults(payload, toolTrace);
     const result = await generateObject({
       model: gatewayModel(),
       schema: DecisionSchema,
@@ -167,6 +168,12 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 200, {
       ...result.object,
+      audit: {
+        ...(result.object as any).audit,
+        model: gatewayModelId(),
+        token_usage: result.usage,
+        tool_calls: toolTrace,
+      },
     });
   } catch (error) {
     console.error("[ai-service]", error);
@@ -511,10 +518,10 @@ function ownerText(language: string, spanish: string, english: string) {
   return normalizeLanguage(language) === "en" ? english : spanish;
 }
 
-async function collectToolResults(payload: any) {
+async function collectToolResults(payload: any, toolTrace: any[] = []) {
   if (process.env.AI_TOOLS_ENABLED === "false") return [];
 
-  const initialToolResults = await mandatoryToolResults(payload);
+  const initialToolResults = await mandatoryToolResults(payload, toolTrace);
   const result = await generateText({
     model: gatewayModel(),
     system: [
@@ -530,46 +537,57 @@ async function collectToolResults(payload: any) {
     tools: buildTools({
       ...(payload?.tool_context || {}),
       tool_endpoint: payload?.tool_endpoint,
-    }),
+    }, toolTrace),
     stopWhen: stepCountIs(3),
   });
 
-  return initialToolResults.concat(result.toolResults.map((toolResult: any) => ({
-    toolName: toolResult.toolName,
-    input: toolResult.input,
-    result: toolResult.output,
-  })));
+  return initialToolResults.concat(result.toolResults.map((toolResult: any) => {
+    const row = {
+      toolName: toolResult.toolName,
+      input: toolResult.input,
+      result: toolResult.output,
+    };
+    if (!toolTrace.some((item) => item.tool_name === toolResult.toolName && JSON.stringify(item.input) === JSON.stringify(toolResult.input))) {
+      toolTrace.push(traceToolResult(toolResult.toolName, toolResult.input, toolResult.output, undefined, undefined));
+    }
+    return row;
+  }));
 }
 
-async function mandatoryToolResults(payload: any) {
+async function mandatoryToolResults(payload: any, toolTrace: any[] = []) {
   if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
+    const input = {
+      guest_message: payload?.guest_message,
+      conversation_summary: conversationSummary(payload?.conversation_history),
+      limit: 8,
+    };
+    const startedAt = Date.now();
+    const result = await callRailsTool(payload.tool_endpoint, "property_brain", input);
+    toolTrace.push(traceToolResult("property_brain", input, result, undefined, Date.now() - startedAt));
+
     return [
       {
         toolName: "property_brain",
-        input: {
-          guest_message: payload?.guest_message,
-          conversation_summary: conversationSummary(payload?.conversation_history),
-          limit: 8,
-        },
-        result: await callRailsTool(payload.tool_endpoint, "property_brain", {
-          guest_message: payload?.guest_message,
-          conversation_summary: conversationSummary(payload?.conversation_history),
-          limit: 8,
-        }),
+        input,
+        result,
       },
     ];
   }
 
   if (payload?.tool_context) {
+    const input = {
+      guest_message: payload?.guest_message,
+      conversation_summary: conversationSummary(payload?.conversation_history),
+      limit: 8,
+    };
+    const result = payload.tool_context.property_brain || payload.tool_context;
+    toolTrace.push(traceToolResult("property_brain", input, result, undefined, 0));
+
     return [
       {
         toolName: "property_brain",
-        input: {
-          guest_message: payload?.guest_message,
-          conversation_summary: conversationSummary(payload?.conversation_history),
-          limit: 8,
-        },
-        result: payload.tool_context.property_brain || payload.tool_context,
+        input,
+        result,
       },
     ];
   }
@@ -587,8 +605,8 @@ function conversationSummary(history: any) {
     .join("\n");
 }
 
-function buildTools(toolContext: any) {
-  const remoteTools = buildRemoteTools(toolContext?.tool_endpoint);
+function buildTools(toolContext: any, toolTrace: any[] = []) {
+  const remoteTools = buildRemoteTools(toolContext?.tool_endpoint, toolTrace);
   if (remoteTools) return remoteTools;
 
   return {
@@ -599,14 +617,22 @@ function buildTools(toolContext: any) {
         conversation_summary: z.string().optional(),
         limit: z.number().int().min(1).max(20).optional(),
       }),
-      execute: async () => toolContext.property_brain || toolContext,
+      execute: async (input: any) => {
+        const result = toolContext.property_brain || toolContext;
+        toolTrace.push(traceToolResult("property_brain", input, result, undefined, 0));
+        return result;
+      },
     },
     sensitive_access_info: {
       description: "Get sensitive access information only if Rails authorized it for this guest and reservation window. Includes WiFi passwords, codes, keys, lockbox, and entrance instructions.",
       inputSchema: z.object({
         guest_message: z.string().optional(),
       }),
-      execute: async () => toolContext.sensitive_access_info || { authorized: false, reason: "not_available", sources: [] },
+      execute: async (input: any) => {
+        const result = toolContext.sensitive_access_info || { authorized: false, reason: "not_available", sources: [] };
+        toolTrace.push(traceToolResult("sensitive_access_info", input, result, undefined, 0));
+        return result;
+      },
     },
     create_escalation_draft: {
       description: "Create an escalation draft. This does not write to the database; Rails decides whether to create the real alert.",
@@ -615,15 +641,19 @@ function buildTools(toolContext: any) {
         urgency: z.string(),
         summary: z.string(),
       }),
-      execute: async (input: { category: string; urgency: string; summary: string }) => ({
-        draft: true,
-        ...input,
-      }),
+      execute: async (input: { category: string; urgency: string; summary: string }) => {
+        const result = {
+          draft: true,
+          ...input,
+        };
+        toolTrace.push(traceToolResult("create_escalation_draft", input, result, undefined, 0));
+        return result;
+      },
     },
   };
 }
 
-function buildRemoteTools(toolEndpoint: any) {
+function buildRemoteTools(toolEndpoint: any, toolTrace: any[] = []) {
   if (!toolEndpoint?.base_url || !toolEndpoint?.decision_context_id) return null;
 
   return {
@@ -635,7 +665,7 @@ function buildRemoteTools(toolEndpoint: any) {
         limit: z.number().int().min(1).max(20).optional(),
       }),
       execute: async (input: { guest_message?: string; conversation_summary?: string; limit?: number }) =>
-        callRailsTool(toolEndpoint, "property_brain", input),
+        tracedRailsTool(toolEndpoint, "property_brain", input, toolTrace),
     },
     sensitive_access_info: {
       description: "Get sensitive access information only if Rails authorized it for this guest and reservation window. Includes WiFi passwords, codes, keys, lockbox, and entrance instructions.",
@@ -643,7 +673,7 @@ function buildRemoteTools(toolEndpoint: any) {
         guest_message: z.string().optional(),
       }),
       execute: async (input: { guest_message?: string }) =>
-        callRailsTool(toolEndpoint, "sensitive_access_info", input),
+        tracedRailsTool(toolEndpoint, "sensitive_access_info", input, toolTrace),
     },
     create_escalation_draft: {
       description: "Create an escalation draft. This does not write to the database; Rails decides whether to create the real alert.",
@@ -653,8 +683,41 @@ function buildRemoteTools(toolEndpoint: any) {
         summary: z.string(),
       }),
       execute: async (input: { category: string; urgency: string; summary: string }) =>
-        callRailsTool(toolEndpoint, "escalation_draft", input),
+        tracedRailsTool(toolEndpoint, "escalation_draft", input, toolTrace),
     },
+  };
+}
+
+async function tracedRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>, toolTrace: any[]) {
+  const startedAt = Date.now();
+  try {
+    const result = await callRailsTool(toolEndpoint, toolName, input);
+    toolTrace.push(traceToolResult(toolName, input, result, result?.error, Date.now() - startedAt));
+    return result;
+  } catch (error: any) {
+    toolTrace.push(traceToolResult(toolName, input, null, error?.message || String(error), Date.now() - startedAt));
+    throw error;
+  }
+}
+
+function traceToolResult(toolName: string, input: any, result: any, error?: any, latencyMs?: number) {
+  return {
+    tool_name: toolName,
+    timestamp: new Date().toISOString(),
+    input,
+    output_summary: summarizeToolOutput(result),
+    error: error || null,
+    latency_ms: latencyMs ?? null,
+  };
+}
+
+function summarizeToolOutput(result: any) {
+  if (!result) return null;
+  return {
+    evidence_ids: collectEvidenceIds(result),
+    result_count: Array.isArray(result) ? result.length : undefined,
+    keys: typeof result === "object" && !Array.isArray(result) ? Object.keys(result).slice(0, 20) : undefined,
+    preview: JSON.stringify(result).slice(0, 1200),
   };
 }
 

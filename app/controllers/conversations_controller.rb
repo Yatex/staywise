@@ -37,6 +37,11 @@ class ConversationsController < ApplicationController
       .find(params[:id])
     @messages = @conversation.messages.order(:created_at, :id)
     @alerts = @conversation.alerts.order(created_at: :desc)
+    @ai_decision_logs = if current_user.admin_like?
+      AIDecisionLog.where(conversation: @conversation).includes(:message, :original_message).order(:created_at, :id)
+    else
+      AIDecisionLog.none
+    end
   end
 
   def reply_params

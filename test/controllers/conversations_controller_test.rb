@@ -104,6 +104,53 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Aceptado por Twilio"
   end
 
+  test "ai trace panel is only visible to internal admins on conversation show" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "a que hora es el check in?")
+    AIDecisionLog.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      conversation: @conversation,
+      message: message,
+      original_message: message,
+      route: "remote_ai",
+      decision: "ask_clarifying_question",
+      final_outcome: "ask_clarifying_question",
+      language: "es",
+      detected_intents: [{ "type" => "ambiguous_time", "status" => "needs_clarification" }],
+      payload: {
+        "checkin_trace" => {
+          "label" => "CHECKIN_TRACE",
+          "guest_context_called" => true,
+          "stay_facts_called" => true
+        },
+        "whatsapp_delivery" => { "delivery_status" => "sent" }
+      }
+    )
+
+    get conversation_path(@conversation)
+    assert_response :success
+    assert_not_includes @response.body, "AI Trace"
+    assert_not_includes @response.body, "CHECKIN_TRACE disponible"
+
+    delete logout_path
+    admin = @account.users.create!(
+      name: "Internal Admin",
+      email: "conversation-admin@staywise.test",
+      role: "admin",
+      email_verified_at: Time.current,
+      password: "password123",
+      password_confirmation: "password123"
+    )
+    sign_in_as(admin)
+
+    get conversation_path(@conversation)
+    assert_response :success
+    assert_includes @response.body, "AI Trace"
+    assert_includes @response.body, "CHECKIN_TRACE disponible"
+    assert_includes @response.body, "ask_clarifying_question"
+  end
+
   test "null whatsapp provider does not store owner reply as sent" do
     assert_no_difference -> { @conversation.messages.count } do
       post reply_conversation_path(@conversation), params: {

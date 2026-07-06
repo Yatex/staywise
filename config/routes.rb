@@ -24,6 +24,7 @@ Rails.application.routes.draw do
     resources :errors, only: [:index, :show] do
       patch :resolve, on: :member
     end
+    resources :ai_traces, only: [:index, :show]
     get "stats", to: "stats#index", as: :stats
   end
 
