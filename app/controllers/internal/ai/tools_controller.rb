@@ -64,7 +64,53 @@ module Internal
         expected = ENV["AI_SERVICE_TOKEN"].to_s
         return if expected.blank?
 
-        head :unauthorized unless request.authorization == "Bearer #{expected}"
+        authorization = request.authorization.to_s
+        scheme, received = authorization.split(" ", 2)
+        token_match = secure_token_match?(received, expected)
+        return if scheme == "Bearer" && token_match
+
+        Rails.logger.warn(
+          "[ai-tools-auth] #{auth_failure_context(
+            authorization: authorization,
+            scheme: scheme,
+            received: received,
+            expected: expected,
+            token_match: token_match
+          ).to_json}"
+        )
+        head :unauthorized
+      end
+
+      def secure_token_match?(received, expected)
+        return false if received.blank? || expected.blank?
+        return false unless received.bytesize == expected.bytesize
+
+        ActiveSupport::SecurityUtils.secure_compare(received, expected)
+      end
+
+      def auth_failure_context(authorization:, scheme:, received:, expected:, token_match:)
+        {
+          auth_header_present: authorization.present?,
+          auth_scheme: scheme.presence,
+          received_token_present: received.present?,
+          expected_token_present: expected.present?,
+          token_length_matches: received.present? && received.bytesize == expected.bytesize,
+          token_match: token_match,
+          env_var_name_used: "AI_SERVICE_TOKEN",
+          path: request.path,
+          received_token_has_surrounding_whitespace: surrounding_whitespace?(received),
+          expected_token_has_surrounding_whitespace: surrounding_whitespace?(expected),
+          received_token_wrapped_in_quotes: wrapped_in_quotes?(received),
+          expected_token_wrapped_in_quotes: wrapped_in_quotes?(expected)
+        }
+      end
+
+      def surrounding_whitespace?(value)
+        value.present? && value != value.strip
+      end
+
+      def wrapped_in_quotes?(value)
+        value.present? && ((value.start_with?('"') && value.end_with?('"')) || (value.start_with?("'") && value.end_with?("'")))
       end
 
       def set_conversation

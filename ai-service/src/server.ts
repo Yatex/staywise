@@ -101,6 +101,10 @@ type ToolMandatoryTrace = {
   tool_endpoint_origin: string | null;
   authorization_configured: boolean;
   authorization_source: "AI_SERVICE_TOKEN";
+  authorization_scheme: "Bearer";
+  authorization_header_sent: boolean;
+  token_has_surrounding_whitespace: boolean;
+  token_wrapped_in_quotes: boolean;
   guest_context: MandatoryToolStatus;
   stay_facts: MandatoryToolStatus;
   property_brain: MandatoryToolStatus;
@@ -864,6 +868,7 @@ function traceToolResult(toolName: string, input: any, result: any, error?: any,
 function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
   const closure = isConversationalClosure(payload?.guest_message);
   const realGuestMessage = Boolean(payload?.guest_message?.trim()) && !closure;
+  const serviceToken = process.env.AI_SERVICE_TOKEN || "";
 
   return {
     message_received: payload?.guest_message || null,
@@ -873,8 +878,12 @@ function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
     decision_context_id_present: Boolean(payload?.tool_endpoint?.decision_context_id),
     tool_endpoint_present: Boolean(payload?.tool_endpoint?.base_url),
     tool_endpoint_origin: safeUrlOrigin(payload?.tool_endpoint?.base_url),
-    authorization_configured: Boolean(process.env.AI_SERVICE_TOKEN),
+    authorization_configured: Boolean(serviceToken),
     authorization_source: "AI_SERVICE_TOKEN",
+    authorization_scheme: "Bearer",
+    authorization_header_sent: Boolean(serviceToken),
+    token_has_surrounding_whitespace: serviceToken.length > 0 && serviceToken !== serviceToken.trim(),
+    token_wrapped_in_quotes: isWrappedInQuotes(serviceToken),
     guest_context: emptyMandatoryToolStatus(),
     stay_facts: emptyMandatoryToolStatus(),
     property_brain: emptyMandatoryToolStatus(),
@@ -895,6 +904,13 @@ function safeUrlOrigin(value?: string) {
   } catch {
     return "invalid_url";
   }
+}
+
+function isWrappedInQuotes(value: string) {
+  return value.length >= 2 && (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  );
 }
 
 function markMandatoryAttempt(trace: ToolMandatoryTrace, toolName: MandatoryToolName) {
@@ -945,6 +961,10 @@ function finalizeToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[])
     tool_endpoint_origin: trace.tool_endpoint_origin,
     authorization_configured: trace.authorization_configured,
     authorization_source: trace.authorization_source,
+    authorization_scheme: trace.authorization_scheme,
+    authorization_header_sent: trace.authorization_header_sent,
+    token_has_surrounding_whitespace: trace.token_has_surrounding_whitespace,
+    token_wrapped_in_quotes: trace.token_wrapped_in_quotes,
     guest_context_attempted: trace.guest_context.attempted,
     guest_context_success: trace.guest_context.success,
     guest_context_error: trace.guest_context.error,

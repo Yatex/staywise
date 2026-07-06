@@ -41,6 +41,37 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     ENV["AI_SERVICE_TOKEN"] = previous_token
   end
 
+  test "tool authentication rejection logs sanitized diagnostics without tokens" do
+    previous_token = ENV["AI_SERVICE_TOKEN"]
+    expected_token = "shared-tools-token"
+    received_token = "x" * expected_token.bytesize
+    ENV["AI_SERVICE_TOKEN"] = expected_token
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+
+    Rails.stub(:logger, logger) do
+      post "/internal/ai/tools/stay_facts", params: {
+        decision_context_id: @decision_context_id,
+        requested_fields: ["check_in_time"]
+      }, headers: { "Authorization" => "Bearer #{received_token}" }
+    end
+
+    assert_response :unauthorized
+    assert_includes output.string, "[ai-tools-auth]"
+    assert_includes output.string, '"auth_header_present":true'
+    assert_includes output.string, '"auth_scheme":"Bearer"'
+    assert_includes output.string, '"received_token_present":true'
+    assert_includes output.string, '"expected_token_present":true'
+    assert_includes output.string, '"token_length_matches":true'
+    assert_includes output.string, '"token_match":false'
+    assert_includes output.string, '"env_var_name_used":"AI_SERVICE_TOKEN"'
+    assert_includes output.string, '"path":"/internal/ai/tools/stay_facts"'
+    assert_not_includes output.string, expected_token
+    assert_not_includes output.string, received_token
+  ensure
+    ENV["AI_SERVICE_TOKEN"] = previous_token
+  end
+
   test "guest context returns safe scoped context from signed decision context" do
     post "/internal/ai/tools/guest_context", params: {
       decision_context_id: @decision_context_id,
