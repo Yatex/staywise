@@ -115,6 +115,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (isConversationalClosure(payload?.guest_message)) {
+      sendJson(response, 200, closureDecision(payload));
+      return;
+    }
+
     if (!gatewayConfigured()) {
       sendJson(response, 200, fallbackDecision(payload));
       return;
@@ -136,6 +141,8 @@ const server = createServer(async (request, response) => {
         "Do not invent source IDs. used_source_ids must match source.id values returned by tools.",
         "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
         "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
+        "Before interpreting requests, check whether the latest guest message is a conversational closure, thanks, acknowledgement, or rejection of extra help.",
+        "If the guest says things like 'gracias', 'muchas gracias', 'perfecto', 'ok', 'dale', 'entendido', 'listo', 'no gracias', 'así está bien', 'genial', or 'excelente', return outcome no_reply. Do not escalate, ask clarification, create actions, or consult the host.",
         "Use recommendations only when the guest asks for places, restaurants, transport, pharmacies, supermarkets, attractions, money exchange, or similar local recommendations.",
         "Never answer a building guide, laundry, visitor, pool permission, booking change, or appliance question with unrelated check-in, checkout, YouTube music, map, restaurant, or money-exchange content.",
         "If the guest only greets, sends the default QR/link message, or has not asked a substantive property question, respond with a friendly clarifying question. This does not require evidence.",
@@ -356,6 +363,39 @@ function fallbackDecision(payload: any) {
   };
 }
 
+function closureDecision(payload: any) {
+  const guestText = payload?.guest_message || "";
+
+  return {
+    outcome: "no_reply",
+    decision: "no_reply",
+    language: normalizeLanguage(payload?.guest_language) || detectLanguage(guestText),
+    message_body: null,
+    intent_summary: "Conversational closure or acknowledgement",
+    detected_intents: [
+      {
+        type: "conversational_closure",
+        status: "answered",
+      },
+    ],
+    used_source_ids: [],
+    evidence_ids: [],
+    required_capabilities: [],
+    proposed_action: null,
+    confidence: 1,
+    escalation: {
+      required: false,
+      reason_code: null,
+      summary_for_host: null,
+    },
+    escalation_required: false,
+    escalation_reason: null,
+    sensitive_info_used: false,
+    missing_information: [],
+    safety_flags: [],
+  };
+}
+
 function safeBaseContext(payload: any) {
   return {
     guest_message: payload?.guest_message,
@@ -426,6 +466,47 @@ function normalizeLanguage(language?: string) {
   return language?.split(/[-_]/)[0] || undefined;
 }
 
+function isConversationalClosure(text?: string) {
+  const normalized = normalizeClosureText(text || "");
+  return [
+    "ok",
+    "okay",
+    "dale",
+    "gracias",
+    "muchas gracias",
+    "perfecto",
+    "bien",
+    "entendido",
+    "listo",
+    "genial",
+    "excelente",
+    "no gracias",
+    "asi esta bien",
+    "no gracias asi esta bien",
+    "esta bien",
+    "todo bien",
+    "ok gracias",
+    "dale gracias",
+    "perfecto gracias",
+    "listo gracias",
+    "thanks",
+    "thank you",
+    "no thanks",
+    "that is fine",
+    "thats fine",
+  ].includes(normalized);
+}
+
+function normalizeClosureText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^\p{Letter}\p{Number}\s👍]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function ownerText(language: string, spanish: string, english: string) {
   return normalizeLanguage(language) === "en" ? english : spanish;
 }
@@ -438,6 +519,7 @@ async function collectToolResults(payload: any) {
     model: gatewayModel(),
     system: [
       "You select the minimum read-only Ayla tools needed to answer or classify the guest message.",
+      "If the latest guest message is only thanks, ok, no thanks, or a conversational closure, do not call tools and summarize it as no_reply.",
       "property_brain is already loaded and is the source of non-sensitive property knowledge.",
       "Call sensitive_access_info only for WiFi, passwords, keys, access codes, entrance instructions, lockboxes, or other sensitive access details.",
       "Call create_escalation_draft if the evidence is missing, ambiguous after one clarification, or needs owner approval.",

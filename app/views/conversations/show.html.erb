@@ -20,7 +20,7 @@
             <p class="text-xs font-semibold uppercase tracking-wide <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= enum_label(message.sender) %></p>
             <p class="mt-2 whitespace-pre-line text-sm leading-6"><%= message.body %></p>
             <p class="mt-3 text-xs <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= local_datetime(message.created_at) %></p>
-            <% if message.sender == "owner" %>
+            <% if message.sender != "guest" && (message.metadata["delivery_status"].present? || message.metadata["provider_status"].present?) %>
               <p class="mt-1 text-xs <%= whatsapp_delivery_failed?(message) ? "font-semibold text-rose-200" : "text-slate-300" %>"><%= whatsapp_delivery_label(message) %></p>
             <% end %>
           </div>

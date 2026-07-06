@@ -27,4 +27,20 @@ class AiContextBuilderTest < ActiveSupport::TestCase
     assert_equal @conversation, resolved.fetch(:conversation)
     assert_equal @message, resolved.fetch(:guest_message)
   end
+
+  test "includes complete conversation history in chronological order" do
+    @conversation.messages.destroy_all
+    bodies = 6.times.map do |index|
+      @conversation.messages.create!(
+        sender: index.even? ? "guest" : "ai",
+        channel: "whatsapp",
+        body: "Mensaje #{index + 1}"
+      ).body
+    end
+    latest = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "No gracias, así está bien.")
+
+    payload = AI::ContextBuilder.new(conversation: @conversation, guest_message: latest).call
+
+    assert_equal bodies + [latest.body], payload.fetch(:conversation_history).map { |message| message["body"] || message[:body] }
+  end
 end

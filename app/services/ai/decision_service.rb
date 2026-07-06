@@ -3,15 +3,6 @@ require "json"
 
 module AI
   class DecisionService
-    KEYWORD_ALERTS = {
-      late_checkout_request: %w[late checkout stay longer leave later],
-      missing_item: %w[towel towels linen sheets missing],
-      maintenance_issue: %w[broken leak leaking damage not\ working],
-      emergency: %w[emergency hospital police fire ambulance urgent],
-      complaint: %w[complaint dirty bad unhappy disappointed],
-      owner_approval_required: %w[refund discount compensation approve permission]
-    }.freeze
-
     def self.call(conversation:, guest_message:)
       new(conversation: conversation, guest_message: guest_message).call
     end
@@ -37,17 +28,12 @@ module AI
       end
 
       unless SafetyConfig.tool_first_flow_enabled?(account: @property.account, property: @property)
-        fallback = local_decision(payload)
+        fallback = safe_escalation("AI tool-first flow is disabled.")
         audit("tool_first_disabled", fallback, started_at)
         return fallback
       end
 
       if (decision = remote_decision(payload))
-        if (fallback = local_safe_reply_for_generic_escalation(decision))
-          audit("local_safe_reply_after_ai_escalation", fallback, started_at, validator_result: "accepted")
-          return fallback
-        end
-
         validation = DecisionValidator.new(conversation: @conversation, decision: decision, source: "ai").call
         if validation.valid?
           audit("remote_ai", decision, started_at, validator_result: "accepted")
@@ -56,11 +42,11 @@ module AI
 
         Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
         fallback = safe_escalation("AI decision rejected: #{validation.reasons.join(", ")}")
-        audit("remote_ai_rejected", fallback, started_at, validator_result: "rejected", rejection_reason: validation.reasons.join(", "))
+        audit("remote_ai_rejected", fallback, started_at, validator_result: "rejected", rejection_reason: validation.reasons.join(", "), rejected_decision: decision)
         return fallback
       end
 
-      fallback = local_decision(payload)
+      fallback = safe_escalation("AI service unavailable.")
       audit("local_fallback", fallback, started_at)
       fallback
     end
@@ -98,41 +84,6 @@ module AI
       nil
     end
 
-    def local_decision(payload)
-      return conservative_local_decision if SafetyConfig.conservative_fallback_enabled?
-
-      legacy_local_decision(payload)
-    end
-
-    def conservative_local_decision
-      router_decision = DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).fallback
-      return router_decision if router_decision
-
-      registry = SourceRegistry.new(conversation: @conversation)
-      faq = registry.exact_faq_for(@guest_message.body)
-
-      if faq
-        source = registry.faq_source(faq)
-        return DecisionResult.from_hash(
-          outcome: "reply",
-          response_text: faq.answer,
-          should_reply: true,
-          confidence: 0.98,
-          evidence: [source.slice("source_type", "source_id").merge("claim" => "Exact FAQ question match.")]
-        )
-      end
-
-      safe_escalation("AI service unavailable and no exact FAQ match was found.")
-    end
-
-    def local_safe_reply_for_generic_escalation(decision)
-      return unless decision.escalation_required
-      return if decision.alert_type.present? && decision.alert_type != "unknown_question"
-      return if decision.proposed_action.present?
-
-      DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).fallback
-    end
-
     def safe_escalation(description)
       DecisionResult.from_hash(
         decision: "escalate",
@@ -163,102 +114,7 @@ module AI
       )
     end
 
-    def legacy_local_decision(payload)
-      text = payload[:guest_message].to_s.downcase
-      alert_type = detected_alert_type(text)
-
-      return alert_decision(alert_type, payload[:guest_message]) if alert_type
-
-      safe_escalation("AI service unavailable.")
-    end
-
-    def detected_alert_type(text)
-      KEYWORD_ALERTS.find do |_type, keywords|
-        keywords.any? { |keyword| text.include?(keyword.tr("\\", "")) }
-      end&.first
-    end
-
-    def alert_decision(alert_type, body)
-      title = alert_title_for(alert_type)
-      DecisionResult.from_hash(
-        response_text: guest_safe_ack(body),
-        should_reply: true,
-        confidence: 0.92,
-        escalation_required: true,
-        alert_type: alert_type,
-        alert_title: title,
-        alert_description: body,
-        suggested_owner_action: suggested_action_for(alert_type)
-      )
-    end
-
-    def recommendation_question?(text)
-      text.match?(/eat|restaurant|cafe|coffee|supermarket|pharmacy|medicine|visit|attraction|transport|move around/)
-    end
-
-    def recommendation_decision(payload)
-      recommendations = payload[:recommendations].first(3)
-
-      if recommendations.any?
-        lines = recommendations.map do |item|
-          note = [item["description"], item["distance_or_walking_time"], item["owner_note"]].compact_blank.join(" ")
-          "- #{item["name"]}: #{note.presence || item["category"].to_s.humanize}"
-        end
-
-        DecisionResult.from_hash(
-          response_text: "Estas son algunas opciones recomendadas por el anfitrión:\n#{lines.join("\n")}",
-          should_reply: true,
-          confidence: 0.74,
-          escalation_required: false
-        )
-      else
-        unknown_decision("El huésped pidió una recomendación local, pero no hay ninguna configurada.")
-      end
-    end
-
-    def knowledge_decision(payload, text)
-      faq = payload[:faqs].find { |item| relevant?(text, item["question"]) }
-      return answer_decision(faq["answer"], 0.83) if faq
-
-      block = payload[:knowledge_blocks].find { |item| relevant?(text, [item["title"], item["category"], item["content"]].join(" ")) }
-      return answer_decision(block["content"], 0.71, video_url: block["youtube_url"]) if block
-
-      unknown_decision(payload[:guest_message])
-    end
-
-    def relevant?(message, source)
-      words = message.scan(/[a-z0-9]+/).reject { |word| word.length < 4 }
-      return false if words.blank?
-
-      source_text = source.to_s.downcase
-      words.any? { |word| source_text.include?(word) }
-    end
-
-    def answer_decision(answer, confidence, video_url: nil)
-      response_text = [answer, ("Video: #{video_url}" if video_url.present?)].compact.join("\n\n")
-
-      DecisionResult.from_hash(
-        response_text: response_text,
-        should_reply: true,
-        confidence: confidence,
-        escalation_required: false
-      )
-    end
-
-    def unknown_decision(description)
-      DecisionResult.from_hash(
-        response_text: guest_safe_ack(description),
-        should_reply: true,
-        confidence: 0.28,
-        escalation_required: true,
-        alert_type: "unknown_question",
-        alert_title: "La pregunta necesita respuesta del anfitrión",
-        alert_description: description,
-        suggested_owner_action: "Agregá la respuesta a la guía del huésped o a las FAQs de esta propiedad y luego respondé al huésped."
-      )
-    end
-
-    def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil)
+    def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       payload = {
         message_id: @guest_message.id,
@@ -277,7 +133,8 @@ module AI
         replied_candidate: decision.should_reply,
         escalation_required: decision.escalation_required,
         latency_ms: latency_ms,
-        model: ENV["AI_MODEL"]
+        model: ENV["AI_MODEL"],
+        rejected_candidate: rejected_decision_payload(rejected_decision)
       }.compact
 
       Rails.logger.info("[ai-audit] #{payload.to_json}")
@@ -332,27 +189,24 @@ module AI
       nil
     end
 
-    def suggested_action_for(alert_type)
-      {
-        late_checkout_request: "Confirmá disponibilidad y si aplica un costo antes de aprobar.",
-        missing_item: "Coordiná el reemplazo y avisale al huésped cuándo se resuelve.",
-        maintenance_issue: "Evaluá la urgencia, contactá mantenimiento y actualizá al huésped.",
-        emergency: "Contactá al huésped de inmediato y compartí instrucciones de emergencia.",
-        complaint: "Revisá el problema, acusá recibo de la queja y definí los próximos pasos.",
-        owner_approval_required: "Revisá la solicitud antes de que la IA o el propietario confirmen algo."
-      }.fetch(alert_type, "Revisá y respondé desde la conversación.")
-    end
+    def rejected_decision_payload(decision)
+      return if decision.blank?
 
-    def alert_title_for(alert_type)
-      {
-        late_checkout_request: "Solicitud de late checkout",
-        missing_item: "Objeto faltante",
-        maintenance_issue: "Problema de mantenimiento",
-        emergency: "Emergencia",
-        complaint: "Queja",
-        owner_approval_required: "Requiere aprobación del propietario",
-        unknown_question: "Pregunta sin configurar"
-      }.fetch(alert_type, alert_type.to_s.humanize)
+      decision.to_h.slice(
+        :outcome,
+        :response_text,
+        :language,
+        :detected_intents,
+        :evidence_ids,
+        :used_source_ids,
+        :missing_information,
+        :safety_flags,
+        :confidence,
+        :escalation_required,
+        :alert_type,
+        :proposed_action,
+        :sensitive_info_used
+      )
     end
   end
 end

@@ -63,6 +63,37 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-conversation-refresh-target='status']"
   end
 
+  test "show page renders complete message history and delivery failures" do
+    system_message = @conversation.messages.create!(
+      sender: "system",
+      channel: "whatsapp",
+      body: "Ya vinculé este chat con Conversation Apartment.",
+      metadata: { delivery_status: "sent" }
+    )
+    ai_message = @conversation.messages.create!(
+      sender: "ai",
+      channel: "whatsapp",
+      body: "Estoy revisando tu consulta.",
+      metadata: { delivery_status: "failed", delivery_error: "twilio_error" }
+    )
+    owner_message = @conversation.messages.create!(
+      sender: "owner",
+      channel: "whatsapp",
+      body: "Podés salir a las 12:00.",
+      metadata: { delivery_status: "queued" }
+    )
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    [@conversation.messages.first, system_message, ai_message, owner_message].each do |message|
+      assert_select "#message-#{message.id}", count: 1
+      assert_includes @response.body, message.body
+    end
+    assert_includes @response.body, "Falló el envío por WhatsApp"
+    assert_includes @response.body, "Aceptado por Twilio"
+  end
+
   test "null whatsapp provider does not store owner reply as sent" do
     assert_no_difference -> { @conversation.messages.count } do
       post reply_conversation_path(@conversation), params: {
@@ -89,9 +120,9 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Escribí un mensaje para enviar.", flash[:alert]
   end
 
-  test "failed whatsapp delivery does not store owner message" do
+  test "failed whatsapp delivery stores owner message as failed" do
     Whatsapp::ProviderFactory.stub(:build, FailingProvider.new) do
-      assert_no_difference -> { @conversation.messages.count } do
+      assert_difference -> { @conversation.messages.where(sender: "owner").count }, 1 do
         post reply_conversation_path(@conversation), params: {
           reply: {
             body: "Intento de respuesta."
@@ -100,8 +131,12 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to conversation_path(@conversation)
+    failed_message = @conversation.messages.where(sender: "owner").last
+
+    assert_redirected_to conversation_path(@conversation, anchor: "message-#{failed_message.id}")
     assert_equal "No se pudo enviar el mensaje por WhatsApp. Revisá la configuración del proveedor.", flash[:alert]
+    assert_equal "Intento de respuesta.", failed_message.body
+    assert_equal "failed", failed_message.metadata["delivery_status"]
   end
 
   private

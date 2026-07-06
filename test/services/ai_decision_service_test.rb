@@ -129,8 +129,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_includes decision.response_text, "Checkout is at"
   end
 
-  test "asks a clarifying question for ambiguous time intent in spanish" do
-    message = @conversation.messages.create!(sender: "guest", body: "A que hora puedo ir?", channel: "whatsapp")
+  test "sends ambiguous stay time questions to ai service for clarification" do
+    message = @conversation.messages.create!(sender: "guest", body: "A que hora puedo ir al depto?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_clarification(
       language: "es",
@@ -143,6 +143,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_includes decision.response_text, "equipaje"
     assert_not decision.escalation_required
     assert_nil decision.alert_type
+    assert_equal "remote_ai", AIDecisionLog.order(:created_at).last.route
   end
 
   test "answers check in when guest explicitly asks arrival time in spanish" do
@@ -346,6 +347,34 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "zh", @guest.reload.language
   end
 
+  test "conversation closure messages do not escalate or call remote ai" do
+    examples = [
+      "gracias",
+      "no gracias",
+      "así está bien",
+      "perfecto",
+      "ok",
+      "listo",
+      "muchas gracias"
+    ]
+    service_class = Class.new(AI::DecisionService) do
+      define_method(:remote_decision) { |_payload| raise "closure messages should not reach remote AI" }
+    end
+
+    examples.each do |body|
+      message = @conversation.messages.create!(sender: "guest", body: body, channel: "whatsapp")
+      decision = service_class.new(conversation: @conversation, guest_message: message).call
+      audit = AIDecisionLog.where(message: message).last
+
+      assert_equal "no_reply", decision.outcome, body
+      assert_not decision.should_reply, body
+      assert_not decision.escalation_required, body
+      assert_nil decision.alert_type, body
+      assert_equal "deterministic", audit.route, body
+      assert_equal "deterministic_conversational_closure", decision.audit["route"], body
+    end
+  end
+
   test "uses fallback decision from non-success ai service response" do
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     message = @conversation.messages.create!(sender: "guest", body: "Quisiera saber si hay piscina", channel: "whatsapp")
@@ -401,6 +430,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "escalate", result.outcome
     assert result.escalation_required
     assert_includes result.response_text, "checking this with the host"
+    audit = AIDecisionLog.order(:created_at).last
+    assert_equal "remote_ai_rejected", audit.route
+    assert_equal "Use HDMI 1.", audit.payload["rejected_candidate"]["response_text"]
   end
 
   test "ai reply with evidence from another property is rejected" do

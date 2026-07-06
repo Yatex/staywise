@@ -48,24 +48,31 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "escalated", conversation.reload.status
     assert_equal "+15550000002", conversation.guest.phone_number
     assert_equal 2, conversation.messages.count
-    assert_equal "late_checkout_request", conversation.alerts.first.alert_type
+    alert = conversation.alerts.first
+    assert_equal "late_checkout_request", alert.alert_type
+    assert_includes Alert.joins(:property).where(properties: { account_id: @account.id }).open.to_a, alert
   end
 
-  test "does not store an ai message when whatsapp delivery fails" do
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000003",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference} Can I get late checkout?"
-      },
-      provider: FailingProvider.new
-    ).call
+  test "stores failed ai outbound message when whatsapp delivery fails" do
+    result = with_ai_decision(ai_late_checkout_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000003",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} Can I get late checkout?"
+        },
+        provider: FailingProvider.new
+      ).call
+    end
 
     conversation = result.fetch(:conversation)
 
     assert_not result.fetch(:replied)
-    assert_equal 1, conversation.messages.count
-    assert_equal ["guest"], conversation.messages.pluck(:sender)
+    assert_equal 2, conversation.messages.count
+    assert_equal ["guest", "ai"], conversation.messages.order(:id).pluck(:sender)
+    failed_message = conversation.messages.where(sender: "ai").last
+    assert_equal "failed", failed_message.metadata["delivery_status"]
+    assert_equal "whatsapp_delivery_failed", failed_message.metadata["delivery_error"]
   end
 
   test "english emergency phrase creates urgent alert without ai service" do
@@ -189,6 +196,76 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes conversation.messages.where(sender: "guest").last.body, "check in"
     assert_includes conversation.messages.where(sender: "ai").last.body, "El check-in es a las 15:00"
     assert_nil follow_up_result.fetch(:alert)
+  end
+
+  test "ambiguous stay question goes through ai and persists clarification" do
+    ai_calls = 0
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_includes guest_message.body, "hora puedo ir"
+      AI::DecisionResult.from_hash(
+        decision: "ask_clarifying_question",
+        language: "es",
+        message_body: "¿Te referís al horario de check-in para llegar, o a otra cosa como dejar equipaje antes?",
+        intent_summary: "ambiguous arrival time",
+        detected_intents: [{ type: "ambiguous_time", status: "needs_clarification" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false, reason_code: nil, summary_for_host: nil },
+        missing_information: ["ambiguous_intent"],
+        safety_flags: [],
+        confidence: 0.9
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000019",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} a que hora puedo ir al depto?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    conversation = result.fetch(:conversation)
+
+    assert_equal 1, ai_calls
+    assert_nil result.fetch(:alert)
+    assert_equal "active", conversation.reload.status
+    ai_message = conversation.messages.where(sender: "ai").last
+    assert_includes ai_message.body, "check-in"
+    assert_includes ai_message.body, "equipaje"
+  end
+
+  test "guest closure after ai offer does not reply or create alert" do
+    provider = RecordingProvider.new
+    guest = @account.guests.create!(phone_number: "+15550000020", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+    conversation.messages.create!(
+      sender: "ai",
+      channel: "whatsapp",
+      body: "El checkout es a las 11:00. Si necesitás salir más tarde, puedo consultarlo con el anfitrión."
+    )
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15550000020",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "No gracias, así está bien."
+      },
+      provider: provider
+    ).call
+
+    assert_equal conversation, result.fetch(:conversation)
+    assert_not result.fetch(:replied)
+    assert_nil result.fetch(:alert)
+    assert_equal "active", conversation.reload.status
+    assert_equal 0, conversation.alerts.count
+    assert_equal ["ai", "guest"], conversation.messages.order(:id).pluck(:sender)
+    assert_empty provider.sent_messages
   end
 
   test "first concrete ai answer also discloses that chat is shared with owner" do

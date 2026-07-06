@@ -109,7 +109,7 @@ module Whatsapp
 
       body = routing_greeting_for(conversation.property, parsed.body)
       delivery = @provider.send_message(to: guest.phone_number, body: body)
-      return false unless delivery_success?(delivery)
+      delivered = delivery_success?(delivery)
 
       conversation.messages.create!(
         sender: "system",
@@ -119,9 +119,9 @@ module Whatsapp
           "message_type" => ROUTING_GREETING_MESSAGE_TYPE,
           "handled_by" => "rails",
           "owner_disclosure" => true
-        }.merge(delivery_metadata(delivery))
+        }.merge(delivery_metadata(delivery, delivered: delivered))
       )
-      true
+      delivered
     end
 
     def routing_greeting_for(property, text)
@@ -143,10 +143,15 @@ module Whatsapp
 
       body = ai_response_body(conversation, decision, alert: alert)
       delivery = @provider.send_message(to: guest.phone_number, body: body)
-      return false unless delivery_success?(delivery)
+      delivered = delivery_success?(delivery)
 
-      conversation.messages.create!(sender: "ai", channel: "whatsapp", body: body, metadata: decision.to_h.merge(delivery_metadata(delivery)))
-      true
+      conversation.messages.create!(
+        sender: "ai",
+        channel: "whatsapp",
+        body: body,
+        metadata: decision.to_h.merge(delivery_metadata(delivery, delivered: delivered))
+      )
+      delivered
     end
 
     def ai_response_body(conversation, decision, alert:)
@@ -193,8 +198,19 @@ module Whatsapp
       delivery.respond_to?(:success?) ? delivery.success? : !!delivery
     end
 
-    def delivery_metadata(delivery)
-      return {} unless delivery.respond_to?(:provider_message_id)
+    def delivery_metadata(delivery, delivered:)
+      unless delivered
+        return {
+          "delivery_status" => "failed",
+          "delivery_error" => delivery_error(delivery),
+          "delivery_status_updated_at" => Time.current.iso8601
+        }.compact
+      end
+
+      return {
+        "delivery_status" => "sent",
+        "delivery_status_updated_at" => Time.current.iso8601
+      } unless delivery.respond_to?(:provider_message_id)
 
       {
         "provider_message_id" => delivery.provider_message_id,
@@ -202,6 +218,14 @@ module Whatsapp
         "delivery_status" => delivery.provider_status.presence || "accepted_by_provider",
         "delivery_status_updated_at" => Time.current.iso8601
       }.compact
+    end
+
+    def delivery_error(delivery)
+      if delivery.respond_to?(:error) && delivery.error.present?
+        delivery.error
+      else
+        "whatsapp_delivery_failed"
+      end
     end
   end
 end

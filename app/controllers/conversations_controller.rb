@@ -20,7 +20,8 @@ class ConversationsController < ApplicationController
     if result.success?
       redirect_to conversation_path(@conversation, anchor: "message-#{result.message.id}"), notice: "Mensaje enviado al huésped por WhatsApp desde Ayla."
     else
-      redirect_to conversation_path(@conversation), alert: result.error
+      target = result.message.present? ? conversation_path(@conversation, anchor: "message-#{result.message.id}") : conversation_path(@conversation)
+      redirect_to target, alert: result.error
     end
   end
 
@@ -34,7 +35,7 @@ class ConversationsController < ApplicationController
     @conversation = scoped_conversations
       .includes(:guest, :property, :alerts, messages: [])
       .find(params[:id])
-    @messages = @conversation.messages.order(:created_at)
+    @messages = @conversation.messages.order(:created_at, :id)
     @alerts = @conversation.alerts.order(created_at: :desc)
   end
 

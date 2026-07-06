@@ -53,7 +53,7 @@ module AI
     end
 
     def conversation_history_payload
-      @conversation.messages.order(created_at: :desc).limit(4).reverse.map do |message|
+      @conversation.messages.order(:created_at, :id).map do |message|
         message.slice(:sender, :body, :channel, :created_at)
       end
     end

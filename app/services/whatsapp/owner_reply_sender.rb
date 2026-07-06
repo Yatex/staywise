@@ -20,7 +20,7 @@ module Whatsapp
 
       guest_body = translated_body
       delivery = @provider.send_message(to: guest_phone, body: guest_body)
-      return failure(delivery_error(delivery)) unless delivery_success?(delivery)
+      delivered = delivery_success?(delivery)
 
       message = @conversation.messages.create!(
         sender: "owner",
@@ -33,9 +33,11 @@ module Whatsapp
           original_owner_body: @body,
           translated_to: guest_language
         }.merge(
-          delivery_metadata(delivery)
+          delivery_metadata(delivery, delivered: delivered)
         ).compact
       )
+
+      return failure(delivery_error(delivery), message: message) unless delivered
 
       Result.new(success?: true, message: message, error: nil)
     end
@@ -54,8 +56,19 @@ module Whatsapp
       end
     end
 
-    def delivery_metadata(delivery)
-      return {} unless delivery.respond_to?(:provider_message_id)
+    def delivery_metadata(delivery, delivered:)
+      unless delivered
+        return {
+          delivery_status: "failed",
+          delivery_error: delivery_error(delivery),
+          delivery_status_updated_at: Time.current.iso8601
+        }.compact
+      end
+
+      return {
+        delivery_status: "sent",
+        delivery_status_updated_at: Time.current.iso8601
+      } unless delivery.respond_to?(:provider_message_id)
 
       {
         provider_message_id: delivery.provider_message_id,
@@ -87,8 +100,8 @@ module Whatsapp
         AI::LanguageHelper.detect(@conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
     end
 
-    def failure(error)
-      Result.new(success?: false, message: nil, error: error)
+    def failure(error, message: nil)
+      Result.new(success?: false, message: message, error: error)
     end
   end
 end

@@ -8,6 +8,7 @@ export default class extends Controller {
   }
 
   connect() {
+    requestAnimationFrame(() => this.scrollToLatestMessage())
     this.timer = setInterval(() => this.refresh(), this.intervalValue)
   }
 
@@ -25,10 +26,15 @@ export default class extends Controller {
 
     const html = await response.text()
     const documentFragment = new DOMParser().parseFromString(html, "text/html")
+    const wasNearBottom = this.nearPageBottom()
 
-    this.replaceTarget("messages", documentFragment)
+    const messagesChanged = this.replaceTarget("messages", documentFragment)
     this.replaceTarget("alerts", documentFragment)
     this.replaceTarget("status", documentFragment)
+
+    if (messagesChanged && wasNearBottom) {
+      this.scrollToLatestMessage()
+    }
   }
 
   replaceTarget(name, documentFragment) {
@@ -37,6 +43,20 @@ export default class extends Controller {
 
     if (current && next && current.innerHTML !== next.innerHTML) {
       current.innerHTML = next.innerHTML
+      return true
+    }
+
+    return false
+  }
+
+  nearPageBottom() {
+    return window.innerHeight + window.scrollY >= document.body.offsetHeight - 240
+  }
+
+  scrollToLatestMessage() {
+    const latestMessage = this.messagesTarget?.querySelector("[id^='message-']:last-child")
+    if (latestMessage) {
+      latestMessage.scrollIntoView({ block: "end" })
     }
   }
 }
