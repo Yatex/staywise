@@ -1,69 +1,73 @@
 <% content_for :page_title, "AI Trace" %>
 
-<div class="space-y-6">
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+<% compact_field_class = "w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100" %>
+<% compact_label_class = "text-xs font-semibold uppercase tracking-wide text-slate-500" %>
+<% compact_button_class = "inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-semibold shadow-sm transition" %>
+
+<div class="space-y-4">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
     <div>
-      <h2 class="text-xl font-semibold text-slate-950">AI Trace</h2>
-      <p class="mt-1 text-sm text-slate-500">Trazabilidad interna de decisiones, tools, evidencia, validaciones y envíos de WhatsApp.</p>
+      <h2 class="text-lg font-semibold text-slate-950">AI Trace</h2>
+      <p class="mt-0.5 text-sm text-slate-500">Trazabilidad interna de decisiones, tools, evidencia, validaciones y WhatsApp.</p>
     </div>
-    <div class="flex gap-2">
-      <%= link_to "Errores recientes", admin_errors_path, class: secondary_button_class %>
-      <%= link_to "Estadísticas", admin_stats_path, class: secondary_button_class %>
+    <div class="flex gap-2 text-sm">
+      <%= link_to "Errores", admin_errors_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
+      <%= link_to "Stats", admin_stats_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
     </div>
   </div>
 
-  <%= form_with url: admin_ai_traces_path, method: :get, class: "#{card_class} grid gap-4 p-4 md:grid-cols-[1fr_1fr_1fr_1fr] xl:grid-cols-[120px_1fr_160px_150px_130px_130px_150px_auto]" do |form| %>
+  <%= form_with url: admin_ai_traces_path, method: :get, class: "#{card_class} grid items-end gap-2 p-3 md:grid-cols-4 xl:grid-cols-[90px_minmax(150px,1fr)_140px_150px_125px_125px_150px_auto]" do |form| %>
     <div>
-      <%= form.label :conversation_id, "Conversación", class: label_class %>
-      <%= form.number_field :conversation_id, value: params[:conversation_id], class: field_class, placeholder: "ID" %>
+      <%= form.label :conversation_id, "Conv.", class: compact_label_class %>
+      <%= form.number_field :conversation_id, value: params[:conversation_id], class: "#{compact_field_class} mt-1", placeholder: "ID" %>
     </div>
     <div>
-      <%= form.label :property_id, "Propiedad", class: label_class %>
+      <%= form.label :property_id, "Propiedad", class: compact_label_class %>
       <%= form.select :property_id,
         options_from_collection_for_select(@properties, :id, :display_name, params[:property_id]),
         { include_blank: "Todas" },
-        class: field_class %>
+        class: "#{compact_field_class} mt-1" %>
     </div>
     <div>
-      <%= form.label :decision, "Decisión", class: label_class %>
+      <%= form.label :decision, "Decisión", class: compact_label_class %>
       <%= form.select :decision,
         options_for_select(@decisions, params[:decision]),
         { include_blank: "Todas" },
-        class: field_class %>
+        class: "#{compact_field_class} mt-1" %>
     </div>
     <div>
-      <%= form.label :tool, "Tool", class: label_class %>
+      <%= form.label :tool, "Tool", class: compact_label_class %>
       <%= form.select :tool,
         options_for_select(@tools, params[:tool]),
         { include_blank: "Todas" },
-        class: field_class %>
+        class: "#{compact_field_class} mt-1" %>
     </div>
     <div>
-      <%= form.label :from, "Desde", class: label_class %>
-      <%= form.date_field :from, value: params[:from], class: field_class %>
+      <%= form.label :from, "Desde", class: compact_label_class %>
+      <%= form.date_field :from, value: params[:from], class: "#{compact_field_class} mt-1" %>
     </div>
     <div>
-      <%= form.label :to, "Hasta", class: label_class %>
-      <%= form.date_field :to, value: params[:to], class: field_class %>
+      <%= form.label :to, "Hasta", class: compact_label_class %>
+      <%= form.date_field :to, value: params[:to], class: "#{compact_field_class} mt-1" %>
     </div>
-    <div class="space-y-3 pt-1">
-      <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-        <%= check_box_tag :fallback, "1", params[:fallback].present?, class: "h-4 w-4 rounded border-slate-300" %>
+    <div class="space-y-1.5 pb-0.5">
+      <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+        <%= check_box_tag :fallback, "1", params[:fallback].present?, class: "h-3.5 w-3.5 rounded border-slate-300" %>
         Con fallback
       </label>
-      <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-        <%= check_box_tag :validation_failed, "1", params[:validation_failed].present?, class: "h-4 w-4 rounded border-slate-300" %>
+      <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+        <%= check_box_tag :validation_failed, "1", params[:validation_failed].present?, class: "h-3.5 w-3.5 rounded border-slate-300" %>
         Validación fallida
       </label>
     </div>
-    <div class="flex items-end gap-2">
-      <%= form.submit "Filtrar", class: primary_button_class %>
-      <%= link_to "Limpiar", admin_ai_traces_path, class: secondary_button_class %>
+    <div class="flex items-end gap-1.5">
+      <%= form.submit "Filtrar", class: "#{compact_button_class} bg-slate-900 text-white hover:bg-slate-800" %>
+      <%= link_to "Limpiar", admin_ai_traces_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
     </div>
   <% end %>
 
   <section class="<%= card_class %> overflow-hidden">
-    <div class="border-b border-slate-200 px-5 py-4">
+    <div class="border-b border-slate-200 px-4 py-2.5">
       <p class="text-sm font-semibold text-slate-950"><%= pluralize(@total_count, "traza", "trazas") %></p>
     </div>
 
@@ -71,32 +75,32 @@
       <% @traces.each do |trace| %>
         <% payload = trace.payload.to_h %>
         <% tool_names = trace.tool_calls.map { |tool| tool["tool_name"] || tool["toolName"] }.compact.uniq %>
-        <%= link_to admin_ai_trace_path(trace, query_params.except("page")), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <%= link_to admin_ai_trace_path(trace, query_params.except("page")), class: "block px-4 py-2.5 transition hover:bg-slate-50" do %>
+          <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_230px] lg:items-center">
             <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(trace.final_outcome || trace.decision) %>"><%= trace.final_outcome || trace.decision || "Sin decisión" %></span>
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 <%= pill_class(trace.final_outcome || trace.decision) %>"><%= trace.final_outcome || trace.decision || "Sin decisión" %></span>
                 <% if trace.fallback? %>
-                  <span class="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">Fallback</span>
+                  <span class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">Fallback</span>
                 <% end %>
                 <% if trace.validation_failed? %>
-                  <span class="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">Validación fallida</span>
+                  <span class="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">Validación fallida</span>
                 <% end %>
+                <p class="min-w-0 truncate text-sm font-semibold text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
               </div>
-              <p class="mt-3 text-base font-semibold text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
-              <p class="mt-2 text-sm text-slate-500">
+              <p class="mt-1 truncate text-xs text-slate-500">
                 <%= trace.property&.display_name || "Propiedad sin asociar" %>
                 · Conversación #<%= trace.conversation_id || "sin ID" %>
                 · <%= local_datetime(trace.created_at) %>
+                <% if tool_names.any? %>
+                  · Tools: <%= tool_names.join(", ") %>
+                <% end %>
               </p>
-              <% if tool_names.any? %>
-                <p class="mt-2 text-xs text-slate-500">Tools: <%= tool_names.join(", ") %></p>
-              <% end %>
             </div>
-            <div class="text-sm text-slate-500 lg:text-right">
-              <p>Idioma: <span class="font-medium text-slate-800"><%= trace.language.presence || "sin detectar" %></span></p>
-              <p>Evidence: <span class="font-medium text-slate-800"><%= Array(trace.evidence_ids).size %></span></p>
-              <p>WhatsApp: <span class="font-medium text-slate-800"><%= payload.dig("whatsapp_delivery", "delivery_status") || trace.provider_delivery_status || "sin datos" %></span></p>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 lg:justify-end lg:text-right">
+              <span>Idioma <strong class="font-semibold text-slate-800"><%= trace.language.presence || "-" %></strong></span>
+              <span>Evidence <strong class="font-semibold text-slate-800"><%= Array(trace.evidence_ids).size %></strong></span>
+              <span>WA <strong class="font-semibold text-slate-800"><%= payload.dig("whatsapp_delivery", "delivery_status") || trace.provider_delivery_status || "-" %></strong></span>
             </div>
           </div>
         <% end %>
