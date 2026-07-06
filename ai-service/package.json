@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts",
+    "test": "tsx --test src/rails-tool-client.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

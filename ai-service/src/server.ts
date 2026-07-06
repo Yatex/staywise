@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { gateway, generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
+import { callRailsTool } from "./rails-tool-client.js";
 
 const DecisionSchema = z.object({
   outcome: z.enum([
@@ -1003,36 +1004,6 @@ function summarizeToolOutput(result: any) {
     keys: typeof result === "object" && !Array.isArray(result) ? Object.keys(result).slice(0, 20) : undefined,
     preview: JSON.stringify(result).slice(0, 1200),
   };
-}
-
-async function callRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>) {
-  const url = new URL(`/internal/ai/tools/${toolName}`, toolEndpoint.base_url);
-  const token = process.env.AI_SERVICE_TOKEN;
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-  };
-  if (token) headers.authorization = `Bearer ${token}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      decision_context_id: toolEndpoint.decision_context_id,
-      ...input,
-    }),
-  });
-
-  const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    return {
-      error: "tool_request_failed",
-      status: response.status,
-      body,
-    };
-  }
-
-  return body;
 }
 
 function searchSources(sources: any[], query: string, topic?: string) {
