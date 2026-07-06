@@ -21,6 +21,26 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     @decision_context_id = AI::DecisionContext.issue(conversation: @conversation, guest_message: @message)
   end
 
+  test "tools require the shared AI service token when configured" do
+    previous_token = ENV["AI_SERVICE_TOKEN"]
+    ENV["AI_SERVICE_TOKEN"] = "shared-tools-token"
+
+    post "/internal/ai/tools/guest_context", params: {
+      decision_context_id: @decision_context_id,
+      query: "What time is check-in?"
+    }, headers: { "Authorization" => "Bearer wrong-token" }
+    assert_response :unauthorized
+
+    post "/internal/ai/tools/guest_context", params: {
+      decision_context_id: @decision_context_id,
+      query: "What time is check-in?"
+    }, headers: { "Authorization" => "Bearer shared-tools-token" }
+    assert_response :success
+    assert_includes JSON.parse(response.body).fetch("evidence").map { |item| item["evidence_id"] }, "property.check_in_time"
+  ensure
+    ENV["AI_SERVICE_TOKEN"] = previous_token
+  end
+
   test "guest context returns safe scoped context from signed decision context" do
     post "/internal/ai/tools/guest_context", params: {
       decision_context_id: @decision_context_id,

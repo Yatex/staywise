@@ -98,6 +98,9 @@ type ToolMandatoryTrace = {
   skip_reason: string | null;
   decision_context_id_present: boolean;
   tool_endpoint_present: boolean;
+  tool_endpoint_origin: string | null;
+  authorization_configured: boolean;
+  authorization_source: "AI_SERVICE_TOKEN";
   guest_context: MandatoryToolStatus;
   stay_facts: MandatoryToolStatus;
   property_brain: MandatoryToolStatus;
@@ -869,6 +872,9 @@ function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
     skip_reason: null,
     decision_context_id_present: Boolean(payload?.tool_endpoint?.decision_context_id),
     tool_endpoint_present: Boolean(payload?.tool_endpoint?.base_url),
+    tool_endpoint_origin: safeUrlOrigin(payload?.tool_endpoint?.base_url),
+    authorization_configured: Boolean(process.env.AI_SERVICE_TOKEN),
+    authorization_source: "AI_SERVICE_TOKEN",
     guest_context: emptyMandatoryToolStatus(),
     stay_facts: emptyMandatoryToolStatus(),
     property_brain: emptyMandatoryToolStatus(),
@@ -879,6 +885,16 @@ function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
 
 function emptyMandatoryToolStatus(): MandatoryToolStatus {
   return { attempted: false, success: false, error: null };
+}
+
+function safeUrlOrigin(value?: string) {
+  if (!value) return null;
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "invalid_url";
+  }
 }
 
 function markMandatoryAttempt(trace: ToolMandatoryTrace, toolName: MandatoryToolName) {
@@ -926,6 +942,9 @@ function finalizeToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[])
     skip_reason: trace.skip_reason,
     decision_context_id_present: trace.decision_context_id_present,
     tool_endpoint_present: trace.tool_endpoint_present,
+    tool_endpoint_origin: trace.tool_endpoint_origin,
+    authorization_configured: trace.authorization_configured,
+    authorization_source: trace.authorization_source,
     guest_context_attempted: trace.guest_context.attempted,
     guest_context_success: trace.guest_context.success,
     guest_context_error: trace.guest_context.error,
@@ -968,7 +987,7 @@ function summarizeToolOutput(result: any) {
 
 async function callRailsTool(toolEndpoint: any, toolName: string, input: Record<string, unknown>) {
   const url = new URL(`/internal/ai/tools/${toolName}`, toolEndpoint.base_url);
-  const token = process.env.AI_TOOLS_TOKEN || process.env.AI_SERVICE_TOKEN;
+  const token = process.env.AI_SERVICE_TOKEN;
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
