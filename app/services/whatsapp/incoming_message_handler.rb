@@ -129,9 +129,9 @@ module Whatsapp
 
       case AI::LanguageHelper.detect(text, fallback: property.account.ai_preferred_language)
       when "es"
-        "Ya vinculé este chat con #{property_name}. Escribime tu consulta y te ayudo.\n\nTené en cuenta que este chat está compartido con el dueño de la propiedad."
+        "Hola, soy Ayla, la asistente de #{property_name}. ¿En qué puedo ayudarte?\n\nTené en cuenta que el dueño de la propiedad también puede leer este chat."
       else
-        "This chat is now linked to #{property_name}. Send me your question and I will help.\n\nPlease note that this chat is shared with the property owner."
+        "Hi, I’m Ayla, the assistant for #{property_name}. How can I help you?\n\nPlease note that the property owner can also read this chat."
       end
     end
 

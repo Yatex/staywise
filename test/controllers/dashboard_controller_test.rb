@@ -50,6 +50,24 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "span", text: "New Charming Design Center"
   end
 
+  test "recent chats are grouped by today and previous days" do
+    @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Hola hoy")
+
+    old_property = @account.properties.create!(name: "Old Apartment")
+    old_guest = @account.guests.create!(phone_number: "+15550003000", property: old_property)
+    old_conversation = old_guest.conversations.create!(property: old_property)
+    old_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Hola ayer")
+    old_conversation.update_columns(last_message_at: 2.days.ago, updated_at: 2.days.ago)
+
+    get dashboard_path
+
+    assert_response :success
+    assert_select "div", text: "Hoy"
+    assert_select "div", text: "Días anteriores"
+    assert_includes @response.body, "15550002000"
+    assert_includes @response.body, "15550003000"
+  end
+
   test "shows alert created by ai escalation from whatsapp flow" do
     decision = AI::DecisionResult.from_hash(
       decision: "escalate",

@@ -11,17 +11,36 @@
         <%= link_to t("ui.actions.view_all"), conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
       </div>
       <div class="divide-y divide-slate-100">
-        <% @recent_conversations.each do |conversation| %>
-          <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
-                <p class="mt-2"><span class="<%= property_tag_class %>"><%= conversation.property.display_name %></span></p>
+        <% if @today_conversations.present? %>
+          <div class="bg-slate-50 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Hoy</div>
+          <% @today_conversations.each do |conversation| %>
+            <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
+                  <p class="mt-2"><span class="<%= property_tag_class %>"><%= conversation.property.display_name %></span></p>
+                </div>
+                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
               </div>
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
-            </div>
+            <% end %>
           <% end %>
         <% end %>
+
+        <% if @older_conversations.present? %>
+          <div class="bg-slate-50 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Días anteriores</div>
+          <% @older_conversations.each do |conversation| %>
+            <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
+                  <p class="mt-2"><span class="<%= property_tag_class %>"><%= conversation.property.display_name %></span></p>
+                </div>
+                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
+              </div>
+            <% end %>
+          <% end %>
+        <% end %>
+
         <% if @recent_conversations.blank? %>
           <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.dashboard.no_conversations") %></p>
         <% end %>

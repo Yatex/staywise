@@ -148,8 +148,9 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "routing_init", conversation.messages.where(sender: "guest").first.metadata["message_type"]
     assert_equal 1, conversation.messages.where(sender: "system").count
     assert_equal "routing_greeting", conversation.messages.where(sender: "system").last.metadata["message_type"]
-    assert_includes provider.sent_messages.last.fetch(:body), "Ya vinculé este chat"
-    assert_includes provider.sent_messages.last.fetch(:body), "este chat está compartido con el dueño de la propiedad"
+    assert_includes provider.sent_messages.last.fetch(:body), "Hola, soy Ayla"
+    assert_includes provider.sent_messages.last.fetch(:body), "¿En qué puedo ayudarte?"
+    assert_includes provider.sent_messages.last.fetch(:body), "el dueño de la propiedad también puede leer este chat"
   end
 
   test "guest follow up after qr intro stays in same conversation and answers check in" do
