@@ -24,12 +24,13 @@ module Alerts
       return unless account.ai_automation_enabled?("create_alerts")
       return unless account.ai_escalates?(@decision.alert_type)
 
+      description = alert_description
       alert = @conversation.alerts.create!(
         property: @conversation.property,
         guest: @conversation.guest,
         alert_type: (@decision.alert_type.presence || "other").to_s,
-        title: @decision.alert_title.presence || "El huésped necesita atención del propietario",
-        description: alert_description,
+        title: alert_title(description),
+        description: description,
         priority: PRIORITY_BY_TYPE.fetch(@decision.alert_type.to_s, "medium"),
         ai_suggested_action: @decision.suggested_owner_action
       )
@@ -61,6 +62,14 @@ module Alerts
         target_language: AI::LanguageHelper.owner_language(account),
         context: "Owner-facing alert description for a short-term rental host."
       )
+    end
+
+    def alert_title(description)
+      if @decision.alert_type.to_s == "unknown_question" && description.present?
+        return description.to_s.squish.truncate(120)
+      end
+
+      @decision.alert_title.presence || "El huésped necesita atención del propietario"
     end
 
     def clean_guest_question(text)

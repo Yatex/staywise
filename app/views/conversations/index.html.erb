@@ -12,8 +12,11 @@
         <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= conversation.property.display_name %> · <%= t("ui.conversations.messages_count", count: conversation.messages.count) %></p>
+              <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <span class="<%= property_tag_class %>"><%= conversation.property.display_name %></span>
+                <span class="text-sm text-slate-500"><%= t("ui.conversations.messages_count", count: conversation.messages.count) %></span>
+              </div>
             </div>
             <div class="flex items-center gap-2">
               <% unless conversation.ai_enabled? %>

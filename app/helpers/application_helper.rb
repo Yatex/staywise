@@ -188,6 +188,39 @@ module ApplicationHelper
     message.metadata["delivery_status"].to_s.in?(%w[failed undelivered])
   end
 
+  def alert_display_title(alert)
+    if alert.alert_type.to_s == "unknown_question" && alert.description.present?
+      return alert.description.to_s.squish
+    end
+
+    alert.title
+  end
+
+  def alert_display_description(alert)
+    description = alert.description.to_s.squish
+    return if description.blank?
+    return if description == alert_display_title(alert).to_s.squish
+
+    description
+  end
+
+  def display_phone_number(value)
+    value.to_s
+      .delete_prefix("whatsapp:")
+      .delete_prefix("+")
+      .presence
+  end
+
+  def conversation_display_title(conversation)
+    display_phone_number(conversation.guest&.phone_number) ||
+      conversation.guest&.display_name ||
+      "Huésped"
+  end
+
+  def property_tag_class
+    "inline-flex w-fit items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
+  end
+
   def card_class
     "rounded-xl border border-slate-200 bg-white shadow-sm"
   end

@@ -15,8 +15,8 @@
           <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
             <div class="flex items-start justify-between gap-4">
               <div>
-                <p class="font-medium text-slate-950"><%= conversation.guest.display_name %></p>
-                <p class="mt-1 text-sm text-slate-500"><%= conversation.property.display_name %></p>
+                <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
+                <p class="mt-2"><span class="<%= property_tag_class %>"><%= conversation.property.display_name %></span></p>
               </div>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
             </div>
@@ -41,7 +41,7 @@
           <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
             <div class="flex items-start justify-between gap-4">
               <div>
-                <p class="font-medium text-slate-950"><%= alert.title %></p>
+                <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
                 <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %></p>
               </div>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>

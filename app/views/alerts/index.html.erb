@@ -12,9 +12,11 @@
         <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p class="font-medium text-slate-950"><%= alert.title %></p>
+              <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
               <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %> · <%= alert.guest&.display_name || t("ui.alerts.unknown_guest") %></p>
-              <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= alert.description %></p>
+              <% if alert_display_description(alert).present? %>
+                <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= alert_display_description(alert) %></p>
+              <% end %>
             </div>
             <div class="flex shrink-0 gap-2">
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>

@@ -32,9 +32,22 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     get dashboard_path
 
     assert_response :success
-    assert_includes @response.body, "Pregunta sin configurar"
+    assert_includes @response.body, "Puedo hacer más tarde el checkout?"
+    assert_not_includes @response.body, ">Pregunta sin configurar<"
     assert_includes @response.body, "New Charming Design Center"
     assert_not_includes @response.body, "No hay alertas abiertas"
+  end
+
+  test "recent chats use phone number title and property tag" do
+    @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Hola")
+
+    get dashboard_path
+
+    assert_response :success
+    assert_includes @response.body, "15550002000"
+    assert_not_includes @response.body, "+15550002000"
+    assert_not_includes @response.body, "Huésped de WhatsApp"
+    assert_select "span", text: "New Charming Design Center"
   end
 
   test "shows alert created by ai escalation from whatsapp flow" do
@@ -68,6 +81,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     alert = result.fetch(:alert)
 
     assert_equal "unknown_question", alert.alert_type
+    assert_equal "Puedo hacer más tarde el checkout?", alert.title
     assert_equal "open", alert.status
     assert_equal @property, alert.property
     assert_equal result.fetch(:conversation), alert.conversation
@@ -75,7 +89,8 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     get dashboard_path
 
     assert_response :success
-    assert_includes @response.body, "Pregunta sin configurar"
+    assert_includes @response.body, "Puedo hacer más tarde el checkout?"
+    assert_not_includes @response.body, ">Pregunta sin configurar<"
     assert_includes @response.body, "New Charming Design Center"
     assert_not_includes @response.body, "No hay alertas abiertas"
   end

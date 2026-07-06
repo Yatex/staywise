@@ -63,6 +63,16 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-conversation-refresh-target='status']"
   end
 
+  test "show page uses phone number as chat title and property as tag" do
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_includes @response.body, "15550002000"
+    assert_not_includes @response.body, "+15550002000"
+    assert_not_includes @response.body, "Huésped de WhatsApp"
+    assert_select "span", text: "Conversation Apartment"
+  end
+
   test "show page renders complete message history and delivery failures" do
     system_message = @conversation.messages.create!(
       sender: "system",
