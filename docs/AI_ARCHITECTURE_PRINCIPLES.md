@@ -31,51 +31,90 @@ The AI must never answer from memory about:
 - properties;
 - reservations;
 - guests;
-- access;
-- WiFi;
-- keys;
-- codes;
-- check-in;
-- checkout;
-- policies;
-- recommendations;
-- prices;
-- availability;
-- house rules;
-- amenities;
-- appliances;
-- local instructions.
+- any property fact;
+- any reservation or guest fact;
+- access, arrival, departure, or stay instructions;
+- policies, rules, permissions, exceptions, or approvals;
+- local recommendations or operational guidance;
+- prices, availability, payments, refunds, or commercial terms;
+- amenities, appliances, building facilities, or neighborhood information.
 
 The AI must obtain information through tools.
 
 BAD:
 
 ```text
-I think check-in is usually at 15:00.
+I think most rentals allow that.
 ```
 
 GOOD:
 
 ```text
-Call property_brain or the relevant stay/property tool.
-Answer only using a returned source id / evidence id.
+Call the relevant tools.
+Answer only using returned source ids / evidence ids.
 ```
 
 BAD:
 
 ```text
-Most buildings allow visitors, so guests can probably invite someone.
+This is usually fine in short-term rentals.
 ```
 
 GOOD:
 
 ```text
-Call property_brain.
-If no visitor policy is found, ask a clarifying question or escalate.
-Do not invent a policy.
+Search all relevant sources.
+If no policy or fact is found, ask the smallest useful clarification or escalate only if human approval is required.
 ```
 
-## 3. Evidence-First Is Mandatory
+## 3. Progressive Information Gathering
+
+The AI's main goal is not to escalate quickly.
+
+The AI's main goal is to resolve the guest's request using all available information before involving the host.
+
+Escalation is the last resort.
+
+Before escalating, the AI must progressively:
+
+1. Search all relevant tools.
+2. Retry searches when the first result is not enough.
+3. Reformulate queries.
+4. Consult other available sources.
+5. Combine evidence from multiple tools.
+6. Reason using all evidence found.
+7. Ask a clarifying question when the guest's request is ambiguous.
+8. Ask only for the minimum missing information when the guest must provide something.
+9. Explain the known policy when the answer requires host approval, and escalate only the approval decision.
+
+The AI may escalate only when at least one of these is true:
+
+- all relevant tools were used and no sufficient evidence exists;
+- a clarifying question would not reasonably resolve the uncertainty;
+- the request truly requires human intervention, approval, judgment, or action;
+- continuing automatically would create a safety, security, legal, payment, or guest-experience risk.
+
+BAD:
+
+```json
+{
+  "decision": "escalate",
+  "detected_intents": [{ "type": "unknown" }],
+  "tools_called": []
+}
+```
+
+GOOD:
+
+```json
+{
+  "decision": "ask_clarifying_question",
+  "message_body": "¿Te referís al horario para llegar, para salir, o a otra cosa?",
+  "tools_called": ["guest_context", "property_brain", "stay_facts"]
+}
+```
+
+## 4. Evidence First
 
 Every factual claim must be backed by evidence.
 
@@ -90,6 +129,30 @@ The AI cannot:
 - cite evidence that was not returned by a tool.
 
 Every factual reply must include source ids / evidence ids returned by tools.
+
+If tools return sufficient evidence to answer the guest's request, the AI must not end as:
+
+- `unknown`;
+- `fallback`;
+- `escalate`.
+
+The AI must answer using that evidence.
+
+This applies to every evidence source, including:
+
+- property facts;
+- guest context;
+- property brain;
+- FAQs;
+- knowledge blocks;
+- guides;
+- recommendations;
+- policies;
+- any future tool or knowledge source.
+
+Do not hardcode rules for individual topics or fields. The system must be generic.
+
+The AI must evaluate whether the available evidence is sufficient to answer, regardless of where that evidence came from.
 
 BAD:
 
@@ -129,7 +192,93 @@ What are the laundry hours?
 
 The evidence is real but irrelevant, therefore invalid.
 
-## 4. Rails Is The Authority
+GOOD:
+
+```json
+{
+  "decision": "reply",
+  "message_body": "La respuesta debe usar la evidencia relevante encontrada.",
+  "evidence_ids": ["returned_evidence_id"]
+}
+```
+
+## 5. Clarify Before Escalate
+
+When uncertainty can be resolved by asking the guest something, the AI must prefer a clarifying question before escalating to the host.
+
+Clarifying questions must be:
+
+- short;
+- specific;
+- useful;
+- in the guest's language;
+- limited to the minimum information needed.
+
+Examples:
+
+```text
+Guest: A qué hora puedo ir?
+AI: ¿Te referís al horario para llegar, para salir, o a otra cosa?
+```
+
+```text
+Guest: ¿Puedo entrar antes?
+AI: First use tools to check the relevant policy. If approval is required, explain that approval is needed and escalate only that approval request.
+```
+
+```text
+Guest: No anda.
+AI: ¿Qué es exactamente lo que no funciona?
+```
+
+```text
+Guest: No encuentro la llave.
+AI: ¿Dónde estás intentando ingresar o en qué paso te trabaste?
+```
+
+BAD:
+
+```json
+{
+  "decision": "escalate",
+  "reason": "ambiguous_question"
+}
+```
+
+GOOD:
+
+```json
+{
+  "decision": "ask_clarifying_question",
+  "message_body": "Ask one precise question that can unlock the answer."
+}
+```
+
+## 6. Escalation Is The Last Resort
+
+The AI must behave like a competent human receptionist.
+
+It must try to:
+
+- search;
+- reason;
+- combine information;
+- ask questions;
+- resolve.
+
+It must not abandon the conversation at the first difficulty.
+
+An escalation has a cost for the host and creates a worse guest experience.
+
+Escalation is acceptable only when there is no reasonable automated path left, or when the host must genuinely approve, decide, intervene, or act.
+
+Escalations should be narrow:
+
+- escalate the missing approval, not the entire conversation;
+- escalate the unresolved detail, not already answered facts;
+- include the relevant evidence and the exact reason human input is required.
+
+## 7. Rails Is The Authority
 
 The AI must never:
 
@@ -175,7 +324,7 @@ GOOD:
 
 Rails then decides whether to create the alert, send the message, or reject the decision.
 
-## 5. Deterministic Router Must Stay Minimal
+## 8. Deterministic Router Must Stay Minimal
 
 The `DeterministicRouter` exists only for tiny, safe, non-interpretive cases:
 
@@ -190,16 +339,8 @@ The router must not:
 
 - interpret natural language broadly;
 - resolve ambiguity;
-- answer FAQs;
-- answer check-in;
-- answer checkout;
-- answer WiFi;
-- answer access instructions;
-- answer parking;
-- answer rules;
-- answer recommendations;
-- answer appliance questions;
-- answer local guide questions;
+- answer factual guest questions;
+- answer questions about property, stay, reservation, access, policies, guides, recommendations, amenities, facilities, prices, or availability;
 - resolve multiple intents;
 - replace the AI service;
 - become a growing pile of regexes.
@@ -216,12 +357,11 @@ GOOD:
 
 ```text
 Send the message to the AI service.
-The AI uses tools and evidence.
-If ambiguous, the AI asks a clarifying question.
+The AI uses tools, evidence, progressive information gathering, and clarification when needed.
 Rails validates the result.
 ```
 
-## 6. Ambiguity Belongs To The AI
+## 9. Ambiguity Belongs To The AI
 
 Ambiguity must be resolved by the AI, not by adding more router rules.
 
@@ -233,12 +373,12 @@ a qué hora puedo ir
 
 This could mean:
 
-- check-in time;
+- arrival time;
 - earliest arrival;
 - luggage drop-off;
 - building access time;
 - appointment time;
-- checkout/departure time in a confused phrasing.
+- departure time in a confused phrasing.
 
 Do not:
 
@@ -258,16 +398,16 @@ Do:
 BAD:
 
 ```text
-El check-in es a las 15:00.
+Answering with one possible interpretation without confirming it.
 ```
 
 GOOD:
 
 ```text
-¿Te referís al horario de check-in para llegar, o a otra cosa como dejar equipaje antes?
+Ask the smallest clarification needed to disambiguate the request.
 ```
 
-## 7. Signed Context Only
+## 10. Signed Context Only
 
 Internal AI tools must never accept raw:
 
@@ -309,7 +449,7 @@ GOOD:
 
 The AI can ask for information. Rails decides which property, guest, conversation, and reservation the tool is allowed to access.
 
-## 8. Security Rules
+## 11. Security Rules
 
 Never trust:
 
@@ -323,15 +463,14 @@ Never trust:
 
 Rails must verify every authorization.
 
-Sensitive access includes, at minimum:
+Sensitive information includes, at minimum:
 
-- WiFi password;
-- lockbox code;
-- door code;
-- key location;
-- access instructions;
-- exact access timing if restricted;
-- private host details;
+- credentials, secrets, passwords, codes, or private links;
+- key, lock, entrance, or building-access details;
+- exact private host details;
+- guest personal data;
+- payment or billing information;
+- private operational instructions;
 - any information that could let the wrong person access the property.
 
 BAD:
@@ -339,7 +478,7 @@ BAD:
 ```json
 {
   "decision": "reply",
-  "message_body": "The lockbox code is 1234.",
+  "message_body": "The private access credential is 1234.",
   "sensitive_info_used": false
 }
 ```
@@ -349,15 +488,14 @@ GOOD:
 ```json
 {
   "decision": "reply",
-  "message_body": "El código de acceso es 1234.",
-  "sensitive_info_used": true,
-  "used_source_ids": ["sensitive_access_instructions"]
+  "message_body": "Only return sensitive information when Rails has verified the guest is authorized.",
+  "sensitive_info_used": true
 }
 ```
 
 Rails must still verify that the guest is authorized before sending.
 
-## 9. Escalations
+## 12. Escalation Contract
 
 The AI may return:
 
@@ -395,7 +533,7 @@ No tengo esa información confirmada todavía. Voy a pedir que el anfitrión la 
 
 Then Rails may create the alert and send an approved message.
 
-## 10. Observability Is Mandatory
+## 13. Observability Is Mandatory
 
 Everything important must be recorded.
 
@@ -419,6 +557,19 @@ The system must preserve:
 - provider message ids;
 - provider statuses;
 - operational errors.
+
+For AI decisions, the system should preserve:
+
+- tools considered;
+- tools called;
+- retry attempts;
+- reformulated searches;
+- evidence found;
+- evidence rejected;
+- clarifying questions considered;
+- why escalation was necessary;
+- why a fallback was used;
+- why a decision was blocked.
 
 Never sacrifice observability for simplicity.
 
@@ -448,7 +599,35 @@ GOOD:
 Persist why Rails rejected the decision and which validation rule failed.
 ```
 
-## 11. When In Doubt
+## 14. Generic Capability Design
+
+Do not encode the architecture around today's fields, intents, or tools.
+
+Ayla should still work when the product has hundreds of additional capabilities and tools.
+
+Therefore:
+
+- prefer generic evidence contracts over per-field branches;
+- prefer tool discovery and source ranking over hardcoded topic maps;
+- prefer model interpretation plus Rails validation over local regex expansion;
+- prefer reusable validation rules over one-off fixes;
+- prefer evidence sufficiency checks over topic-specific patches;
+- prefer narrow tool schemas that return evidence consistently;
+- prefer adding better knowledge to tools over adding more router behavior.
+
+BAD:
+
+```text
+If message contains one particular field name, force one particular answer path.
+```
+
+GOOD:
+
+```text
+If any relevant tool returns sufficient valid evidence for the user's request, the AI answers with that evidence and Rails validates it.
+```
+
+## 15. When In Doubt
 
 When a guest message is not trivial:
 
@@ -461,21 +640,26 @@ Do not hardcode more phrasing.
 Always prefer:
 
 ```text
-AI + tools + evidence + Rails validation
+AI + tools + evidence + clarification + Rails validation
 ```
 
 If the AI cannot answer safely:
 
-1. ask a clarifying question, or
-2. escalate with Rails creating the alert.
+1. gather more information through tools;
+2. retry or reformulate search;
+3. ask a clarifying question;
+4. escalate with Rails creating the alert only when the previous steps cannot reasonably resolve the issue.
 
-## 12. Maximum Rule
+## 16. Maximum Rule
 
 If a modification causes any of the following:
 
 - the AI participates less in real guest questions;
 - the deterministic router participates more in real guest questions;
 - less evidence is required;
+- escalation happens earlier;
+- clarification happens less often;
+- evidence from tools is ignored;
 - Rails loses authority;
 - tools accept unsafe ids;
 - sensitive information is easier to leak;
@@ -492,12 +676,15 @@ Guest message
 → Rails resolves signed context
 → Rails records the message
 → AI interprets the real question
-→ AI calls tools
-→ AI cites evidence
+→ AI gathers information progressively
+→ AI calls all relevant tools
+→ AI retries or reformulates when needed
+→ AI cites sufficient evidence
+→ AI asks a clarifying question when that can resolve uncertainty
 → Rails validates
 → Rails authorizes
 → Rails persists
-→ Rails sends or escalates
+→ Rails sends, blocks, or escalates as last resort
 → Rails records the outcome
 ```
 

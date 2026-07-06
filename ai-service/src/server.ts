@@ -11,6 +11,7 @@ import {
   canonicalEvidenceId,
   shouldRetryGroundedDecision,
 } from "./evidence-catalog.js";
+import { buildGroundedDecision } from "./grounded-decision-builder.js";
 
 const DecisionSchema = z.object({
   outcome: z.enum([
@@ -189,8 +190,8 @@ const server = createServer(async (request, response) => {
         "Answer only from provided tool results.",
         "Every factual reply must cite evidence returned by tools. Use evidence_ids for evidence_id values and used_source_ids for source id values.",
         "Do not invent evidence or source IDs. Every cited ID must appear in evidence_catalog or tool_results.",
-        "When evidence_catalog contains property.check_in_time and the guest asks for check-in time, answer it directly, set intent type check_in_time with status answered, and cite property.check_in_time in evidence_ids.",
-        "Never escalate as unknown when evidence_catalog directly answers the guest's question.",
+        "If evidence_catalog contains sufficient evidence for the guest's request, answer with that evidence instead of returning unknown, fallback, or escalation.",
+        "Evaluate evidence sufficiency generically across property facts, guest context, property brain, FAQs, guides, knowledge blocks, approved recommendations, policies, and future sources.",
         "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
         "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
         "Before interpreting requests, check whether the latest guest message is a conversational closure, thanks, acknowledgement, or rejection of extra help.",
@@ -232,7 +233,7 @@ const server = createServer(async (request, response) => {
           "Review an Ayla guest decision that escalated as unknown even though tools returned evidence.",
           "Interpret the latest guest message and use only evidence_catalog and tool_results.",
           "If the evidence directly answers the question, return outcome reply, the specific answered intent, a friendly answer in the latest guest message's language, and the exact evidence_ids.",
-          "For a check-in time question with property.check_in_time, use intent type check_in_time and cite property.check_in_time.",
+          "Evaluate evidence sufficiency generically across all returned sources, not by hardcoded topic.",
           "Do not escalate when direct evidence answers the question. Do not invent facts or IDs.",
           "Keep escalation only when the available evidence truly does not answer or owner approval is required.",
         ].join("\n"),
@@ -244,17 +245,20 @@ const server = createServer(async (request, response) => {
         }),
       });
     }
+    const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
+    const finalDecision = groundedDecision.decision;
 
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
-      ...result.object,
+      ...finalDecision,
       audit: {
-        ...(result.object as any).audit,
+        ...(finalDecision as any).audit,
         model: gatewayModelId(),
         token_usage: result.usage,
         tool_calls: toolTrace,
         evidence_catalog: evidenceCatalog,
         grounding_retry: groundingRetry,
+        grounded_decision_override: groundedDecision.override,
         tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
       },
     });

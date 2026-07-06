@@ -40,7 +40,12 @@ test("tool results produce a grounded check-in evidence catalog", () => {
     evidence_id: "property.check_in_time",
     raw_id: "property.check_in_time",
     field: "check_in_time",
+    label: "check_in_time",
+    source_type: null,
+    category: null,
     value: "15:00",
+    text: "check_in_time check_in_time 15:00",
+    metadata: {},
     tool_name: "stay_facts",
   });
 });
@@ -50,7 +55,12 @@ test("unknown escalation without citations is reviewed when tool evidence exists
     evidence_id: "property.check_in_time",
     raw_id: "property.check_in_time",
     field: "check_in_time",
+    label: "check_in_time",
+    source_type: "property_fact",
+    category: null,
     value: "15:00",
+    text: "check_in_time check_in_time property_fact 15:00",
+    metadata: {},
     tool_name: "stay_facts",
   }];
 
