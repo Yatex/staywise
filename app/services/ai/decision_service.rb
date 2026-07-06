@@ -412,7 +412,11 @@ module AI
 
       tool_names = @tool_calls.map { |tool| tool["tool_name"] || tool["toolName"] || tool[:tool_name] || tool[:toolName] }
       validation_passed = validation_results.to_h[:passed] || validation_results.to_h["passed"]
-      check_in_evidence = Array(evidence_ids).find { |id| id.to_s.match?(/check_?in/i) }
+      tool_evidence_ids = @tool_calls.flat_map do |tool|
+        summary = tool["output_summary"] || tool[:output_summary] || {}
+        Array(summary["evidence_ids"] || summary[:evidence_ids])
+      end
+      check_in_evidence = (Array(evidence_ids) + tool_evidence_ids).find { |id| check_in_evidence_id?(id) }
 
       {
         label: "CHECKIN_TRACE",
@@ -421,10 +425,15 @@ module AI
         guest_context_called: tool_names.include?("guest_context"),
         stay_facts_called: tool_names.include?("stay_facts") || tool_names.include?("property_brain"),
         check_in_evidence_found: check_in_evidence.present?,
-        evidence_id: check_in_evidence,
+        evidence_id: check_in_evidence.present? ? "property.check_in_time" : nil,
         validation_passed: validation_passed,
         final_response_or_fallback: fallback_reason.presence || decision.response_text
       }
+    end
+
+    def check_in_evidence_id?(evidence_id)
+      normalized = evidence_id.to_s.downcase.gsub(/[^a-z0-9]/, "")
+      normalized.in?(%w[propertycheckintime propertyfactcheckintime])
     end
 
     def parse_json_or_text(text)

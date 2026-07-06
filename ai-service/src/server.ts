@@ -6,6 +6,11 @@ import {
   resolveRailsToolEndpoint,
   validateRailsToolClientBootConfig,
 } from "./rails-tool-client.js";
+import {
+  buildEvidenceCatalog,
+  canonicalEvidenceId,
+  shouldRetryGroundedDecision,
+} from "./evidence-catalog.js";
 
 const DecisionSchema = z.object({
   outcome: z.enum([
@@ -170,7 +175,8 @@ const server = createServer(async (request, response) => {
     }
 
     const toolResults = await collectToolResults(payload, toolTrace, mandatoryTrace);
-    const result = await generateObject({
+    const evidenceCatalog = buildEvidenceCatalog(toolResults);
+    let result = await generateObject({
       model: gatewayModel(),
       schema: DecisionSchema,
       schemaName: "AylaDecision",
@@ -181,8 +187,10 @@ const server = createServer(async (request, response) => {
         "If the guest asks about WiFi, passwords, codes, keys, lockboxes, exact access instructions, entrance, or other sensitive access details, you must also call sensitive_access_info.",
         "If the answer needs owner approval or the available evidence does not directly answer the guest, call create_escalation_draft and return outcome escalate or propose_action.",
         "Answer only from provided tool results.",
-        "Every factual reply must cite one or more used_source_ids from property_brain or sensitive_access_info.",
-        "Do not invent source IDs. used_source_ids must match source.id values returned by tools.",
+        "Every factual reply must cite evidence returned by tools. Use evidence_ids for evidence_id values and used_source_ids for source id values.",
+        "Do not invent evidence or source IDs. Every cited ID must appear in evidence_catalog or tool_results.",
+        "When evidence_catalog contains property.check_in_time and the guest asks for check-in time, answer it directly, set intent type check_in_time with status answered, and cite property.check_in_time in evidence_ids.",
+        "Never escalate as unknown when evidence_catalog directly answers the guest's question.",
         "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
         "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
         "Before interpreting requests, check whether the latest guest message is a conversational closure, thanks, acknowledgement, or rejection of extra help.",
@@ -209,8 +217,33 @@ const server = createServer(async (request, response) => {
       prompt: JSON.stringify({
         base_context: safeBaseContext(payload),
         tool_results: toolResults,
+        evidence_catalog: evidenceCatalog,
       }),
     });
+
+    let groundingRetry = false;
+    if (shouldRetryGroundedDecision(result.object, evidenceCatalog)) {
+      groundingRetry = true;
+      result = await generateObject({
+        model: gatewayModel(),
+        schema: DecisionSchema,
+        schemaName: "AylaGroundedDecisionReview",
+        system: [
+          "Review an Ayla guest decision that escalated as unknown even though tools returned evidence.",
+          "Interpret the latest guest message and use only evidence_catalog and tool_results.",
+          "If the evidence directly answers the question, return outcome reply, the specific answered intent, a friendly answer in the latest guest message's language, and the exact evidence_ids.",
+          "For a check-in time question with property.check_in_time, use intent type check_in_time and cite property.check_in_time.",
+          "Do not escalate when direct evidence answers the question. Do not invent facts or IDs.",
+          "Keep escalation only when the available evidence truly does not answer or owner approval is required.",
+        ].join("\n"),
+        prompt: JSON.stringify({
+          base_context: safeBaseContext(payload),
+          tool_results: toolResults,
+          evidence_catalog: evidenceCatalog,
+          previous_decision: result.object,
+        }),
+      });
+    }
 
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
@@ -220,6 +253,8 @@ const server = createServer(async (request, response) => {
         model: gatewayModelId(),
         token_usage: result.usage,
         tool_calls: toolTrace,
+        evidence_catalog: evidenceCatalog,
+        grounding_retry: groundingRetry,
         tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
       },
     });
@@ -1142,7 +1177,7 @@ function collectEvidenceIds(result: any): string[] {
   }
   if (typeof result !== "object") return [];
 
-  const own = [result.id, result.evidence_id, result.source_id].filter(Boolean);
+  const own = [result.id, result.evidence_id, result.source_id].filter(Boolean).map(canonicalEvidenceId);
   const nested = Object.values(result).flatMap((value) => collectEvidenceIds(value));
   return Array.from(new Set([...own, ...nested]));
 }

@@ -110,6 +110,30 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "en", @guest.reload.language
   end
 
+  test "checkin trace finds canonical evidence returned by tools even when decision omits it" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora es el check in?", channel: "whatsapp")
+    tool_audit = {
+      tool_calls: [
+        { tool_name: "guest_context", output_summary: { evidence_ids: ["property_check_in_time"] }, error: nil, latency_ms: 1 },
+        { tool_name: "stay_facts", output_summary: { evidence_ids: ["property_fact:check_in_time"] }, error: nil, latency_ms: 1 }
+      ]
+    }
+
+    run_with_remote_decision(message, ai_escalation(
+      language: "es",
+      message_body: "Lo estoy consultando con el anfitrión.",
+      reason_code: "unknown",
+      detected_intents: [{ type: "unknown", status: "escalated" }],
+      audit: tool_audit
+    ))
+
+    trace = AIDecisionLog.where(message: message).last.checkin_trace
+    assert_equal true, trace["check_in_evidence_found"]
+    assert_equal "property.check_in_time", trace["evidence_id"]
+    assert_equal true, trace["guest_context_called"]
+    assert_equal true, trace["stay_facts_called"]
+  end
+
   test "ai language follows the latest clear message even when local fallback would choose another language" do
     @guest.update!(language: "es")
     @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
