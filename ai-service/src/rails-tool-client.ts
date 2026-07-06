@@ -6,6 +6,12 @@ export type RailsToolEndpoint = {
 type RailsToolClientOptions = {
   fetchImpl?: typeof fetch;
   token?: string;
+  environment?: string;
+};
+
+type RailsToolEnvironment = {
+  AI_SERVICE_TOKEN?: string;
+  RAILS_TOOLS_BASE_URL?: string;
 };
 
 export async function callRailsTool(
@@ -21,10 +27,12 @@ export async function callRailsTool(
   if (!toolEndpoint?.base_url) throw new Error("Rails tool base_url is required");
   if (!toolEndpoint?.decision_context_id) throw new Error("decision_context_id is required for Rails tool calls");
 
-  const url = new URL(`/internal/ai/tools/${toolName}`, toolEndpoint.base_url);
+  const baseUrl = validatedBaseUrl(toolEndpoint.base_url, options.environment || process.env.NODE_ENV);
+  const url = new URL(`/internal/ai/tools/${toolName}`, baseUrl);
   const fetchImpl = options.fetchImpl || fetch;
   const response = await fetchImpl(url, {
     method: "POST",
+    redirect: "error",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -46,6 +54,52 @@ export async function callRailsTool(
   }
 
   return body;
+}
+
+export function resolveRailsToolEndpoint(
+  toolEndpoint: Partial<RailsToolEndpoint> | undefined,
+  environment: RailsToolEnvironment = process.env,
+): RailsToolEndpoint {
+  return {
+    base_url: environment.RAILS_TOOLS_BASE_URL || toolEndpoint?.base_url || "",
+    decision_context_id: toolEndpoint?.decision_context_id || "",
+  };
+}
+
+export function validateRailsToolClientBootConfig(
+  nodeEnvironment = process.env.NODE_ENV,
+  environment: RailsToolEnvironment = process.env,
+) {
+  if (nodeEnvironment !== "production") return null;
+  if (!environment.AI_SERVICE_TOKEN) throw new Error("AI_SERVICE_TOKEN is required in production");
+  if (!environment.RAILS_TOOLS_BASE_URL) throw new Error("RAILS_TOOLS_BASE_URL is required in production");
+
+  const baseUrl = validatedBaseUrl(environment.RAILS_TOOLS_BASE_URL, nodeEnvironment);
+  return new URL(baseUrl).origin;
+}
+
+function validatedBaseUrl(value: string, nodeEnvironment?: string) {
+  if (!value) throw new Error("Rails tool base_url is required");
+
+  const url = new URL(value);
+  if (url.username || url.password) throw new Error("Rails tool base_url must not contain credentials");
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Rails tool base_url must use HTTP or HTTPS");
+
+  if (nodeEnvironment === "production" && url.protocol !== "https:" && !isPrivateRenderHttpUrl(url)) {
+    throw new Error(
+      `Rails tool base_url must use HTTPS or a private Render HTTP address in production (received ${url.origin})`,
+    );
+  }
+
+  return url.toString();
+}
+
+function isPrivateRenderHttpUrl(url: URL) {
+  const singleLabelHostname = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(url.hostname);
+  return url.protocol === "http:" &&
+    singleLabelHostname &&
+    url.hostname.toLowerCase() !== "localhost" &&
+    url.port.length > 0;
 }
 
 function parseResponseBody(text: string) {

@@ -1,7 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { gateway, generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
-import { callRailsTool } from "./rails-tool-client.js";
+import {
+  callRailsTool,
+  resolveRailsToolEndpoint,
+  validateRailsToolClientBootConfig,
+} from "./rails-tool-client.js";
 
 const DecisionSchema = z.object({
   outcome: z.enum([
@@ -148,6 +152,9 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    payload.tool_endpoint = resolveRailsToolEndpoint(payload?.tool_endpoint);
+    mandatoryTrace = newToolMandatoryTrace(payload);
+
     if (isConversationalClosure(payload?.guest_message)) {
       mandatoryTrace.skip_reason = "conversational_closure";
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
@@ -222,6 +229,9 @@ const server = createServer(async (request, response) => {
     sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace));
   }
 });
+
+const railsToolsOrigin = validateRailsToolClientBootConfig();
+if (railsToolsOrigin) console.log(`[rails-tool-client] configured origin=${railsToolsOrigin}`);
 
 server.listen(Number(process.env.PORT || 8787), () => {
   console.log(`Ayla AI service listening on ${process.env.PORT || 8787}`);
