@@ -177,6 +177,8 @@ const server = createServer(async (request, response) => {
 
     const toolResults = await collectToolResults(payload, toolTrace, mandatoryTrace);
     const evidenceCatalog = buildEvidenceCatalog(toolResults);
+    const modelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog);
+    console.log("MODEL_INPUT_TRACE", JSON.stringify(modelInputTrace));
     let result = await generateObject({
       model: gatewayModel(),
       schema: DecisionSchema,
@@ -223,8 +225,16 @@ const server = createServer(async (request, response) => {
     });
 
     let groundingRetry = false;
+    let retryModelInputTrace: any = null;
     if (shouldRetryGroundedDecision(result.object, evidenceCatalog)) {
       groundingRetry = true;
+      const previousDecisionForTrace = result.object as any;
+      retryModelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog, {
+        previous_decision_outcome: previousDecisionForTrace?.outcome || previousDecisionForTrace?.decision || null,
+        previous_decision_intents: previousDecisionForTrace?.detected_intents || [],
+        previous_decision_evidence_ids: previousDecisionForTrace?.evidence_ids || [],
+      });
+      console.log("MODEL_INPUT_TRACE", JSON.stringify({ ...retryModelInputTrace, retry: true }));
       result = await generateObject({
         model: gatewayModel(),
         schema: DecisionSchema,
@@ -261,6 +271,12 @@ const server = createServer(async (request, response) => {
         },
       };
     }
+    const finalDecisionSource = finalDecisionAudit.grounded_decision_builder?.final_decision_source || {
+      model: !groundingRetry,
+      retry_model: groundingRetry,
+      grounded_override: false,
+      fallback: false,
+    };
 
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
@@ -268,6 +284,12 @@ const server = createServer(async (request, response) => {
       audit: {
         ...finalDecisionAudit,
         model: gatewayModelId(),
+        model_input_trace: {
+          initial: modelInputTrace,
+          retry: retryModelInputTrace,
+        },
+        grounded_decision_trace: finalDecisionAudit.grounded_decision_builder || { called: false },
+        final_decision_source: finalDecisionSource,
         token_usage: result.usage,
         tool_calls: toolTrace,
         evidence_catalog: evidenceCatalog,
@@ -1072,6 +1094,40 @@ function summarizeToolOutput(result: any) {
     result_count: Array.isArray(result) ? result.length : undefined,
     keys: typeof result === "object" && !Array.isArray(result) ? Object.keys(result).slice(0, 20) : undefined,
     preview: JSON.stringify(result).slice(0, 1200),
+  };
+}
+
+function buildModelInputTrace(
+  payload: any,
+  toolResults: any[],
+  evidenceCatalog: any[],
+  extra: Record<string, unknown> = {},
+) {
+  const firstEvidenceIds = evidenceCatalog
+    .map((entry) => entry?.evidence_id)
+    .filter(Boolean)
+    .slice(0, 20);
+  const toolResultKeys = toolResults.map((item) => ({
+    toolName: item?.toolName,
+    result_keys: item?.result && typeof item.result === "object" && !Array.isArray(item.result)
+      ? Object.keys(item.result).slice(0, 20)
+      : [],
+    result_type: Array.isArray(item?.result) ? "array" : typeof item?.result,
+  }));
+
+  return {
+    tool_results_present: toolResults.length > 0,
+    tool_results_count: toolResults.length,
+    tool_results_keys: toolResultKeys,
+    evidence_catalog_size: evidenceCatalog.length,
+    first_evidence_ids: firstEvidenceIds,
+    includes_property_check_in_time: firstEvidenceIds.includes("property.check_in_time") ||
+      evidenceCatalog.some((entry) => entry?.evidence_id === "property.check_in_time"),
+    tool_context_present: Boolean(payload?.tool_context),
+    tool_context_mode: payload?.tool_context ? "inline_legacy_context" : "rails_tool_endpoint_context",
+    tool_endpoint_present: Boolean(payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id),
+    guest_message_present: Boolean(payload?.guest_message),
+    ...extra,
   };
 }
 

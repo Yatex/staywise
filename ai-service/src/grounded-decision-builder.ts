@@ -43,14 +43,17 @@ type SufficientCandidateAudit = {
 };
 
 type GroundedDecisionBuilderAudit = {
+  called: boolean;
   should_repair_decision: RepairDecisionDiagnostic;
   evidence_catalog_size: number;
+  includes_property_check_in_time: boolean;
   ranked_candidates: CandidateAudit[];
   sufficient_candidates: SufficientCandidateAudit[];
   grounded_decision_result: {
     override_created: boolean;
     override_type: string | null;
     reason_if_null: string | null;
+    reason_if_no_override: string | null;
   };
   final_decision_source: {
     model: boolean;
@@ -137,8 +140,10 @@ export function buildGroundedDecision(
   const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
   const candidateAudit = rankedCandidateAudit(payload?.guest_message || "", evidenceCatalog);
   const baseAudit = {
+    called: true,
     should_repair_decision: repairDiagnostic,
     evidence_catalog_size: evidenceCatalog.length,
+    includes_property_check_in_time: includesEvidenceId(evidenceCatalog, "property.check_in_time"),
     ranked_candidates: candidateAudit,
   };
 
@@ -570,7 +575,7 @@ function sufficientCandidateAudit(candidates: Candidate[], sufficient: Candidate
 }
 
 function buildAudit(
-  base: Pick<GroundedDecisionBuilderAudit, "should_repair_decision" | "evidence_catalog_size" | "ranked_candidates">,
+  base: Pick<GroundedDecisionBuilderAudit, "called" | "should_repair_decision" | "evidence_catalog_size" | "includes_property_check_in_time" | "ranked_candidates">,
   sufficientCandidates: SufficientCandidateAudit[],
   overrideType: string | null,
   reasonIfNull: string | null,
@@ -583,6 +588,7 @@ function buildAudit(
       override_created: overrideCreated,
       override_type: overrideType,
       reason_if_null: reasonIfNull,
+      reason_if_no_override: reasonIfNull,
     },
     final_decision_source: {
       model: !overrideCreated,
@@ -604,6 +610,10 @@ function withGroundedAudit(build: GroundedDecisionBuild, audit: GroundedDecision
       },
     },
   };
+}
+
+function includesEvidenceId(evidenceCatalog: EvidenceCatalogEntry[], evidenceId: string) {
+  return evidenceCatalog.some((entry) => entry.evidence_id === evidenceId);
 }
 
 function unique(values: string[]) {
