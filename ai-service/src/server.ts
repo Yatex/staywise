@@ -141,6 +141,7 @@ const server = createServer(async (request, response) => {
 
   let payload: any = {};
   const toolTrace: any[] = [];
+  const generateObjectTrace: any[] = [];
   let mandatoryTrace = newToolMandatoryTrace(payload);
 
   try {
@@ -149,12 +150,12 @@ const server = createServer(async (request, response) => {
     mandatoryTrace = newToolMandatoryTrace(payload);
 
     if (request.url === "/property_import") {
-      await handlePropertyImport(payload, response);
+      await handlePropertyImport(payload, response, generateObjectTrace);
       return;
     }
 
     if (request.url === "/translate") {
-      await handleTranslate(payload, response);
+      await handleTranslate(payload, response, generateObjectTrace);
       return;
     }
 
@@ -179,7 +180,7 @@ const server = createServer(async (request, response) => {
     const evidenceCatalog = buildEvidenceCatalog(toolResults);
     const modelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog);
     console.log("MODEL_INPUT_TRACE", JSON.stringify(modelInputTrace));
-    let result = await generateObject({
+    let result = await tracedGenerateObject({
       model: gatewayModel(),
       schema: DecisionSchema,
       schemaName: "AylaDecision",
@@ -222,7 +223,7 @@ const server = createServer(async (request, response) => {
         tool_results: toolResults,
         evidence_catalog: evidenceCatalog,
       }),
-    });
+    }, generateObjectTrace);
 
     let groundingRetry = false;
     let retryModelInputTrace: any = null;
@@ -235,7 +236,7 @@ const server = createServer(async (request, response) => {
         previous_decision_evidence_ids: previousDecisionForTrace?.evidence_ids || [],
       });
       console.log("MODEL_INPUT_TRACE", JSON.stringify({ ...retryModelInputTrace, retry: true }));
-      result = await generateObject({
+      result = await tracedGenerateObject({
         model: gatewayModel(),
         schema: DecisionSchema,
         schemaName: "AylaGroundedDecisionReview",
@@ -253,7 +254,7 @@ const server = createServer(async (request, response) => {
           evidence_catalog: evidenceCatalog,
           previous_decision: result.object,
         }),
-      });
+      }, generateObjectTrace);
     }
     const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     const finalDecision = groundedDecision.decision;
@@ -284,6 +285,7 @@ const server = createServer(async (request, response) => {
       audit: {
         ...finalDecisionAudit,
         model: gatewayModelId(),
+        generate_object_trace: generateObjectTrace,
         model_input_trace: {
           initial: modelInputTrace,
           retry: retryModelInputTrace,
@@ -301,7 +303,7 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     console.error("[ai-service]", error);
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
-    sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace));
+    sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace, generateObjectTrace));
   }
 });
 
@@ -352,14 +354,170 @@ function gatewayConfigured() {
   );
 }
 
-async function handlePropertyImport(payload: any, response: ServerResponse) {
+async function tracedGenerateObject(options: any, trace: any[]) {
+  const startedAt = Date.now();
+  const entry: any = {
+    schema_name: options?.schemaName || null,
+    schema_zod_type: zodSchemaTypeName(options?.schema),
+    model: gatewayModelId(),
+    started_at: new Date().toISOString(),
+    ok: false,
+  };
+  trace.push(entry);
+
+  try {
+    const result = await generateObject(options);
+    Object.assign(entry, {
+      ok: true,
+      latency_ms: Date.now() - startedAt,
+      finish_reason: valueAt(result, ["finishReason"]),
+      usage: sanitizeGenerateObjectValue(result?.usage),
+      object_keys: result?.object && typeof result.object === "object" ? Object.keys(result.object).slice(0, 40) : [],
+      parsed_object_preview: sanitizeGenerateObjectValue(result?.object),
+      response_text: extractResponseText(result),
+      raw_text: extractRawText(result),
+    });
+    console.log("GENERATE_OBJECT_TRACE", JSON.stringify(entry));
+    return result;
+  } catch (error) {
+    Object.assign(entry, generateObjectErrorTrace(error, Date.now() - startedAt));
+    console.error("GENERATE_OBJECT_TRACE", JSON.stringify(entry));
+    throw error;
+  }
+}
+
+function generateObjectErrorTrace(error: any, latencyMs: number) {
+  return {
+    ok: false,
+    latency_ms: latencyMs,
+    error_name: error?.name || null,
+    error_class: error?.constructor?.name || null,
+    error_message: error?.message || null,
+    is_ai_no_object_generated_error: isNoObjectGeneratedError(error),
+    finish_reason: firstPresent(
+      valueAt(error, ["finishReason"]),
+      valueAt(error, ["finish_reason"]),
+      valueAt(error, ["response", "finishReason"]),
+      valueAt(error, ["response", "finish_reason"]),
+      valueAt(error, ["cause", "finishReason"]),
+    ),
+    usage: sanitizeGenerateObjectValue(firstPresent(
+      valueAt(error, ["usage"]),
+      valueAt(error, ["response", "usage"]),
+      valueAt(error, ["cause", "usage"]),
+    )),
+    raw_text: extractRawText(error),
+    response_text: extractResponseText(error),
+    zod_validation_errors: extractZodValidationErrors(error),
+    partial_object: sanitizeGenerateObjectValue(firstPresent(
+      valueAt(error, ["object"]),
+      valueAt(error, ["partialObject"]),
+      valueAt(error, ["partial_object"]),
+      valueAt(error, ["value"]),
+      valueAt(error, ["cause", "object"]),
+      valueAt(error, ["cause", "partialObject"]),
+    )),
+    sdk_error_markers: sdkErrorMarkers(error),
+    own_keys: ownKeys(error),
+  };
+}
+
+function isNoObjectGeneratedError(error: any) {
+  if (!error) return false;
+  if (String(error?.name || "").includes("NoObjectGenerated")) return true;
+  if (String(error?.constructor?.name || "").includes("NoObjectGenerated")) return true;
+  return sdkErrorMarkers(error).some((marker) => marker.includes("AI_NoObjectGeneratedError"));
+}
+
+function sdkErrorMarkers(error: any) {
+  if (!error || (typeof error !== "object" && typeof error !== "function")) return [];
+  return Reflect.ownKeys(error)
+    .filter((key) => typeof key === "symbol")
+    .filter((key) => Boolean((error as any)[key as any]))
+    .map((key) => String(key));
+}
+
+function ownKeys(value: any) {
+  if (!value || (typeof value !== "object" && typeof value !== "function")) return [];
+  return Reflect.ownKeys(value).map((key) => String(key));
+}
+
+function extractZodValidationErrors(error: any) {
+  return sanitizeGenerateObjectValue(firstPresent(
+    valueAt(error, ["issues"]),
+    valueAt(error, ["errors"]),
+    valueAt(error, ["validationError", "issues"]),
+    valueAt(error, ["validationError", "errors"]),
+    valueAt(error, ["cause", "issues"]),
+    valueAt(error, ["cause", "errors"]),
+    valueAt(error, ["cause", "validationError", "issues"]),
+  ));
+}
+
+function extractRawText(value: any) {
+  return sanitizeString(firstPresent(
+    valueAt(value, ["text"]),
+    valueAt(value, ["rawText"]),
+    valueAt(value, ["raw_text"]),
+    valueAt(value, ["response", "text"]),
+    valueAt(value, ["response", "body"]),
+    valueAt(value, ["cause", "text"]),
+    valueAt(value, ["cause", "rawText"]),
+  ));
+}
+
+function extractResponseText(value: any) {
+  return sanitizeString(firstPresent(
+    valueAt(value, ["response", "text"]),
+    valueAt(value, ["response", "messages", 0, "content", 0, "text"]),
+    valueAt(value, ["text"]),
+    valueAt(value, ["cause", "response", "text"]),
+  ));
+}
+
+function valueAt(value: any, path: Array<string | number>) {
+  return path.reduce((current, key) => {
+    if (current == null) return undefined;
+    return current[key as any];
+  }, value);
+}
+
+function firstPresent(...values: any[]) {
+  return values.find((value) => value !== undefined && value !== null);
+}
+
+function sanitizeGenerateObjectValue(value: any) {
+  if (value == null) return null;
+  if (typeof value === "string") return sanitizeString(value);
+  try {
+    return JSON.parse(JSON.stringify(value, (_key, nested) => {
+      if (typeof nested === "string") return sanitizeString(nested);
+      return nested;
+    }));
+  } catch {
+    return sanitizeString(String(value));
+  }
+}
+
+function sanitizeString(value: any) {
+  if (value == null) return null;
+  return String(value)
+    .replace(/(authorization|api[_-]?key|token|password|wifi_password|code)["'\s:=]+[^"',\s}]+/gi, "$1:[FILTERED]")
+    .slice(0, 4000);
+}
+
+function zodSchemaTypeName(schema: any) {
+  return schema?._def?.typeName || schema?._def?.type || schema?.constructor?.name || null;
+}
+
+async function handlePropertyImport(payload: any, response: ServerResponse, generateObjectTrace: any[] = []) {
   if (!gatewayConfigured()) {
     sendJson(response, 503, { error: "AI gateway is not configured" });
     return;
   }
 
   const document = payload?.document || {};
-  const result = await generateObject({
+  const result = await tracedGenerateObject({
     model: gatewayModel(),
     schema: PropertyImportSchema,
     schemaName: "AylaPropertyImport",
@@ -379,24 +537,25 @@ async function handlePropertyImport(payload: any, response: ServerResponse) {
         content: propertyImportContent(payload, document),
       },
     ],
-  });
+  }, generateObjectTrace);
 
   sendJson(response, 200, {
-    ...result.object,
+    ...(result.object as Record<string, unknown>),
     audit: {
       model: gatewayModelId(),
+      generate_object_trace: generateObjectTrace,
       token_usage: result.usage,
     },
   });
 }
 
-async function handleTranslate(payload: any, response: ServerResponse) {
+async function handleTranslate(payload: any, response: ServerResponse, generateObjectTrace: any[] = []) {
   if (!gatewayConfigured()) {
     sendJson(response, 503, { error: "AI gateway is not configured" });
     return;
   }
 
-  const result = await generateObject({
+  const result = await tracedGenerateObject({
     model: gatewayModel(),
     schema: TranslationSchema,
     schemaName: "AylaTranslation",
@@ -414,12 +573,13 @@ async function handleTranslate(payload: any, response: ServerResponse) {
       text: payload?.text,
       context: payload?.context,
     }),
-  });
+  }, generateObjectTrace);
 
   sendJson(response, 200, {
-    ...result.object,
+    ...(result.object as Record<string, unknown>),
     audit: {
       model: gatewayModelId(),
+      generate_object_trace: generateObjectTrace,
       token_usage: result.usage,
     },
   });
@@ -1070,11 +1230,12 @@ function emitToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[]) {
   console.log("TOOL_MANDATORY_TRACE", JSON.stringify(finalized));
 }
 
-function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace: ToolMandatoryTrace) {
+function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace: ToolMandatoryTrace, generateObjectTrace: any[] = []) {
   return {
     ...decision,
     audit: {
       ...(decision?.audit || {}),
+      generate_object_trace: generateObjectTrace,
       final_decision_source: {
         model: false,
         retry_model: false,
