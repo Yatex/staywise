@@ -13,9 +13,20 @@ export type GroundedDecisionOverride = {
   previous_outcome: string | null;
 };
 
+type DecisionStrategy =
+  | "direct_reply"
+  | "reply_with_inference"
+  | "clarify_before_escalate"
+  | "escalation_last_resort";
+
 type Candidate = {
   evidence: EvidenceCatalogEntry;
   score: number;
+  matched_terms: string[];
+  semantic_matches: string[];
+  strategy: "direct" | "inference";
+  inferred_intent: string;
+  inference_reason: string | null;
 };
 
 type RepairDecisionDiagnostic = {
@@ -32,8 +43,11 @@ type CandidateAudit = {
   excerpt: string | null;
   score: number;
   matched_terms: string[];
+  semantic_matches: string[];
   source_type: string | null;
   reason_included_or_excluded: string;
+  inferred_intent: string | null;
+  inference_reason: string | null;
 };
 
 type SufficientCandidateAudit = {
@@ -61,6 +75,12 @@ type GroundedDecisionBuilderAudit = {
     grounded_override: boolean;
     fallback: boolean;
   };
+  final_decision_strategy: DecisionStrategy;
+  inferred_intent: string | null;
+  inference_reason: string | null;
+  clarification_question: string | null;
+  ambiguity_candidates: string[];
+  evidence_candidates_ranked: CandidateAudit[];
 };
 
 const STOPWORDS = new Set([
@@ -131,14 +151,54 @@ const APPROVAL_PATTERNS = [
   /consult(ar|arlo|arlo)?\s+con\s+el\s+anfitri[oó]n/i,
 ];
 
+const INTENT_CATEGORIES = [
+  {
+    category: "arrival",
+    intent: "check_in_time",
+    fields: ["check_in_time", "checkin", "check_in", "arrival", "arrival_time", "ingreso", "entrada"],
+    terms: ["entrada", "entrar", "ingresar", "ingreso", "llegada", "llegar", "depto", "departamento", "arrival", "arrive", "checkin"],
+  },
+  {
+    category: "departure",
+    intent: "check_out_time",
+    fields: ["check_out_time", "checkout", "check_out", "departure", "departure_time", "salida"],
+    terms: ["salida", "salir", "irme", "dejar", "checkout", "departure", "depart", "leave"],
+  },
+  {
+    category: "parking",
+    intent: "parking",
+    fields: ["parking", "parking_instructions", "garage", "cochera", "estacionamiento"],
+    terms: ["auto", "coche", "carro", "estacionar", "parking", "garage", "cochera"],
+  },
+  {
+    category: "address",
+    intent: "address",
+    fields: ["address", "location", "direccion", "ubicacion"],
+    terms: ["direccion", "ubicacion", "location", "address", "maps", "mapa"],
+  },
+  {
+    category: "rules",
+    intent: "rules",
+    fields: ["rules", "house_rules", "policy", "reglas"],
+    terms: ["reglas", "permitido", "prohibido", "fiestas", "rules", "allowed", "forbidden"],
+  },
+  {
+    category: "wifi",
+    intent: "wifi",
+    fields: ["wifi", "wifi_name", "wifi_password", "internet"],
+    terms: ["wifi", "internet", "contrasena", "clave", "password"],
+  },
+] as const;
+
 export function buildGroundedDecision(
   decision: any,
   payload: any,
   evidenceCatalog: EvidenceCatalogEntry[],
 ): GroundedDecisionBuild {
   const previousOutcome = String(decision?.outcome || decision?.decision || "") || null;
+  const guestMessage = payload?.guest_message || "";
   const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
-  const candidateAudit = rankedCandidateAudit(payload?.guest_message || "", evidenceCatalog);
+  const candidateAudit = rankedCandidateAudit(guestMessage, evidenceCatalog);
   const baseAudit = {
     called: true,
     should_repair_decision: repairDiagnostic,
@@ -150,15 +210,32 @@ export function buildGroundedDecision(
   if (!repairDiagnostic.value) {
     return withGroundedAudit(
       { decision, override: null },
-      buildAudit(baseAudit, [], null, "decision_does_not_need_repair"),
+      buildAudit(baseAudit, [], null, "decision_does_not_need_repair", {
+        strategy: strategyForExistingDecision(decision),
+      }),
     );
   }
 
-  const candidates = rankedCandidates(payload?.guest_message || "", evidenceCatalog);
+  const candidates = rankedCandidates(guestMessage, evidenceCatalog);
   if (candidates.length === 0) {
+    const clarification = clarificationWithoutEvidence(guestMessage, decision, payload, previousOutcome);
+    if (clarification) {
+      return withGroundedAudit(
+        clarification,
+        buildAudit(baseAudit, [], "partial_evidence", null, {
+          strategy: "clarify_before_escalate",
+          inferredIntent: clarification.decision.detected_intents?.[0]?.type || null,
+          clarificationQuestion: clarification.decision.message_body || null,
+          ambiguityCandidates: [],
+        }),
+      );
+    }
+
     return withGroundedAudit(
       { decision, override: null },
-      buildAudit(baseAudit, sufficientCandidateAudit(candidates, []), null, "no_ranked_candidates"),
+      buildAudit(baseAudit, sufficientCandidateAudit(candidates, []), null, "no_ranked_candidates", {
+        strategy: "escalation_last_resort",
+      }),
     );
   }
 
@@ -168,19 +245,34 @@ export function buildGroundedDecision(
     if (sufficient.some((candidate) => approvalRequired(candidate.evidence))) {
       return withGroundedAudit(
         approvalDecision(decision, payload, sufficient, previousOutcome),
-        buildAudit(baseAudit, sufficiencyAudit, "approval_required", null),
+        buildAudit(baseAudit, sufficiencyAudit, "approval_required", null, {
+          strategy: "escalation_last_resort",
+          inferredIntent: sufficient[0]?.inferred_intent || null,
+          inferenceReason: sufficient[0]?.inference_reason || null,
+        }),
       );
     }
 
+    const strategy = sufficient.some((candidate) => candidate.strategy === "inference") ? "reply_with_inference" : "direct_reply";
     return withGroundedAudit(
-      replyDecision(decision, payload, sufficient, previousOutcome),
-      buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null),
+      replyDecision(decision, payload, sufficient, previousOutcome, strategy),
+      buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null, {
+        strategy,
+        inferredIntent: sufficient[0]?.inferred_intent || null,
+        inferenceReason: sufficient[0]?.inference_reason || null,
+      }),
     );
   }
 
+  const clarification = clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
   return withGroundedAudit(
-    clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome),
-    buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null),
+    clarification,
+    buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null, {
+      strategy: "clarify_before_escalate",
+      inferredIntent: "ambiguous_request",
+      clarificationQuestion: clarification.decision.message_body || null,
+      ambiguityCandidates: unique(candidates.slice(0, 3).map((candidate) => candidate.inferred_intent)),
+    }),
   );
 }
 
@@ -206,10 +298,22 @@ function shouldRepairDecisionDiagnostic(decision: any): RepairDecisionDiagnostic
 
 function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry[]) {
   const queryTokens = tokens(message);
-  if (queryTokens.length === 0) return [];
+  const queryCategories = queryIntentCategories(message);
+  if (queryTokens.length === 0 && queryCategories.length === 0) return [];
 
   return evidenceCatalog
-    .map((evidence) => ({ evidence, score: scoreEvidence(queryTokens, evidence) }))
+    .map((evidence) => {
+      const debug = scoreEvidenceWithDebug(queryTokens, evidence, queryCategories);
+      return {
+        evidence,
+        score: debug.score,
+        matched_terms: debug.matched_terms,
+        semantic_matches: debug.semantic_matches,
+        strategy: debug.strategy,
+        inferred_intent: debug.inferred_intent,
+        inference_reason: debug.inference_reason,
+      };
+    })
     .filter((candidate) => candidate.score > 0)
     .sort((left, right) => right.score - left.score);
 }
@@ -226,10 +330,10 @@ function sufficientCandidates(candidates: Candidate[]) {
 }
 
 function scoreEvidence(queryTokens: string[], evidence: EvidenceCatalogEntry) {
-  return scoreEvidenceWithDebug(queryTokens, evidence).score;
+  return scoreEvidenceWithDebug(queryTokens, evidence, []).score;
 }
 
-function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalogEntry) {
+function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalogEntry, queryCategories: string[]) {
   const evidenceTokens = tokens([
     evidence.field,
     evidence.label,
@@ -237,16 +341,21 @@ function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalog
     evidence.source_type,
     evidence.text,
   ].filter(Boolean).join(" "));
-  if (evidenceTokens.length === 0) {
+  const evidenceCategories = evidenceIntentCategories(evidence);
+  if (evidenceTokens.length === 0 && evidenceCategories.length === 0) {
     return {
       score: 0,
       matched_terms: [] as string[],
+      semantic_matches: [] as string[],
       reason: "no_evidence_tokens",
+      strategy: "direct" as const,
+      inferred_intent: inferredIntent(evidence),
+      inference_reason: null,
     };
   }
 
   const matchedTerms: string[] = [];
-  const score = queryTokens.reduce((sum, queryToken) => {
+  let score = queryTokens.reduce((sum, queryToken) => {
     if (evidenceTokens.includes(queryToken)) {
       matchedTerms.push(queryToken);
       return sum + 3;
@@ -259,11 +368,19 @@ function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalog
 
     return sum;
   }, 0);
+  const semanticMatches = queryCategories.filter((category) => evidenceCategories.includes(category));
+  if (semanticMatches.length > 0) score += 4 * semanticMatches.length;
+  const strategy: "direct" | "inference" = matchedTerms.length > 0 ? "direct" : "inference";
+  const semanticIntent = semanticMatches.length > 0 ? intentForCategory(semanticMatches[0]) : inferredIntent(evidence);
 
   return {
     score,
     matched_terms: unique(matchedTerms),
-    reason: score > 0 ? "matched_query_terms" : "no_query_terms_matched_evidence",
+    semantic_matches: unique(semanticMatches),
+    reason: score > 0 ? "matched_query_terms_or_semantic_category" : "no_query_terms_matched_evidence",
+    strategy,
+    inferred_intent: semanticIntent,
+    inference_reason: semanticMatches.length > 0 ? `query_category:${semanticMatches.join(",")}` : null,
   };
 }
 
@@ -272,11 +389,14 @@ function replyDecision(
   payload: any,
   candidates: Candidate[],
   previousOutcome: string | null,
+  strategy: DecisionStrategy = "direct_reply",
 ): GroundedDecisionBuild {
   const primary = candidates[0].evidence;
   const evidenceIds = unique(candidates.map((candidate) => candidate.evidence.evidence_id));
   const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
-  const messageBody = responseFromEvidence(primary, language);
+  const messageBody = strategy === "reply_with_inference"
+    ? inferredResponseFromEvidence(primary, language, candidates[0].inferred_intent)
+    : responseFromEvidence(primary, language);
 
   return {
     override: {
@@ -295,8 +415,8 @@ function replyDecision(
       response_text: messageBody,
       intent_summary: `Answered from ${primary.source_type || "evidence"} evidence.`,
       detected_intents: [{
-        type: inferredIntent(primary),
-        status: "answered",
+        type: candidates[0].inferred_intent || inferredIntent(primary),
+        status: strategy === "reply_with_inference" ? "answered_with_inference" : "answered",
       }],
       evidence_ids: evidenceIds,
       used_source_ids: [],
@@ -380,6 +500,7 @@ function clarificationDecision(
   const evidenceIds = unique(candidates.map((candidate) => candidate.evidence.evidence_id));
   const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
   const messageBody = clarificationMessage(candidates.map((candidate) => candidate.evidence), language);
+  const intentType = isAmbiguousTime(candidates.map((candidate) => candidate.inferred_intent)) ? "ambiguous_time" : "ambiguous_request";
 
   return {
     override: {
@@ -398,7 +519,7 @@ function clarificationDecision(
       response_text: messageBody,
       intent_summary: "Partial evidence found, but the guest request needs clarification.",
       detected_intents: [{
-        type: "ambiguous_request",
+        type: intentType,
         status: "needs_clarification",
       }],
       evidence_ids: evidenceIds,
@@ -443,6 +564,32 @@ function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) 
   return `${label}: ${value}.`;
 }
 
+function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string) {
+  const value = String(evidence.value || "").trim();
+  if (intent === "check_in_time") {
+    if (language === "es") return `Si te referís al horario de ingreso/check-in, podés entrar a partir de las ${value}.`;
+    if (language === "fr") return `Si vous parlez de l'arrivée/check-in, vous pouvez entrer à partir de ${value}.`;
+    return `If you mean arrival/check-in, you can enter from ${value}.`;
+  }
+  if (intent === "check_out_time") {
+    if (language === "es") return `Si te referís al horario de salida/check-out, el checkout es a las ${value}.`;
+    if (language === "fr") return `Si vous parlez du départ/check-out, le check-out est à ${value}.`;
+    return `If you mean departure/check-out, checkout is at ${value}.`;
+  }
+  if (intent === "parking") {
+    if (language === "es") return `Si te referís a dónde dejar el auto, la información disponible es: ${value}.`;
+    if (language === "fr") return `Si vous parlez du stationnement, voici l'information disponible : ${value}.`;
+    return `If you mean parking, the available information is: ${value}.`;
+  }
+  if (intent === "address") {
+    if (language === "es") return `Si te referís a la ubicación o dirección, es: ${value}.`;
+    if (language === "fr") return `Si vous parlez de l'adresse ou de l'emplacement, c'est : ${value}.`;
+    return `If you mean the address or location, it is: ${value}.`;
+  }
+
+  return responseFromEvidence(evidence, language);
+}
+
 function approvalMessage(evidence: EvidenceCatalogEntry, language: string) {
   const label = humanLabel(evidence);
   if (language === "es") return `${label} requiere aprobación del anfitrión. Voy a pedir esa aprobación sin confirmarla todavía.`;
@@ -451,10 +598,77 @@ function approvalMessage(evidence: EvidenceCatalogEntry, language: string) {
 }
 
 function clarificationMessage(evidence: EvidenceCatalogEntry[], language: string) {
+  const intents = unique(evidence.map(inferredIntent));
+  if (intents.includes("check_in_time") && intents.includes("check_out_time")) {
+    if (language === "es") return "¿Te referís al horario de entrada/check-in o al horario de salida/check-out?";
+    if (language === "fr") return "Vous parlez de l'heure d'arrivée/check-in ou de l'heure de départ/check-out ?";
+    return "Do you mean the arrival/check-in time or the departure/check-out time?";
+  }
+
   const labels = unique(evidence.map(humanLabel)).slice(0, 3);
   if (language === "es") return `Encontré información relacionada con ${labels.join(", ")}. ¿Me aclarás a cuál te referís?`;
   if (language === "fr") return `J'ai trouvé des informations liées à ${labels.join(", ")}. Pouvez-vous préciser laquelle vous voulez dire ?`;
   return `I found information related to ${labels.join(", ")}. Can you clarify which one you mean?`;
+}
+
+function isAmbiguousTime(intents: string[]) {
+  return intents.includes("check_in_time") && intents.includes("check_out_time");
+}
+
+function clarificationWithoutEvidence(message: string, decision: any, payload: any, previousOutcome: string | null): GroundedDecisionBuild | null {
+  const category = clarificationCategory(message);
+  if (!category) return null;
+
+  const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
+  const messageBody = clarificationWithoutEvidenceMessage(category, language);
+  return {
+    override: {
+      applied: true,
+      reason: "partial_evidence",
+      evidence_ids: [],
+      sufficiency: "partial",
+      previous_outcome: previousOutcome,
+    },
+    decision: {
+      ...decision,
+      outcome: "ask_clarifying_question",
+      decision: "ask_clarifying_question",
+      language,
+      message_body: messageBody,
+      response_text: messageBody,
+      intent_summary: "No direct evidence matched yet, but the guest can clarify before escalation.",
+      detected_intents: [{
+        type: category === "issue" ? "ambiguous_issue" : "ambiguous_request",
+        status: "needs_clarification",
+      }],
+      evidence_ids: [],
+      used_source_ids: [],
+      required_capabilities: [],
+      proposed_action: null,
+      escalation: {
+        required: false,
+        reason_code: null,
+        summary_for_host: null,
+      },
+      escalation_required: false,
+      escalation_reason: null,
+      missing_information: ["clarification_from_guest"],
+      safety_flags: removeFallbackFlag(decision?.safety_flags),
+      confidence: Math.max(Number(decision?.confidence || 0), 0.65),
+    },
+  };
+}
+
+function clarificationWithoutEvidenceMessage(category: string, language: string) {
+  if (category === "issue") {
+    if (language === "es") return "¿Qué es lo que no está funcionando: WiFi, puerta, agua, luz u otra cosa?";
+    if (language === "fr") return "Qu'est-ce qui ne fonctionne pas exactement : le WiFi, la porte, l'eau, l'électricité ou autre chose ?";
+    return "What exactly is not working: WiFi, the door, water, electricity, or something else?";
+  }
+
+  if (language === "es") return "¿Me aclarás un poco más a qué te referís?";
+  if (language === "fr") return "Pouvez-vous préciser un peu ce que vous voulez dire ?";
+  return "Can you clarify a bit what you mean?";
 }
 
 function summaryForHost(payload: any, evidence: EvidenceCatalogEntry) {
@@ -467,7 +681,13 @@ function approvalRequired(evidence: EvidenceCatalogEntry) {
 }
 
 function inferredIntent(evidence: EvidenceCatalogEntry) {
-  return snakeCase(evidence.field || evidence.label || evidence.category || evidence.source_type || "grounded_answer");
+  return canonicalIntentName(snakeCase(evidence.field || evidence.label || evidence.category || evidence.source_type || "grounded_answer"));
+}
+
+function canonicalIntentName(intent: string) {
+  if (intent === "checkin_time" || intent === "check_in" || intent === "checkin") return "check_in_time";
+  if (intent === "checkout_time" || intent === "check_out" || intent === "checkout") return "check_out_time";
+  return intent;
 }
 
 function humanLabel(evidence: EvidenceCatalogEntry) {
@@ -483,6 +703,52 @@ function tokens(value: string) {
     .filter((token) => !STOPWORDS.has(token));
 
   return unique(expandTokens(baseTokens));
+}
+
+function looseTokens(value: string) {
+  return normalizeText(value)
+    .split(/\s+/)
+    .filter((token) => token.length >= 2);
+}
+
+function queryIntentCategories(message: string) {
+  const text = normalizeText(message);
+  const rawTokens = looseTokens(message);
+  const categories: string[] = INTENT_CATEGORIES
+    .filter((definition) => intersects(rawTokens, definition.terms))
+    .map((definition) => definition.category);
+
+  const hasTimeLanguage = intersects(rawTokens, ["hora", "horario", "cuando", "time", "heure", "quel", "quelle"]);
+  const genericArrivalOrDeparture = intersects(rawTokens, ["ir", "voy", "go", "aller"]);
+  if (hasTimeLanguage && genericArrivalOrDeparture) categories.push("arrival", "departure");
+  if (text.includes("no anda") || text.includes("no funciona") || text.includes("not working") || text.includes("doesnt work")) {
+    categories.push("issue");
+  }
+
+  return unique(categories);
+}
+
+function evidenceIntentCategories(evidence: EvidenceCatalogEntry) {
+  const haystack = looseTokens([
+    evidence.evidence_id,
+    evidence.field,
+    evidence.label,
+    evidence.category,
+    evidence.source_type,
+    evidence.text,
+  ].filter(Boolean).join(" "));
+
+  return unique(INTENT_CATEGORIES
+    .filter((definition) => intersects(haystack, definition.fields) || intersects(haystack, definition.terms))
+    .map((definition) => definition.category));
+}
+
+function intentForCategory(category: string) {
+  return INTENT_CATEGORIES.find((definition) => definition.category === category)?.intent || `${category}_request`;
+}
+
+function clarificationCategory(message: string) {
+  return queryIntentCategories(message).includes("issue") ? "issue" : null;
 }
 
 function normalizeText(value: string) {
@@ -524,11 +790,19 @@ function removeFallbackFlag(flags: unknown) {
 
 function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogEntry[]): CandidateAudit[] {
   const queryTokens = tokens(message);
+  const queryCategories = queryIntentCategories(message);
   return evidenceCatalog
     .map((evidence) => {
-      const debug = queryTokens.length === 0
-        ? { score: 0, matched_terms: [] as string[], reason: "no_query_tokens" }
-        : scoreEvidenceWithDebug(queryTokens, evidence);
+      const debug = queryTokens.length === 0 && queryCategories.length === 0
+        ? {
+            score: 0,
+            matched_terms: [] as string[],
+            semantic_matches: [] as string[],
+            reason: "no_query_tokens",
+            inferred_intent: inferredIntent(evidence),
+            inference_reason: null,
+          }
+        : scoreEvidenceWithDebug(queryTokens, evidence, queryCategories);
 
       return {
         evidence_id: evidence.evidence_id,
@@ -539,8 +813,11 @@ function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogE
         excerpt: String(evidence.metadata?.excerpt || evidence.text || "").slice(0, 500) || null,
         score: debug.score,
         matched_terms: debug.matched_terms,
+        semantic_matches: debug.semantic_matches,
         source_type: evidence.source_type || null,
         reason_included_or_excluded: debug.score > 0 ? "included_score_positive" : `excluded_${debug.reason}`,
+        inferred_intent: debug.inferred_intent,
+        inference_reason: debug.inference_reason,
       };
     })
     .sort((left, right) => right.score - left.score);
@@ -579,6 +856,13 @@ function buildAudit(
   sufficientCandidates: SufficientCandidateAudit[],
   overrideType: string | null,
   reasonIfNull: string | null,
+  options: {
+    strategy?: DecisionStrategy;
+    inferredIntent?: string | null;
+    inferenceReason?: string | null;
+    clarificationQuestion?: string | null;
+    ambiguityCandidates?: string[];
+  } = {},
 ): GroundedDecisionBuilderAudit {
   const overrideCreated = overrideType != null;
   return {
@@ -596,7 +880,20 @@ function buildAudit(
       grounded_override: overrideCreated,
       fallback: false,
     },
+    final_decision_strategy: options.strategy || (overrideCreated ? "direct_reply" : "escalation_last_resort"),
+    inferred_intent: options.inferredIntent || null,
+    inference_reason: options.inferenceReason || null,
+    clarification_question: options.clarificationQuestion || null,
+    ambiguity_candidates: options.ambiguityCandidates || [],
+    evidence_candidates_ranked: base.ranked_candidates,
   };
+}
+
+function strategyForExistingDecision(decision: any): DecisionStrategy {
+  const outcome = String(decision?.outcome || decision?.decision || "");
+  if (outcome === "ask_clarifying_question") return "clarify_before_escalate";
+  if (outcome === "escalate" || outcome === "propose_action") return "escalation_last_resort";
+  return "direct_reply";
 }
 
 function withGroundedAudit(build: GroundedDecisionBuild, audit: GroundedDecisionBuilderAudit): GroundedDecisionBuild {
@@ -618,6 +915,10 @@ function includesEvidenceId(evidenceCatalog: EvidenceCatalogEntry[], evidenceId:
 
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function intersects(left: readonly string[], right: readonly string[]) {
+  return left.some((item) => right.includes(item));
 }
 
 function arrayOf(value: unknown): any[] {

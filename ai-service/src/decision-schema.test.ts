@@ -50,6 +50,15 @@ test("AylaDecision accepts check_in_time answered intent", () => {
   assert.equal(parsed.detected_intents[0].status, "answered");
 });
 
+test("AylaDecision accepts answered_with_inference intent status", () => {
+  const parsed = DecisionSchema.parse({
+    ...checkInReply,
+    detected_intents: [{ type: "check_in_time", status: "answered_with_inference" }],
+  });
+
+  assert.equal(parsed.detected_intents[0].status, "answered_with_inference");
+});
+
 test("AylaDecision can normalize response_text into message_body", () => {
   const parsed = DecisionSchema.parse({
     ...checkInReply,

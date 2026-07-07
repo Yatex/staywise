@@ -16,6 +16,7 @@ export const DecisionSchema = z.preprocess(normalizeDecisionInput, z.object({
     type: z.string(),
     status: z.enum([
       "answered",
+      "answered_with_inference",
       "needs_clarification",
       "requires_host_approval",
       "escalated",

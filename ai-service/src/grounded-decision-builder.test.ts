@@ -46,6 +46,140 @@ test("structured fact evidence answers checkout", () => {
   assert.match(result.decision.message_body, /11:00/);
 });
 
+test("arrival wording replies with inference from check-in evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora puedo entrar al depto?",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:check_in_time",
+    evidence_id: "property.check_in_time",
+    field: "check_in_time",
+    label: "check_in_time",
+    value: "15:00",
+  }));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
+  assert.equal(result.decision.detected_intents[0].type, "check_in_time");
+  assert.equal(result.decision.detected_intents[0].status, "answered_with_inference");
+  assert.match(result.decision.message_body, /Si te referís al horario de ingreso\/check-in/);
+  assert.match(result.decision.message_body, /15:00/);
+  assert.equal(result.decision.audit.grounded_decision_builder.final_decision_strategy, "reply_with_inference");
+});
+
+test("generic go time with check-in and checkout asks clarification before escalating", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora puedo ir?",
+  }, catalogFromSources([
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_in_time",
+      evidence_id: "property.check_in_time",
+      field: "check_in_time",
+      label: "check_in_time",
+      value: "15:00",
+    },
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_out_time",
+      evidence_id: "property.check_out_time",
+      field: "check_out_time",
+      label: "check_out_time",
+      value: "11:00",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.equal(result.decision.detected_intents[0].type, "ambiguous_time");
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["property.check_in_time", "property.check_out_time"].sort());
+  assert.match(result.decision.message_body, /entrada\/check-in/);
+  assert.match(result.decision.message_body, /salida\/check-out/);
+  assert.equal(result.decision.audit.grounded_decision_builder.final_decision_strategy, "clarify_before_escalate");
+});
+
+test("clarification follow-up answers using the same evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "al check in",
+    conversation_history: [
+      { sender: "ai", body: "¿Te referís al horario de entrada/check-in o al horario de salida/check-out?" },
+    ],
+  }, catalogFromSources([
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_in_time",
+      evidence_id: "property.check_in_time",
+      field: "check_in_time",
+      label: "check_in_time",
+      value: "15:00",
+    },
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_out_time",
+      evidence_id: "property.check_out_time",
+      field: "check_out_time",
+      label: "check_out_time",
+      value: "11:00",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
+  assert.match(result.decision.message_body, /15:00/);
+});
+
+test("arrival phrasing replies with inference", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cuando puedo llegar?",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:check_in_time",
+    evidence_id: "property.check_in_time",
+    field: "check_in_time",
+    label: "check_in_time",
+    value: "15:00",
+  }));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.detected_intents[0].status, "answered_with_inference");
+  assert.match(result.decision.message_body, /15:00/);
+});
+
+test("departure phrasing replies with inference from checkout evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a qué hora puedo salir?",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:check_out_time",
+    evidence_id: "property.check_out_time",
+    field: "check_out_time",
+    label: "check_out_time",
+    value: "11:00",
+  }));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.check_out_time"]);
+  assert.equal(result.decision.detected_intents[0].type, "check_out_time");
+  assert.equal(result.decision.detected_intents[0].status, "answered_with_inference");
+  assert.match(result.decision.message_body, /salida\/check-out/);
+  assert.match(result.decision.message_body, /11:00/);
+});
+
+test("vague issue asks a clarification before escalating", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "no anda",
+  }, []);
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.equal(result.decision.detected_intents[0].type, "ambiguous_issue");
+  assert.match(result.decision.message_body, /WiFi, puerta, agua, luz/);
+  assert.equal(result.decision.audit.grounded_decision_builder.final_decision_strategy, "clarify_before_escalate");
+});
+
 test("FAQ evidence answers simple reusable question", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "Cómo llego q pileta?",
@@ -204,6 +338,10 @@ function unknownEscalation(language: string) {
 
 function catalogFromSource(data: Record<string, unknown>) {
   return buildEvidenceCatalog([{ toolName: "property_brain", result: source(data) }]);
+}
+
+function catalogFromSources(items: Array<Record<string, unknown>>) {
+  return buildEvidenceCatalog([{ toolName: "property_brain", result: items.map(source) }]);
 }
 
 function source(data: Record<string, unknown>) {
