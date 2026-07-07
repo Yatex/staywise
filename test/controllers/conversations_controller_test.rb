@@ -133,7 +133,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "a que hora es el check in?"
   end
 
-  test "ai trace panel is only visible to internal admins on conversation show" do
+  test "ai trace panel is not rendered on conversation show and remains available in admin" do
     message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "a que hora es el check in?")
     AIDecisionLog.create!(
       account: @account,
@@ -161,6 +161,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_not_includes @response.body, "AI Trace"
     assert_not_includes @response.body, "CHECKIN_TRACE disponible"
+    assert_not_includes @response.body, "Ver trazas filtradas"
 
     delete logout_path
     admin = @account.users.create!(
@@ -175,9 +176,13 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
 
     get conversation_path(@conversation)
     assert_response :success
+    assert_not_includes @response.body, "CHECKIN_TRACE disponible"
+    assert_not_includes @response.body, "Ver trazas filtradas"
+
+    get admin_ai_traces_path(conversation_id: @conversation.id)
+    assert_response :success
     assert_includes @response.body, "AI Trace"
-    assert_includes @response.body, "CHECKIN_TRACE disponible"
-    assert_includes @response.body, "ask_clarifying_question"
+    assert_includes @response.body, "a que hora es el check in?"
   end
 
   test "null whatsapp provider does not store owner reply as sent" do
