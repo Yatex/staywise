@@ -178,6 +178,57 @@ test("vague issue asks a clarification before escalating", () => {
   assert.equal(result.decision.detected_intents[0].type, "ambiguous_issue");
   assert.match(result.decision.message_body, /WiFi, puerta, agua, luz/);
   assert.equal(result.decision.audit.grounded_decision_builder.final_decision_strategy, "clarify_before_escalate");
+  assert.equal(result.decision.audit.grounded_decision_builder.decision_scores.safety_score, 50);
+});
+
+test("medium confidence asks clarification instead of escalating", () => {
+  const result = buildGroundedDecision(unknownEscalation("en"), {
+    guest_message: "What are the building hours?",
+  }, buildEvidenceCatalog([{
+    toolName: "property_brain",
+    result: [
+      source({
+        source_type: "knowledge_block",
+        source_id: "knowledge_block:1",
+        evidence_id: "guide.1",
+        label: "Pool hours",
+        value: "The pool is open from 9 to 18.",
+        category: "building",
+      }),
+      source({
+        source_type: "knowledge_block",
+        source_id: "knowledge_block:2",
+        evidence_id: "guide.2",
+        label: "Gym hours",
+        value: "The gym is open from 8 to 20.",
+        category: "building",
+      }),
+    ],
+  }]));
+
+  const scores = result.decision.audit.grounded_decision_builder.decision_scores;
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.ok(scores.answer_confidence >= 40);
+  assert.ok(scores.evidence_relevance_score >= 40);
+});
+
+test("two clarification attempts without resolution leave escalation as last resort", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "no anda",
+    conversation_history: [
+      { sender: "ai", body: "¿Qué es lo que no está funcionando: WiFi, puerta, agua, luz u otra cosa?" },
+      { sender: "ai", body: "¿Podés aclararme qué sigue sin funcionar exactamente?" },
+    ],
+  }, []);
+
+  const trace = result.decision.audit.grounded_decision_builder;
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.override, null);
+  assert.equal(trace.clarification_attempts.count, 2);
+  assert.equal(trace.grounded_decision_result.reason_if_null, "clarification_attempts_exhausted");
 });
 
 test("FAQ evidence answers simple reusable question", () => {
@@ -315,6 +366,9 @@ test("sufficient evidence never remains unknown and evidence ids are present", (
   assert.equal(result.decision.outcome, "reply");
   assert.notEqual(result.decision.detected_intents[0].type, "unknown");
   assert.deepEqual(result.decision.evidence_ids, ["property.address"]);
+  assert.ok(result.decision.audit.grounded_decision_builder.decision_scores.answer_confidence >= 75);
+  assert.ok(result.decision.audit.grounded_decision_builder.decision_scores.evidence_relevance_score >= 75);
+  assert.ok(result.decision.audit.grounded_decision_builder.decision_scores.safety_score >= 75);
 });
 
 function unknownEscalation(language: string) {

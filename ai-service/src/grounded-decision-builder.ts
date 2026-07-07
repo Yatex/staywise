@@ -78,9 +78,21 @@ type GroundedDecisionBuilderAudit = {
   final_decision_strategy: DecisionStrategy;
   inferred_intent: string | null;
   inference_reason: string | null;
+  decision_scores: DecisionScores;
+  clarification_attempts: {
+    intent: string;
+    count: number;
+    max: number;
+  };
   clarification_question: string | null;
   ambiguity_candidates: string[];
   evidence_candidates_ranked: CandidateAudit[];
+};
+
+type DecisionScores = {
+  answer_confidence: number;
+  evidence_relevance_score: number;
+  safety_score: number;
 };
 
 const STOPWORDS = new Set([
@@ -151,6 +163,10 @@ const APPROVAL_PATTERNS = [
   /consult(ar|arlo|arlo)?\s+con\s+el\s+anfitri[oó]n/i,
 ];
 
+const HIGH_SCORE_THRESHOLD = 75;
+const MEDIUM_SCORE_THRESHOLD = 40;
+const DEFAULT_MAX_CLARIFICATION_ATTEMPTS = 2;
+
 const INTENT_CATEGORIES = [
   {
     category: "arrival",
@@ -199,12 +215,19 @@ export function buildGroundedDecision(
   const guestMessage = payload?.guest_message || "";
   const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
   const candidateAudit = rankedCandidateAudit(guestMessage, evidenceCatalog);
+  const clarificationIntent = inferredClarificationIntent(guestMessage);
+  const attempts = clarificationAttempts(payload, clarificationIntent);
   const baseAudit = {
     called: true,
     should_repair_decision: repairDiagnostic,
     evidence_catalog_size: evidenceCatalog.length,
     includes_property_check_in_time: includesEvidenceId(evidenceCatalog, "property.check_in_time"),
     ranked_candidates: candidateAudit,
+    clarification_attempts: {
+      intent: clarificationIntent,
+      count: attempts,
+      max: maxClarificationAttempts(),
+    },
   };
 
   if (!repairDiagnostic.value) {
@@ -212,13 +235,16 @@ export function buildGroundedDecision(
       { decision, override: null },
       buildAudit(baseAudit, [], null, "decision_does_not_need_repair", {
         strategy: strategyForExistingDecision(decision),
+        scores: scoresForExistingDecision(decision, candidateAudit),
       }),
     );
   }
 
   const candidates = rankedCandidates(guestMessage, evidenceCatalog);
   if (candidates.length === 0) {
-    const clarification = clarificationWithoutEvidence(guestMessage, decision, payload, previousOutcome);
+    const clarification = attempts < maxClarificationAttempts()
+      ? clarificationWithoutEvidence(guestMessage, decision, payload, previousOutcome)
+      : null;
     if (clarification) {
       return withGroundedAudit(
         clarification,
@@ -227,6 +253,18 @@ export function buildGroundedDecision(
           inferredIntent: clarification.decision.detected_intents?.[0]?.type || null,
           clarificationQuestion: clarification.decision.message_body || null,
           ambiguityCandidates: [],
+          scores: scoresForClarification([], { safetyScore: 50 }),
+        }),
+      );
+    }
+
+    if (attempts >= maxClarificationAttempts() && clarificationCategory(guestMessage)) {
+      return withGroundedAudit(
+        { decision, override: null },
+        buildAudit(baseAudit, [], null, "clarification_attempts_exhausted", {
+          strategy: "escalation_last_resort",
+          inferredIntent: clarificationIntent,
+          scores: scoresForEscalation(),
         }),
       );
     }
@@ -235,6 +273,7 @@ export function buildGroundedDecision(
       { decision, override: null },
       buildAudit(baseAudit, sufficientCandidateAudit(candidates, []), null, "no_ranked_candidates", {
         strategy: "escalation_last_resort",
+        scores: scoresForEscalation(),
       }),
     );
   }
@@ -249,6 +288,7 @@ export function buildGroundedDecision(
           strategy: "escalation_last_resort",
           inferredIntent: sufficient[0]?.inferred_intent || null,
           inferenceReason: sufficient[0]?.inference_reason || null,
+          scores: scoresForCandidates(sufficient, { safetyScore: 35 }),
         }),
       );
     }
@@ -260,18 +300,32 @@ export function buildGroundedDecision(
         strategy,
         inferredIntent: sufficient[0]?.inferred_intent || null,
         inferenceReason: sufficient[0]?.inference_reason || null,
+        scores: scoresForCandidates(sufficient, { safetyScore: 95 }),
       }),
     );
   }
 
-  const clarification = clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
+  if (attempts < maxClarificationAttempts()) {
+    const clarification = clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
+    return withGroundedAudit(
+      clarification,
+      buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null, {
+        strategy: "clarify_before_escalate",
+        inferredIntent: "ambiguous_request",
+        clarificationQuestion: clarification.decision.message_body || null,
+        ambiguityCandidates: unique(candidates.slice(0, 3).map((candidate) => candidate.inferred_intent)),
+        scores: scoresForClarification(candidates),
+      }),
+    );
+  }
+
   return withGroundedAudit(
-    clarification,
-    buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null, {
-      strategy: "clarify_before_escalate",
+    { decision, override: null },
+    buildAudit(baseAudit, sufficiencyAudit, null, "clarification_attempts_exhausted", {
+      strategy: "escalation_last_resort",
       inferredIntent: "ambiguous_request",
-      clarificationQuestion: clarification.decision.message_body || null,
       ambiguityCandidates: unique(candidates.slice(0, 3).map((candidate) => candidate.inferred_intent)),
+      scores: scoresForEscalation(candidates),
     }),
   );
 }
@@ -320,7 +374,7 @@ function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry
 
 function sufficientCandidates(candidates: Candidate[]) {
   const topScore = candidates[0]?.score || 0;
-  if (topScore < 3) return [];
+  if (relevanceScore(candidates) < HIGH_SCORE_THRESHOLD) return [];
 
   const topCandidates = candidates.filter((candidate) => candidate.score === topScore);
   const distinctLabels = unique(topCandidates.map((candidate) => humanLabel(candidate.evidence)));
@@ -370,6 +424,7 @@ function scoreEvidenceWithDebug(queryTokens: string[], evidence: EvidenceCatalog
   }, 0);
   const semanticMatches = queryCategories.filter((category) => evidenceCategories.includes(category));
   if (semanticMatches.length > 0) score += 4 * semanticMatches.length;
+  if (score > 0 && ["faq", "knowledge_block"].includes(String(evidence.source_type))) score += 2;
   const strategy: "direct" | "inference" = matchedTerms.length > 0 ? "direct" : "inference";
   const semanticIntent = semanticMatches.length > 0 ? intentForCategory(semanticMatches[0]) : inferredIntent(evidence);
 
@@ -852,7 +907,7 @@ function sufficientCandidateAudit(candidates: Candidate[], sufficient: Candidate
 }
 
 function buildAudit(
-  base: Pick<GroundedDecisionBuilderAudit, "called" | "should_repair_decision" | "evidence_catalog_size" | "includes_property_check_in_time" | "ranked_candidates">,
+  base: Pick<GroundedDecisionBuilderAudit, "called" | "should_repair_decision" | "evidence_catalog_size" | "includes_property_check_in_time" | "ranked_candidates" | "clarification_attempts">,
   sufficientCandidates: SufficientCandidateAudit[],
   overrideType: string | null,
   reasonIfNull: string | null,
@@ -860,6 +915,7 @@ function buildAudit(
     strategy?: DecisionStrategy;
     inferredIntent?: string | null;
     inferenceReason?: string | null;
+    scores?: DecisionScores;
     clarificationQuestion?: string | null;
     ambiguityCandidates?: string[];
   } = {},
@@ -883,6 +939,8 @@ function buildAudit(
     final_decision_strategy: options.strategy || (overrideCreated ? "direct_reply" : "escalation_last_resort"),
     inferred_intent: options.inferredIntent || null,
     inference_reason: options.inferenceReason || null,
+    decision_scores: options.scores || scoresForEscalation(),
+    clarification_attempts: base.clarification_attempts,
     clarification_question: options.clarificationQuestion || null,
     ambiguity_candidates: options.ambiguityCandidates || [],
     evidence_candidates_ranked: base.ranked_candidates,
@@ -894,6 +952,105 @@ function strategyForExistingDecision(decision: any): DecisionStrategy {
   if (outcome === "ask_clarifying_question") return "clarify_before_escalate";
   if (outcome === "escalate" || outcome === "propose_action") return "escalation_last_resort";
   return "direct_reply";
+}
+
+function scoresForCandidates(candidates: Candidate[], options: { safetyScore?: number } = {}): DecisionScores {
+  const evidenceRelevanceScore = relevanceScore(candidates);
+  const safetyScore = options.safetyScore ?? 95;
+  return {
+    answer_confidence: clampScore(Math.round((evidenceRelevanceScore * 0.75) + (safetyScore * 0.25))),
+    evidence_relevance_score: evidenceRelevanceScore,
+    safety_score: clampScore(safetyScore),
+  };
+}
+
+function scoresForClarification(candidates: Candidate[], options: { safetyScore?: number } = {}): DecisionScores {
+  const evidenceRelevanceScore = relevanceScore(candidates);
+  return {
+    answer_confidence: clampScore(Math.max(MEDIUM_SCORE_THRESHOLD, Math.min(70, evidenceRelevanceScore))),
+    evidence_relevance_score: evidenceRelevanceScore,
+    safety_score: clampScore(options.safetyScore ?? 65),
+  };
+}
+
+function scoresForEscalation(candidates: Candidate[] = []): DecisionScores {
+  return {
+    answer_confidence: clampScore(candidates.length > 0 ? Math.min(35, relevanceScore(candidates)) : 15),
+    evidence_relevance_score: relevanceScore(candidates),
+    safety_score: 35,
+  };
+}
+
+function scoresForExistingDecision(decision: any, candidates: CandidateAudit[]): DecisionScores {
+  const relevance = clampScore(Math.round(Math.min(100, Number(candidates[0]?.score || 0) * 20)));
+  const outcome = String(decision?.outcome || decision?.decision || "");
+  if (outcome === "reply") {
+    return {
+      answer_confidence: clampScore(Math.round(Number(decision?.confidence || 0.8) * 100)),
+      evidence_relevance_score: relevance,
+      safety_score: 90,
+    };
+  }
+  if (outcome === "ask_clarifying_question") {
+    return {
+      answer_confidence: Math.max(MEDIUM_SCORE_THRESHOLD, Math.min(70, relevance || MEDIUM_SCORE_THRESHOLD)),
+      evidence_relevance_score: relevance,
+      safety_score: 65,
+    };
+  }
+  return scoresForEscalation();
+}
+
+function relevanceScore(candidates: Candidate[]) {
+  const topScore = candidates[0]?.score || 0;
+  return clampScore(Math.round(Math.min(100, topScore * 20)));
+}
+
+function clampScore(score: number) {
+  return Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
+}
+
+function maxClarificationAttempts() {
+  const configured = Number(process.env.AYLA_MAX_CLARIFICATION_ATTEMPTS || process.env.MAX_CLARIFICATION_ATTEMPTS || DEFAULT_MAX_CLARIFICATION_ATTEMPTS);
+  return Number.isFinite(configured) && configured >= 0 ? configured : DEFAULT_MAX_CLARIFICATION_ATTEMPTS;
+}
+
+function clarificationAttempts(payload: any, intent: string) {
+  const configured = payload?.clarification_attempts;
+  if (typeof configured === "number") return configured;
+  if (configured && typeof configured === "object") {
+    const byIntent = configured[intent] ?? configured[String(intent)] ?? configured.total;
+    if (Number.isFinite(Number(byIntent))) return Number(byIntent);
+  }
+
+  return inferredClarificationAttempts(payload?.conversation_history, intent);
+}
+
+function inferredClarificationAttempts(history: any, intent: string) {
+  if (!Array.isArray(history)) return 0;
+
+  return history.filter((message: any) => {
+    const sender = String(message?.sender || "");
+    if (!["ai", "system"].includes(sender)) return false;
+
+    const body = String(message?.body || "");
+    if (!body.includes("?") && !body.includes("¿")) return false;
+
+    const categories = queryIntentCategories(body);
+    const genericClarification = /\b(aclar|precisar|specify|clarify|exactamente|exactly)\b/i.test(body);
+    const issueClarification = /\b(wifi|puerta|agua|luz|door|water|electricity)\b/i.test(body);
+    if (intent === "ambiguous_issue") return categories.includes("issue") || genericClarification || issueClarification;
+    if (intent === "ambiguous_time") return categories.includes("arrival") || categories.includes("departure") || genericClarification;
+
+    return genericClarification || categories.length > 0;
+  }).length;
+}
+
+function inferredClarificationIntent(message: string) {
+  const categories = queryIntentCategories(message);
+  if (categories.includes("issue")) return "ambiguous_issue";
+  if (categories.includes("arrival") && categories.includes("departure")) return "ambiguous_time";
+  return categories[0] ? `${categories[0]}_request` : "ambiguous_request";
 }
 
 function withGroundedAudit(build: GroundedDecisionBuild, audit: GroundedDecisionBuilderAudit): GroundedDecisionBuild {

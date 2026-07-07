@@ -263,6 +263,107 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "validator respects ai clarification instead of escalating semantic uncertainty" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo ir?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_clarification(
+      language: "es",
+      message_body: "¿Te referís al horario de entrada/check-in o al horario de salida/check-out?",
+      detected_intents: [{ type: "ambiguous_time", status: "needs_clarification" }],
+      audit: default_tool_audit
+    ))
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "ask_clarifying_question", decision.outcome
+    assert_not decision.escalation_required
+    assert_equal "accepted", audit.validator_result
+  end
+
+  test "validator rejects nonexistent evidence id" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo entrar al depto?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Podés entrar a partir de las 3:00 PM.",
+      evidence_ids: ["property.not_real"],
+      detected_intents: [{ type: "check_in_time", status: "answered_with_inference" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "property.not_real",
+        field: "not_real",
+        inferred_intent: "check_in_time",
+        semantic_match: "arrival"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "escalate", decision.outcome
+    assert_includes audit.validation_results["reasons"], "invalid_evidence:property.not_real"
+  end
+
+  test "validator rejects direct contradiction of exact evidence value" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo entrar al depto?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Podés entrar a partir de las 4:00 PM.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in_time", status: "answered_with_inference" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        inferred_intent: "check_in_time",
+        semantic_match: "arrival"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "escalate", decision.outcome
+    assert_includes audit.validation_results["reasons"], "response_contradicts_evidence"
+  end
+
+  test "validator rejects internal metadata in guest visible response" do
+    message = @conversation.messages.create!(sender: "guest", body: "a que hora es el check in?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "El check-in es a las 3:00 PM. (Source: property.check_in_time)",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in_time", status: "answered" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        inferred_intent: "check_in_time",
+        semantic_match: "arrival"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "escalate", decision.outcome
+    assert_includes audit.validation_results["reasons"], "internal_metadata_visible"
+  end
+
+  test "validator rejects automatic early check in approval" do
+    message = @conversation.messages.create!(sender: "guest", body: "puedo entrar antes?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Sí, podés entrar antes.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "early_checkin", status: "answered" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        inferred_intent: "check_in_time",
+        semantic_match: "arrival"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "escalate", decision.outcome
+    assert_includes audit.validation_results["reasons"], "sensitive_action_auto_approval"
+  end
+
   test "authorized guest can receive wifi details from ai with evidence" do
     message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
 

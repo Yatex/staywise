@@ -29,6 +29,8 @@ module AI
       reasons << "missing_language" if @decision.language.blank?
       reasons << "low_confidence" if @decision.outcome == "reply" && @decision.confidence < SafetyConfig.minimum_reply_confidence
       reasons.concat(evidence_reasons)
+      reasons << "response_contradicts_evidence" if response_contradicts_evidence?
+      reasons << "internal_metadata_visible" if internal_metadata_visible?
       reasons << "sensitive_action_auto_approval" if sensitive_action_auto_approval?
       reasons << "sensitive_access_without_authorization" if sensitive_access_without_authorization?
       reasons << "sensitive_info_without_sensitive_tool" if sensitive_info_without_sensitive_tool?
@@ -236,6 +238,75 @@ module AI
         @decision.evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } }
     end
 
+    def response_contradicts_evidence?
+      return false unless @decision.outcome == "reply"
+
+      evidence_refs_for_decision.any? do |item|
+        evidence_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
+        source = @registry.source_for_evidence_id(evidence_id)
+        next false if source.blank?
+
+        contradicts_source_value?(source)
+      end
+    end
+
+    def contradicts_source_value?(source)
+      field = source["field"].to_s
+      value = source["value"].to_s
+      response = @decision.response_text.to_s
+      return false if value.blank? || response.blank?
+
+      case field
+      when "check_in_time", "check_out_time"
+        response_times = normalized_times(response)
+        expected_times = normalized_times(value)
+        response_times.present? && expected_times.present? && (response_times & expected_times).blank?
+      else
+        false
+      end
+    end
+
+    def normalized_times(text)
+      text.to_s.scan(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?\b/i).map do |raw|
+        normalized = raw.downcase.delete(".").squish
+        if normalized.match?(/\A(\d{1,2})(am|pm)\z/)
+          normalized = "#{Regexp.last_match(1)} #{Regexp.last_match(2)}"
+        end
+        time_to_minutes(normalized)
+      end.compact.uniq
+    end
+
+    def time_to_minutes(value)
+      match = value.match(/\A(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\z/i)
+      return unless match
+
+      hour = match[1].to_i
+      minute = match[2].to_i
+      meridian = match[3]
+      return if hour > 24 || minute > 59
+
+      if meridian == "pm" && hour < 12
+        hour += 12
+      elsif meridian == "am" && hour == 12
+        hour = 0
+      end
+
+      (hour * 60) + minute
+    end
+
+    def internal_metadata_visible?
+      text = @decision.response_text.to_s
+      return false if text.blank?
+
+      text.match?(
+        /
+          \(?\s*(source|source_id|evidence|evidence_id|used_source_ids?|matched_sources?|tool|tools|audit|trace)\s*[:：]|
+          \b(property|reservation|guest|account|policy|faq|guide|recommendation|knowledge_block)\.[a-z0-9_.-]+\b|
+          \b(property_fact|reservation_fact|knowledge_block|guest_context|property_brain|stay_facts):[a-z0-9_.:-]+\b
+        /ix
+      )
+    end
+
     def sensitive_action_auto_approval?
       action = @decision.proposed_action.to_h
       sensitive_type = action["type"].to_s.in?(%w[
@@ -244,11 +315,17 @@ module AI
         refund_request
         booking_change_request
         access_request
-      ])
+      ]) || sensitive_request_message?
       return false unless sensitive_type
       return false if action["requires_approval"] && @decision.escalation_required
 
       @decision.response_text.to_s.match?(Regexp.union(FORBIDDEN_APPROVAL_PATTERNS))
+    end
+
+    def sensitive_request_message?
+      @guest_message&.body.to_s.match?(
+        /(entrar antes|early\s*check.?in|late\s*check.?out|salir mas tarde|salir más tarde|reembolso|refund|descuento|discount|extender|extension|extensión|cambiar reserva|booking change)/i
+      )
     end
 
     def host_notification_claim_without_escalation?
