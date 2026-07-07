@@ -12,56 +12,7 @@ import {
   shouldRetryGroundedDecision,
 } from "./evidence-catalog.js";
 import { buildGroundedDecision } from "./grounded-decision-builder.js";
-
-const DecisionSchema = z.object({
-  outcome: z.enum([
-    "reply",
-    "ask_clarifying_question",
-    "escalate",
-    "propose_action",
-    "ignore",
-    "no_reply",
-  ]),
-  language: z.string(),
-  message_body: z.string().nullable(),
-  intent_summary: z.string(),
-  detected_intents: z.array(z.object({
-    type: z.string(),
-    status: z.enum([
-      "answered",
-      "needs_clarification",
-      "requires_host_approval",
-      "escalated",
-    ]),
-  })).default([]),
-  used_source_ids: z.array(z.string()).default([]),
-  evidence_ids: z.array(z.string()).default([]),
-  required_capabilities: z.array(z.string()).default([]),
-  proposed_action: z
-    .object({
-      type: z.enum([
-        "request_early_checkin",
-        "request_late_checkout",
-        "request_reservation_extension",
-        "report_issue",
-        "human_handoff",
-        "none",
-      ]),
-      payload: z.record(z.unknown()).default({}),
-    })
-    .nullable(),
-  escalation: z.object({
-    required: z.boolean(),
-    reason_code: z.string().nullable(),
-    summary_for_host: z.string().nullable(),
-  }),
-  escalation_required: z.boolean(),
-  escalation_reason: z.string().nullable(),
-  sensitive_info_used: z.boolean().default(false),
-  missing_information: z.array(z.string()).default([]),
-  safety_flags: z.array(z.string()).default([]),
-  confidence: z.number().min(0).max(1),
-}).strict();
+import { DecisionSchema, recoverDecisionFromRawText } from "./decision-schema.js";
 
 const PropertyImportSchema = z.object({
   property: z.object({
@@ -381,9 +332,55 @@ async function tracedGenerateObject(options: any, trace: any[]) {
     return result;
   } catch (error) {
     Object.assign(entry, generateObjectErrorTrace(error, Date.now() - startedAt));
+    const recovery = recoverStructuredOutput(options, entry);
+    entry.structured_output_recovery = recovery.trace;
+    if (recovery.recovered) {
+      entry.ok = true;
+      entry.structured_output_recovered = true;
+      console.warn("GENERATE_OBJECT_TRACE", JSON.stringify(entry));
+      return {
+        object: recovery.object,
+        usage: entry.usage,
+      };
+    }
+
     console.error("GENERATE_OBJECT_TRACE", JSON.stringify(entry));
     throw error;
   }
+}
+
+function recoverStructuredOutput(options: any, entry: any) {
+  if (options?.schemaName !== "AylaDecision" && options?.schemaName !== "AylaGroundedDecisionReview") {
+    return {
+      recovered: false,
+      trace: { attempted: false, reason: "schema_not_recoverable" },
+      object: null,
+    };
+  }
+
+  const rawText = entry.raw_text || entry.response_text;
+  const result = recoverDecisionFromRawText(rawText);
+  if (!result.ok) {
+    return {
+      recovered: false,
+      trace: {
+        attempted: true,
+        reason: result.error,
+        issues: sanitizeGenerateObjectValue("issues" in result ? result.issues : null),
+      },
+      object: null,
+    };
+  }
+
+  return {
+    recovered: true,
+    trace: {
+      attempted: true,
+      reason: "raw_text_json_valid_after_normalization",
+      schema_name: options?.schemaName,
+    },
+    object: result.value,
+  };
 }
 
 function generateObjectErrorTrace(error: any, latencyMs: number) {
