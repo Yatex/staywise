@@ -624,6 +624,11 @@ function clarificationDecision(
 function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) {
   const value = String(evidence.value || "").trim();
   const label = humanLabel(evidence);
+  const intent = inferredIntent(evidence);
+
+  if (["check_in_time", "check_out_time", "parking", "address"].includes(intent)) {
+    return directResponseForIntent(value, language, intent);
+  }
 
   if (evidence.source_type === "recommendation") {
     const details = [
@@ -647,28 +652,32 @@ function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) 
 
 function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string) {
   const value = String(evidence.value || "").trim();
+  return directResponseForIntent(value, language, intent) || responseFromEvidence(evidence, language);
+}
+
+function directResponseForIntent(value: string, language: string, intent: string) {
   if (intent === "check_in_time") {
-    if (language === "es") return `Si te referís al horario de ingreso/check-in, podés entrar a partir de las ${value}.`;
-    if (language === "fr") return `Si vous parlez de l'arrivée/check-in, vous pouvez entrer à partir de ${value}.`;
-    return `If you mean arrival/check-in, you can enter from ${value}.`;
+    if (language === "es") return `El check-in es a las ${value}.`;
+    if (language === "fr") return `Le check-in est à ${value}.`;
+    return `Check-in is at ${value}.`;
   }
   if (intent === "check_out_time") {
-    if (language === "es") return `Si te referís al horario de salida/check-out, el checkout es a las ${value}.`;
-    if (language === "fr") return `Si vous parlez du départ/check-out, le check-out est à ${value}.`;
-    return `If you mean departure/check-out, checkout is at ${value}.`;
+    if (language === "es") return `El checkout es a las ${value}.`;
+    if (language === "fr") return `Le check-out est à ${value}.`;
+    return `Checkout is at ${value}.`;
   }
   if (intent === "parking") {
-    if (language === "es") return `Si te referís a dónde dejar el auto, la información disponible es: ${value}.`;
-    if (language === "fr") return `Si vous parlez du stationnement, voici l'information disponible : ${value}.`;
-    return `If you mean parking, the available information is: ${value}.`;
+    if (language === "es") return `La información de estacionamiento es: ${value}.`;
+    if (language === "fr") return `Les informations de stationnement sont : ${value}.`;
+    return `Parking information: ${value}.`;
   }
   if (intent === "address") {
-    if (language === "es") return `Si te referís a la ubicación o dirección, es: ${value}.`;
-    if (language === "fr") return `Si vous parlez de l'adresse ou de l'emplacement, c'est : ${value}.`;
-    return `If you mean the address or location, it is: ${value}.`;
+    if (language === "es") return `La dirección es: ${value}.`;
+    if (language === "fr") return `L'adresse est : ${value}.`;
+    return `The address is: ${value}.`;
   }
 
-  return responseFromEvidence(evidence, language);
+  return null;
 }
 
 function approvalMessage(evidence: EvidenceCatalogEntry, language: string) {

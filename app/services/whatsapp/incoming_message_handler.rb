@@ -110,20 +110,20 @@ module Whatsapp
       return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
 
       body = routing_greeting_for(conversation.property, parsed.body)
-      delivery = @provider.send_message(to: guest.phone_number, body: body)
-      delivered = delivery_success?(delivery)
-
-      conversation.messages.create!(
+      message = conversation.messages.create!(
         sender: "system",
         channel: "whatsapp",
         body: body,
         metadata: {
           "message_type" => ROUTING_GREETING_MESSAGE_TYPE,
           "handled_by" => "rails",
-          "owner_disclosure" => true
-        }.merge(delivery_metadata(delivery, delivered: delivered))
+          "owner_disclosure" => true,
+          "delivery_status" => "pending",
+          "delivery_status_updated_at" => Time.current.iso8601
+        }
       )
-      delivered
+
+      deliver_persisted_message(message, to: guest.phone_number, body: body)
     end
 
     def routing_greeting_for(property, text)
@@ -144,16 +144,17 @@ module Whatsapp
       return false if decision.response_text.blank?
 
       body = ai_response_body(conversation, decision, alert: alert)
-      delivery = @provider.send_message(to: guest.phone_number, body: body)
-      delivered = delivery_success?(delivery)
-
-      conversation.messages.create!(
+      message = conversation.messages.create!(
         sender: "ai",
         channel: "whatsapp",
         body: body,
-        metadata: decision.to_h.merge(delivery_metadata(delivery, delivered: delivered))
+        metadata: decision.to_h.merge(
+          "delivery_status" => "pending",
+          "delivery_status_updated_at" => Time.current.iso8601
+        )
       )
-      delivered
+
+      deliver_persisted_message(message, to: guest.phone_number, body: body)
     end
 
     def ai_response_body(conversation, decision, alert:)
@@ -222,7 +223,7 @@ module Whatsapp
       delivery_status = if outbound_message
         outbound_message.metadata["delivery_status"].presence || outbound_message.metadata["provider_status"].presence || (replied ? "sent" : "failed")
       elsif decision.should_reply
-        replied ? "sent" : "not_sent"
+        "outbound_message_not_persisted"
       else
         "not_applicable"
       end
@@ -263,6 +264,26 @@ module Whatsapp
 
     def delivery_success?(delivery)
       delivery.respond_to?(:success?) ? delivery.success? : !!delivery
+    end
+
+    def deliver_persisted_message(message, to:, body:)
+      delivery = @provider.send_message(to: to, body: body)
+      delivered = delivery_success?(delivery)
+
+      message.update!(
+        metadata: message.metadata.merge(delivery_metadata(delivery, delivered: delivered))
+      )
+      delivered
+    rescue StandardError => error
+      message.update!(
+        metadata: message.metadata.merge(
+          "delivery_status" => "failed",
+          "delivery_error" => error.message,
+          "delivery_status_updated_at" => Time.current.iso8601
+        )
+      )
+      Rails.logger.warn("[whatsapp-delivery] failed_after_persist message_id=#{message.id} error=#{error.class}: #{error.message}")
+      false
     end
 
     def delivery_metadata(delivery, delivered:)

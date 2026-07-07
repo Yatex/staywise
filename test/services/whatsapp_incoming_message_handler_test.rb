@@ -25,6 +25,23 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     end
   end
 
+  class PersistedBeforeSendProvider < Whatsapp::Providers::BaseProvider
+    attr_reader :sent_messages
+
+    def initialize(expected_sender:)
+      @expected_sender = expected_sender
+      @sent_messages = []
+    end
+
+    def send_message(to:, body:)
+      persisted = Message.where(sender: @expected_sender, channel: "whatsapp", body: body).exists?
+      raise "outbound message was sent before being persisted" unless persisted
+
+      @sent_messages << { to: to, body: body }
+      DeliveryResult.new(success?: true, provider_message_id: "SM_persisted_first", provider_status: "queued")
+    end
+  end
+
   setup do
     @account = Account.create!(name: "Webhook Stays")
     @account.update!(email_alerts_enabled: false)
@@ -153,6 +170,25 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes provider.sent_messages.last.fetch(:body), "el dueño de la propiedad también puede leer este chat"
   end
 
+  test "routing greeting is persisted before whatsapp delivery is attempted" do
+    provider = PersistedBeforeSendProvider.new(expected_sender: "system")
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15550000017",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+      },
+      provider: provider
+    ).call
+
+    message = result.fetch(:conversation).messages.where(sender: "system").last
+
+    assert result.fetch(:replied)
+    assert_equal "queued", message.metadata["delivery_status"]
+    assert_equal "SM_persisted_first", message.metadata["provider_message_id"]
+  end
+
   test "guest follow up after qr intro stays in same conversation and answers check in" do
     @property.update!(check_in_time: "15:00")
     from = "whatsapp:+15550000018"
@@ -202,6 +238,44 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes conversation.messages.where(sender: "guest").last.body, "check in"
     assert_includes conversation.messages.where(sender: "ai").last.body, "El check-in es a las 15:00"
     assert_nil follow_up_result.fetch(:alert)
+  end
+
+  test "ai reply is persisted before whatsapp delivery is attempted" do
+    provider = PersistedBeforeSendProvider.new(expected_sender: "ai")
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "El check-in es a las 15:00.",
+        intent_summary: "check in",
+        detected_intents: [{ type: "check_in", status: "answered" }],
+        evidence_ids: ["property.check_in_time"],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false, reason_code: nil, summary_for_host: nil },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000019",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} a que hora es el check in"
+        },
+        provider: provider
+      ).call
+    end
+
+    message = result.fetch(:conversation).messages.where(sender: "ai").last
+
+    assert result.fetch(:replied)
+    assert_includes message.body, "El check-in es a las 15:00."
+    assert_equal "queued", message.metadata["delivery_status"]
+    assert_equal "SM_persisted_first", message.metadata["provider_message_id"]
   end
 
   test "ambiguous stay question goes through ai and persists clarification" do

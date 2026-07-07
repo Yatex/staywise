@@ -10,6 +10,8 @@ const METADATA_LABELS = [
   "used_source_ids",
   "matched_source",
   "matched_sources",
+  "fuente",
+  "fuentes",
   "tool",
   "tools",
   "audit",
@@ -101,6 +103,7 @@ export function sanitizeGuestVisibleText(value: unknown) {
     new RegExp(`\\b(?:${toolNamePattern})\\b`, "gi"),
     "",
   );
+  text = removeClarificationEcho(text);
 
   return cleanGuestText(text);
 }
@@ -127,8 +130,34 @@ function cleanGuestText(text: string) {
     .replace(/([([{])\s+/g, "$1")
     .replace(/\s+([)\]}])/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.])/g, "$1")
     .replace(/\s*\n\s*/g, "\n")
     .trim();
 
-  return cleaned.length > 0 ? cleaned : null;
+  return cleaned.length > 0 ? capitalizeSentenceStart(cleaned) : null;
+}
+
+function removeClarificationEcho(text: string) {
+  let cleaned = text;
+
+  cleaned = cleaned.replace(
+    /^\s*(perfecto|correcto|ok|okay|entendido|listo|genial|excelente)(?:\s*\([^)]*\))?\s*[:.,-]\s*/i,
+    "",
+  );
+
+  cleaned = cleaned.replace(
+    /^\s*(te\s+refer[ií]s|te\s+refieres|habl[aá]s|quieres\s+decir|quer[eé]s\s+decir)\s+[^.?!:]+[.?!:]\s*/i,
+    "",
+  );
+
+  cleaned = cleaned.replace(
+    /^\s*(si\s+te\s+refer[ií]s|si\s+te\s+refieres|si\s+vous\s+parlez|if\s+you\s+mean)\s+[^.?!:]+[.?!:]\s*/i,
+    "",
+  );
+
+  return cleaned;
+}
+
+function capitalizeSentenceStart(text: string) {
+  return text.replace(/^([a-záéíóúñü])/, (match) => match.toUpperCase());
 }

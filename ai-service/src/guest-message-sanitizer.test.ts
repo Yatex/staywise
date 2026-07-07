@@ -7,6 +7,10 @@ test("sanitizeGuestVisibleText removes parenthesized source metadata", () => {
     sanitizeGuestVisibleText("Le check-in est à 15:00. (Source : property.check_in_time)"),
     "Le check-in est à 15:00.",
   );
+  assert.equal(
+    sanitizeGuestVisibleText("El check-in es a las 15:00. (Fuente:)"),
+    "El check-in es a las 15:00.",
+  );
 });
 
 test("sanitizeGuestVisibleText removes internal evidence and source references", () => {
@@ -35,6 +39,21 @@ test("sanitizeGuestVisibleText preserves normal guest-facing text", () => {
   assert.equal(
     sanitizeGuestVisibleText("El check-in es a las 15:00. Si necesitás algo más, avisame."),
     "El check-in es a las 15:00. Si necesitás algo más, avisame.",
+  );
+});
+
+test("sanitizeGuestVisibleText removes acknowledgement and clarification echo prefixes", () => {
+  assert.equal(
+    sanitizeGuestVisibleText("Perfecto: el check-in es a las 15:00. (Fuente:)"),
+    "El check-in es a las 15:00.",
+  );
+  assert.equal(
+    sanitizeGuestVisibleText("Perfecto, te referís al horario de ingreso. El check-in es a las 15:00."),
+    "El check-in es a las 15:00.",
+  );
+  assert.equal(
+    sanitizeGuestVisibleText("Correcto (check-in): el check-in es a las 15:00."),
+    "El check-in es a las 15:00.",
   );
 });
 

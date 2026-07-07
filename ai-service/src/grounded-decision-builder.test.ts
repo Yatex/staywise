@@ -63,8 +63,7 @@ test("arrival wording replies with inference from check-in evidence", () => {
   assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
   assert.equal(result.decision.detected_intents[0].type, "check_in_time");
   assert.equal(result.decision.detected_intents[0].status, "answered_with_inference");
-  assert.match(result.decision.message_body, /Si te referís al horario de ingreso\/check-in/);
-  assert.match(result.decision.message_body, /15:00/);
+  assert.equal(result.decision.message_body, "El check-in es a las 15:00.");
   assert.equal(result.decision.audit.grounded_decision_builder.final_decision_strategy, "reply_with_inference");
 });
 
@@ -127,7 +126,9 @@ test("clarification follow-up answers using the same evidence", () => {
   assert.equal(result.decision.outcome, "reply");
   assert.equal(result.decision.escalation_required, false);
   assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
-  assert.match(result.decision.message_body, /15:00/);
+  assert.equal(result.decision.message_body, "El check-in es a las 15:00.");
+  assert.doesNotMatch(result.decision.message_body, /refer/i);
+  assert.doesNotMatch(result.decision.message_body, /perfecto|correcto/i);
 });
 
 test("arrival phrasing replies with inference", () => {
@@ -164,8 +165,7 @@ test("departure phrasing replies with inference from checkout evidence", () => {
   assert.deepEqual(result.decision.evidence_ids, ["property.check_out_time"]);
   assert.equal(result.decision.detected_intents[0].type, "check_out_time");
   assert.equal(result.decision.detected_intents[0].status, "answered_with_inference");
-  assert.match(result.decision.message_body, /salida\/check-out/);
-  assert.match(result.decision.message_body, /11:00/);
+  assert.equal(result.decision.message_body, "El checkout es a las 11:00.");
 });
 
 test("vague issue asks a clarification before escalating", () => {
