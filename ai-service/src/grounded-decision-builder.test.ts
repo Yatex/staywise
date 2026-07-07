@@ -371,6 +371,69 @@ test("sufficient evidence never remains unknown and evidence ids are present", (
   assert.ok(result.decision.audit.grounded_decision_builder.decision_scores.safety_score >= 75);
 });
 
+test("custom high threshold can move medium evidence to clarification", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora puedo entrar al depto?",
+    decision_settings: {
+      high_score_threshold: 95,
+      medium_score_threshold: 40,
+      safety_score_threshold: 75,
+      max_clarification_attempts: 2,
+    },
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:check_in_time",
+    evidence_id: "property.check_in_time",
+    field: "check_in_time",
+    label: "check_in_time",
+    value: "15:00",
+  }));
+
+  const audit = result.decision.audit.grounded_decision_builder;
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(audit.score_thresholds.high_score_threshold, 95);
+  assert.equal(audit.grounded_decision_result.override_type, "partial_evidence");
+});
+
+test("custom max clarification attempts controls when ambiguous cases escalate", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora puedo ir?",
+    decision_settings: {
+      high_score_threshold: 75,
+      medium_score_threshold: 40,
+      safety_score_threshold: 75,
+      max_clarification_attempts: 1,
+    },
+    clarification_attempts: {
+      ambiguous_request: 1,
+      ambiguous_time: 1,
+      total: 1,
+    },
+  }, catalogFromSources([
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_in_time",
+      evidence_id: "property.check_in_time",
+      field: "check_in_time",
+      label: "check_in_time",
+      value: "15:00",
+    },
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_out_time",
+      evidence_id: "property.check_out_time",
+      field: "check_out_time",
+      label: "check_out_time",
+      value: "11:00",
+    },
+  ]));
+
+  const audit = result.decision.audit.grounded_decision_builder;
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(audit.clarification_attempts.max, 1);
+  assert.equal(audit.grounded_decision_result.reason_if_null, "clarification_attempts_exhausted");
+});
+
 function unknownEscalation(language: string) {
   return {
     outcome: "escalate",

@@ -2,6 +2,12 @@ class Account < ApplicationRecord
   AI_RESPONSE_STYLES = %w[concise warm detailed].freeze
   AI_CHANNELS = %w[whatsapp].freeze
   AI_LANGUAGES = %w[en es].freeze
+  DEFAULT_AI_DECISION_SETTINGS = {
+    high_score_threshold: 75,
+    medium_score_threshold: 40,
+    safety_score_threshold: 75,
+    max_clarification_attempts: 2
+  }.freeze
   DEFAULT_ESCALATION_RULES = {
     "late_checkout_request" => true,
     "missing_item" => true,
@@ -31,6 +37,11 @@ class Account < ApplicationRecord
   validates :ai_response_style, inclusion: { in: AI_RESPONSE_STYLES }
   validates :ai_default_channel, inclusion: { in: AI_CHANNELS }
   validates :ai_preferred_language, inclusion: { in: AI_LANGUAGES }
+  validates :ai_high_score_threshold, :ai_medium_score_threshold, :ai_safety_score_threshold,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
+  validates :ai_max_clarification_attempts,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }
+  validate :ai_decision_threshold_order
 
   before_validation :assign_slug, on: :create
   before_validation :normalize_ai_configuration
@@ -56,6 +67,15 @@ class Account < ApplicationRecord
     ai_automation_settings.fetch(setting.to_s, true)
   end
 
+  def ai_decision_settings
+    {
+      high_score_threshold: ai_high_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:high_score_threshold),
+      medium_score_threshold: ai_medium_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:medium_score_threshold),
+      safety_score_threshold: ai_safety_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:safety_score_threshold),
+      max_clarification_attempts: ai_max_clarification_attempts || DEFAULT_AI_DECISION_SETTINGS.fetch(:max_clarification_attempts)
+    }
+  end
+
   def owner_whatsapp_configured?
     owner_whatsapp_escalations_enabled? && owner_whatsapp_number.present?
   end
@@ -67,6 +87,10 @@ class Account < ApplicationRecord
     self.ai_automation_settings = DEFAULT_AUTOMATION_SETTINGS.merge((ai_automation_settings || {}).deep_stringify_keys)
     self.ai_preferred_language = "es" unless AI_LANGUAGES.include?(ai_preferred_language.to_s)
     self.languages_supported = "Español, Inglés"
+    self.ai_high_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:high_score_threshold)
+    self.ai_medium_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:medium_score_threshold)
+    self.ai_safety_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:safety_score_threshold)
+    self.ai_max_clarification_attempts ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:max_clarification_attempts)
   end
 
   def assign_slug
@@ -86,5 +110,12 @@ class Account < ApplicationRecord
 
   def normalize_owner_whatsapp_number
     self.owner_whatsapp_number = owner_whatsapp_number.to_s.gsub(/\Awhatsapp:/, "").strip.presence
+  end
+
+  def ai_decision_threshold_order
+    return if ai_high_score_threshold.blank? || ai_medium_score_threshold.blank?
+    return if ai_high_score_threshold >= ai_medium_score_threshold
+
+    errors.add(:ai_high_score_threshold, "debe ser mayor o igual al threshold medio")
   end
 end

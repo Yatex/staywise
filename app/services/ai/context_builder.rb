@@ -22,6 +22,7 @@ module AI
           sensitive_access_authorized: authorization.sensitive_access_authorized?
         },
         owner_instructions: owner_instructions_payload,
+        decision_settings: @property.account.ai_decision_settings,
         conversation_history: conversation_history_payload,
         tool_endpoint: tool_endpoint_payload,
         safety_rules: safety_rules,

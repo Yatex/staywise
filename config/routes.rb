@@ -25,6 +25,7 @@ Rails.application.routes.draw do
       patch :resolve, on: :member
     end
     resources :ai_traces, only: [:index, :show]
+    resource :ai_settings, only: [:show, :update], controller: :ai_settings
     get "stats", to: "stats#index", as: :stats
   end
 

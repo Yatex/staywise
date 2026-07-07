@@ -705,6 +705,7 @@ function safeBaseContext(payload: any) {
     property: payload?.property,
     reservation: payload?.reservation,
     owner_instructions: payload?.owner_instructions,
+    decision_settings: payload?.decision_settings,
     conversation_history: payload?.conversation_history,
     safety_rules: payload?.safety_rules,
     tool_endpoint: payload?.tool_endpoint,

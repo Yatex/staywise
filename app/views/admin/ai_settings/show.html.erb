@@ -1,0 +1,101 @@
+<% content_for :page_title, "Configuración IA" %>
+
+<% compact_field_class = "w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100" %>
+<% compact_label_class = "text-xs font-semibold uppercase tracking-wide text-slate-500" %>
+<% compact_button_class = "inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-semibold shadow-sm transition" %>
+
+<div class="space-y-4">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-950">Configuración IA</h2>
+      <p class="mt-0.5 text-sm text-slate-500">Thresholds de decisión para <%= @account.name %> y últimos casos aceptados.</p>
+    </div>
+    <div class="flex gap-2">
+      <%= link_to "AI Trace", admin_ai_traces_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
+      <%= link_to "Stats", admin_stats_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
+    </div>
+  </div>
+
+  <section class="<%= card_class %> p-4">
+    <div class="mb-3">
+      <h3 class="text-base font-semibold text-slate-950">Scores</h3>
+      <p class="mt-1 text-sm text-slate-500">Por defecto, una confianza alta empieza en 75/100. La IA responde cuando evidencia, confianza y safety superan los thresholds; si quedan en zona media, pregunta una aclaración.</p>
+    </div>
+
+    <% if @account.errors.any? %>
+      <div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <%= @account.errors.full_messages.to_sentence %>
+      </div>
+    <% end %>
+
+    <%= form_with model: @account, url: admin_ai_settings_path, method: :patch, class: "grid items-end gap-3 md:grid-cols-5" do |form| %>
+      <div>
+        <%= form.label :ai_high_score_threshold, "Alto", class: compact_label_class %>
+        <%= form.number_field :ai_high_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
+      </div>
+      <div>
+        <%= form.label :ai_medium_score_threshold, "Medio", class: compact_label_class %>
+        <%= form.number_field :ai_medium_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
+      </div>
+      <div>
+        <%= form.label :ai_safety_score_threshold, "Safety", class: compact_label_class %>
+        <%= form.number_field :ai_safety_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
+      </div>
+      <div>
+        <%= form.label :ai_max_clarification_attempts, "Aclaraciones", class: compact_label_class %>
+        <%= form.number_field :ai_max_clarification_attempts, min: 0, max: 10, class: "#{compact_field_class} mt-1" %>
+      </div>
+      <%= form.submit "Guardar", class: "#{compact_button_class} bg-slate-900 text-white hover:bg-slate-800" %>
+    <% end %>
+  </section>
+
+  <section class="<%= card_class %> overflow-hidden">
+    <div class="border-b border-slate-200 px-4 py-3">
+      <h3 class="text-base font-semibold text-slate-950">Últimos casos aprobados</h3>
+      <p class="mt-0.5 text-sm text-slate-500">Pregunta, respuesta y números usados por la capa de decisión.</p>
+    </div>
+
+    <div class="divide-y divide-slate-100">
+      <% @approved_cases.each do |trace| %>
+        <% scores = ai_decision_scores(trace) %>
+        <% thresholds = ai_decision_thresholds(trace) %>
+        <%= link_to admin_ai_trace_path(trace), class: "block px-4 py-3 transition hover:bg-slate-50" do %>
+          <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px] xl:items-start">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Pregunta</p>
+              <p class="mt-1 line-clamp-2 text-sm font-semibold text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
+              <p class="mt-1 truncate text-xs text-slate-500"><%= trace.property&.display_name || "Propiedad sin asociar" %> · <%= local_datetime(trace.created_at) %></p>
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta</p>
+              <p class="mt-1 line-clamp-2 text-sm text-slate-700"><%= ai_decision_answer(trace) %></p>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+              <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
+                <p class="font-semibold text-slate-950"><%= scores["answer_confidence"] || "-" %></p>
+                <p class="text-slate-500">Confianza</p>
+              </div>
+              <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
+                <p class="font-semibold text-slate-950"><%= scores["evidence_relevance_score"] || "-" %></p>
+                <p class="text-slate-500">Evidencia</p>
+              </div>
+              <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
+                <p class="font-semibold text-slate-950"><%= scores["safety_score"] || "-" %></p>
+                <p class="text-slate-500">Safety</p>
+              </div>
+              <% if thresholds.present? %>
+                <p class="col-span-3 text-left text-[11px] text-slate-400">
+                  Thresholds: alto <%= thresholds["high_score_threshold"] %>, medio <%= thresholds["medium_score_threshold"] %>, safety <%= thresholds["safety_score_threshold"] %>
+                </p>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+
+      <% if @approved_cases.blank? %>
+        <div class="px-5 py-10 text-center text-sm text-slate-500">Todavía no hay respuestas aprobadas para mostrar.</div>
+      <% end %>
+    </div>
+  </section>
+</div>

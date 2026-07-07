@@ -55,4 +55,22 @@ class AiContextBuilderTest < ActiveSupport::TestCase
     assert_equal "es", payload.dig(:guest, :persisted_language)
     assert_includes payload.fetch(:safety_rules), "Determine language from the latest guest message and write response_text in that language."
   end
+
+  test "includes configurable decision score settings" do
+    @account.update!(
+      ai_high_score_threshold: 82,
+      ai_medium_score_threshold: 45,
+      ai_safety_score_threshold: 88,
+      ai_max_clarification_attempts: 3
+    )
+
+    payload = AI::ContextBuilder.new(conversation: @conversation, guest_message: @message).call
+
+    assert_equal({
+      high_score_threshold: 82,
+      medium_score_threshold: 45,
+      safety_score_threshold: 88,
+      max_clarification_attempts: 3
+    }, payload.fetch(:decision_settings))
+  end
 end

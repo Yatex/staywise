@@ -249,6 +249,26 @@ module ApplicationHelper
     AIDecisionLog.sanitize_trace({ field => value }).values.first.presence || "Sin datos"
   end
 
+  def ai_decision_scores(trace)
+    trace.ai_response_payload.to_h.dig("audit", "grounded_decision_builder", "decision_scores").presence ||
+      trace.ai_response_payload.to_h.dig("audit", "grounded_decision_trace", "decision_scores").presence ||
+      trace.payload.to_h.dig("decision_scores").presence ||
+      {}
+  end
+
+  def ai_decision_thresholds(trace)
+    trace.ai_response_payload.to_h.dig("audit", "grounded_decision_builder", "score_thresholds").presence ||
+      trace.ai_response_payload.to_h.dig("audit", "grounded_decision_trace", "score_thresholds").presence ||
+      {}
+  end
+
+  def ai_decision_answer(trace)
+    trace.ai_response_payload.to_h["message_body"].presence ||
+      trace.ai_response_payload.to_h["response_text"].presence ||
+      trace.payload.to_h.dig("rejected_candidate", "response_text").presence ||
+      "Respuesta no disponible"
+  end
+
   def label_class
     "text-sm font-medium text-slate-700"
   end

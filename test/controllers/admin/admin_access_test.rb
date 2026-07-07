@@ -40,6 +40,10 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_ai_traces_path
 
     assert_redirected_to dashboard_path
+
+    get admin_ai_settings_path
+
+    assert_redirected_to dashboard_path
   end
 
   test "admins can access users stats and errors sections" do
@@ -60,6 +64,30 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_ai_traces_path
     assert_response :success
     assert_includes response.body, "AI Trace"
+
+    get admin_ai_settings_path
+    assert_response :success
+    assert_includes response.body, "Configuración IA"
+  end
+
+  test "admin can update ai decision score settings" do
+    sign_in_as(@admin)
+
+    patch admin_ai_settings_path, params: {
+      account: {
+        ai_high_score_threshold: 82,
+        ai_medium_score_threshold: 45,
+        ai_safety_score_threshold: 88,
+        ai_max_clarification_attempts: 3
+      }
+    }
+
+    assert_redirected_to admin_ai_settings_path
+    @admin_account.reload
+    assert_equal 82, @admin_account.ai_high_score_threshold
+    assert_equal 45, @admin_account.ai_medium_score_threshold
+    assert_equal 88, @admin_account.ai_safety_score_threshold
+    assert_equal 3, @admin_account.ai_max_clarification_attempts
   end
 
   test "admin can inspect sanitized ai decision trace" do
