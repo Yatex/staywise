@@ -13,6 +13,7 @@ import {
 } from "./evidence-catalog.js";
 import { buildGroundedDecision } from "./grounded-decision-builder.js";
 import { DecisionSchema, recoverDecisionFromRawText } from "./decision-schema.js";
+import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 
 const PropertyImportSchema = z.object({
   property: z.object({
@@ -208,7 +209,7 @@ const server = createServer(async (request, response) => {
       }, generateObjectTrace);
     }
     const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
-    const finalDecision = groundedDecision.decision;
+    const finalDecision = sanitizeDecisionGuestText(groundedDecision.decision);
     const finalDecisionAudit = {
       ...((finalDecision as any).audit || {}),
     };
@@ -1228,10 +1229,12 @@ function emitToolMandatoryTrace(trace: ToolMandatoryTrace, toolTrace: any[]) {
 }
 
 function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace: ToolMandatoryTrace, generateObjectTrace: any[] = []) {
+  const sanitizedDecision = sanitizeDecisionGuestText(decision);
+
   return {
-    ...decision,
+    ...sanitizedDecision,
     audit: {
-      ...(decision?.audit || {}),
+      ...(sanitizedDecision?.audit || {}),
       generate_object_trace: generateObjectTrace,
       final_decision_source: {
         model: false,

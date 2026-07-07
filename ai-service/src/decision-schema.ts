@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sanitizeGuestVisibleText } from "./guest-message-sanitizer.js";
 
 export const DecisionSchema = z.preprocess(normalizeDecisionInput, z.object({
   outcome: z.enum([
@@ -81,6 +82,7 @@ function normalizeDecisionInput(input: unknown) {
 
   if (value.outcome == null && value.decision != null) value.outcome = value.decision;
   if (value.message_body == null && value.response_text != null) value.message_body = value.response_text;
+  if (typeof value.message_body === "string") value.message_body = sanitizeGuestVisibleText(value.message_body);
   delete value.decision;
   delete value.response_text;
   if (value.proposed_action === undefined) value.proposed_action = null;

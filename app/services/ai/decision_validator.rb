@@ -132,8 +132,101 @@ module AI
         reasons = []
         source_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
         reasons << "invalid_evidence:#{source_id}" unless @registry.valid_evidence?(item)
-        reasons << "irrelevant_evidence:#{source_id}" unless @registry.relevant_evidence?(item, @guest_message&.body)
+        reasons << "irrelevant_evidence:#{source_id}" unless semantically_relevant_evidence?(item)
         reasons
+      end
+    end
+
+    def semantically_relevant_evidence?(item)
+      grounded_decision_relevant_evidence?(item) ||
+        @registry.relevant_evidence?(item, @guest_message&.body)
+    end
+
+    def grounded_decision_relevant_evidence?(item)
+      audit = grounded_decision_audit
+      return false if audit.blank?
+
+      evidence_id = canonical_evidence_reference(item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"])
+      return false if evidence_id.blank?
+
+      candidate = grounded_decision_candidate_for(evidence_id)
+      return false if candidate.blank?
+      candidate = candidate.to_h
+      return false unless grounded_decision_sufficient_evidence_ids.include?(evidence_id) || (candidate["score"] || candidate[:score]).to_f.positive?
+
+      inferred_intent = canonical_decision_intent(candidate["inferred_intent"] || candidate[:inferred_intent])
+      answered_intents = answered_decision_intents
+      return true if answered_intents.blank?
+      return true if inferred_intent.blank?
+
+      answered_intents.include?(inferred_intent)
+    end
+
+    def grounded_decision_audit
+      @grounded_decision_audit ||= @decision.audit.to_h["grounded_decision_builder"] || @decision.audit.to_h[:grounded_decision_builder]
+    end
+
+    def grounded_decision_candidate_for(evidence_id)
+      grounded_decision_candidates.find do |candidate|
+        canonical_evidence_reference(candidate["evidence_id"] || candidate[:evidence_id]) == evidence_id
+      end
+    end
+
+    def grounded_decision_candidates
+      audit = grounded_decision_audit.to_h
+      Array(audit["ranked_candidates"] || audit[:ranked_candidates]) |
+        Array(audit["evidence_candidates_ranked"] || audit[:evidence_candidates_ranked])
+    end
+
+    def grounded_decision_sufficient_evidence_ids
+      audit = grounded_decision_audit.to_h
+      Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
+        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
+      end
+    end
+
+    def answered_decision_intents
+      @decision.detected_intents.filter_map do |intent|
+        next unless intent.to_h["status"].to_s.in?(%w[answered answered_with_inference])
+
+        canonical_decision_intent(intent.to_h["type"])
+      end.compact_blank
+    end
+
+    def canonical_decision_intent(intent)
+      case intent.to_s
+      when "checkin", "check_in", "checkin_time"
+        "check_in_time"
+      when "checkout", "check_out", "checkout_time"
+        "check_out_time"
+      else
+        intent.to_s.presence
+      end
+    end
+
+    def canonical_evidence_reference(reference)
+      value = reference.to_s
+      return if value.blank?
+
+      case value
+      when /\Aproperty_fact:(.+)\z/
+        "property.#{$1}"
+      when /\Aproperty_(.+)\z/
+        "property.#{$1}"
+      when /\Areservation_fact:(.+)\z/
+        "reservation.#{$1}"
+      when /\Areservation_(.+)\z/
+        "reservation.#{$1}"
+      when /\Afaq_(\d+)\z/
+        "faq.#{$1}"
+      when /\Aguide_(\d+)\z/
+        "guide.#{$1}"
+      when /\Arecommendation_(\d+)\z/
+        "recommendation.#{$1}"
+      when /\Apolicy_(.+)\z/
+        "policy.#{$1}"
+      else
+        value.tr(":", ".")
       end
     end
 
@@ -240,7 +333,7 @@ module AI
       return false if @decision.detected_intents.blank?
 
       @decision.outcome == "reply" && @decision.detected_intents.any? do |intent|
-        intent["status"].blank? || !intent["status"].in?(%w[answered needs_clarification requires_host_approval escalated])
+        intent["status"].blank? || !intent["status"].in?(%w[answered answered_with_inference needs_clarification requires_host_approval escalated])
       end
     end
 

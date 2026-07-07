@@ -188,6 +188,81 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal ["property.address"], decision.evidence_ids
   end
 
+  test "validator accepts evidence relevance inferred by grounded decision builder" do
+    cases = [
+      {
+        guest_message: "a que hora puedo entrar al depto?",
+        intent: "check_in_time",
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        semantic_match: "arrival",
+        response: "Podés entrar a partir de las 3:00 PM."
+      },
+      {
+        guest_message: "cuando puedo ingresar?",
+        intent: "check_in_time",
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        semantic_match: "arrival",
+        response: "Podés ingresar a partir de las 3:00 PM."
+      },
+      {
+        guest_message: "cuando puedo llegar?",
+        intent: "check_in_time",
+        evidence_id: "property.check_in_time",
+        field: "check_in_time",
+        semantic_match: "arrival",
+        response: "Podés llegar a partir de las 3:00 PM."
+      },
+      {
+        guest_message: "a que hora puedo salir?",
+        intent: "check_out_time",
+        evidence_id: "property.check_out_time",
+        field: "check_out_time",
+        semantic_match: "departure",
+        response: "El checkout es a las 11:00 AM."
+      },
+      {
+        guest_message: "donde estaciono?",
+        intent: "parking",
+        evidence_id: "property.parking",
+        field: "parking",
+        semantic_match: "parking",
+        response: "Podés usar street parking."
+      },
+      {
+        guest_message: "cual es la direccion?",
+        intent: "address",
+        evidence_id: "property.address",
+        field: "address",
+        semantic_match: "address",
+        response: "La dirección es 123 Test Street."
+      }
+    ]
+
+    cases.each do |item|
+      message = @conversation.messages.create!(sender: "guest", body: item.fetch(:guest_message), channel: "whatsapp")
+      decision = run_with_remote_decision(message, ai_reply(
+        language: "es",
+        message_body: item.fetch(:response),
+        evidence_ids: [item.fetch(:evidence_id)],
+        detected_intents: [{ type: item.fetch(:intent), status: "answered_with_inference" }],
+        audit: grounded_semantic_audit(
+          evidence_id: item.fetch(:evidence_id),
+          field: item.fetch(:field),
+          inferred_intent: item.fetch(:intent),
+          semantic_match: item.fetch(:semantic_match)
+        )
+      ))
+      audit = AIDecisionLog.where(message: message).last
+
+      assert_equal "reply", decision.outcome, item.fetch(:guest_message)
+      assert_equal [item.fetch(:evidence_id)], decision.evidence_ids, item.fetch(:guest_message)
+      assert_equal "accepted", audit.validator_result, item.fetch(:guest_message)
+      assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:#{item.fetch(:evidence_id)}", item.fetch(:guest_message)
+    end
+  end
+
   test "authorized guest can receive wifi details from ai with evidence" do
     message = @conversation.messages.create!(sender: "guest", body: "What is the WiFi password?", channel: "whatsapp")
 
@@ -903,5 +978,40 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
         { tool_name: "stay_facts", input: { requested_fields: ["check_in_time"] }, output_summary: { evidence_ids: ["property.check_in_time"] }, error: nil, latency_ms: 1 }
       ]
     }
+  end
+
+  def grounded_semantic_audit(evidence_id:, field:, inferred_intent:, semantic_match:)
+    default_tool_audit.merge(
+      grounded_decision_builder: {
+        called: true,
+        ranked_candidates: [
+          {
+            evidence_id: evidence_id,
+            field: field,
+            label: field,
+            score: 4,
+            matched_terms: [],
+            semantic_matches: [semantic_match],
+            source_type: "property_fact",
+            reason_included_or_excluded: "included_score_positive",
+            inferred_intent: inferred_intent,
+            inference_reason: "query_category:#{semantic_match}"
+          }
+        ],
+        sufficient_candidates: [
+          {
+            evidence_id: evidence_id,
+            sufficiency_score: 4,
+            reason: "top_score_meets_threshold_single_label"
+          }
+        ],
+        inferred_intent: inferred_intent,
+        final_decision_strategy: "reply_with_inference",
+        grounded_decision_result: {
+          override_created: true,
+          override_type: "sufficient_evidence"
+        }
+      }
+    )
   end
 end

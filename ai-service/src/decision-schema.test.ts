@@ -69,6 +69,29 @@ test("AylaDecision can normalize response_text into message_body", () => {
   assert.equal(parsed.message_body, "El check-in es a las 15:00.");
 });
 
+test("AylaDecision sanitizes internal metadata from guest-facing message_body", () => {
+  const parsed = DecisionSchema.parse({
+    ...checkInReply,
+    message_body: "Le check-in est à 15:00. (Source : property.check_in_time)",
+  });
+
+  assert.equal(parsed.message_body, "Le check-in est à 15:00.");
+  assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
+  assert.deepEqual(parsed.used_source_ids, ["property_fact:check_in_time"]);
+});
+
+test("AylaDecision sanitizes normalized response_text without losing evidence", () => {
+  const parsed = DecisionSchema.parse({
+    ...checkInReply,
+    message_body: undefined,
+    response_text: "El check-in es a las 15:00. source_id: property_fact:check_in_time",
+  });
+
+  assert.equal(parsed.message_body, "El check-in es a las 15:00.");
+  assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
+  assert.deepEqual(parsed.used_source_ids, ["property_fact:check_in_time"]);
+});
+
 test("recoverDecisionFromRawText uses valid JSON instead of forcing fallback", () => {
   const recovered = recoverDecisionFromRawText(JSON.stringify(checkInReply));
 
