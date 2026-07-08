@@ -1,5 +1,7 @@
 class PropertiesController < ApplicationController
   INITIAL_FAQ_DEFAULT_ROWS = 3
+  INITIAL_APPLIANCE_GUIDE_DEFAULT_ROWS = 1
+  INITIAL_RECOMMENDATION_DEFAULT_ROWS = 1
 
   before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr]
   before_action :ensure_property_limit!, only: [:new, :create]
@@ -11,12 +13,9 @@ class PropertiesController < ApplicationController
 
   def show
     @appliance_guides = @property.knowledge_blocks.where(category: "appliances").order(:title)
-    @knowledge_blocks = @property.knowledge_blocks.where.not(category: "appliances").order(:category, :title)
     @recommendations = @property.recommendations.order(:category, :name)
     @faqs = @property.faqs.order(:category, :question)
     @new_questions = @property.alerts.unknown_questions.open.includes(:guest, :conversation).order(created_at: :desc).limit(10)
-    @alerts = @property.alerts.operational.open.includes(:guest).order(created_at: :desc).limit(10)
-    @conversations = @property.conversations.includes(:guest).recent.limit(10)
     @source_properties = current_account.properties.where.not(id: @property.id).order(:name)
     @whatsapp_link = Whatsapp::PropertyDeepLink.call(@property)
   end
@@ -25,19 +24,23 @@ class PropertiesController < ApplicationController
     @source_properties = current_account.properties.order(:name)
     @property = current_account.properties.new
     @initial_faqs = blank_initial_faqs
+    @initial_appliance_guides = blank_initial_appliance_guides
+    @initial_recommendations = blank_initial_recommendations
     apply_property_template if params[:copy_from_id].present?
   end
 
   def create
     @property = current_account.properties.new(property_params)
     @initial_faqs = initial_faq_params
+    @initial_appliance_guides = initial_appliance_guide_params
+    @initial_recommendations = initial_recommendation_params
 
     if params[:preview_import].present?
       preview_property_import(:new)
       return
     end
 
-    if invalid_initial_faqs?
+    if invalid_initial_content?
       @source_properties = current_account.properties.order(:name)
       render :new, status: :unprocessable_entity
       return
@@ -52,11 +55,15 @@ class PropertiesController < ApplicationController
   end
 
   def edit
-    @initial_faqs = []
+    @initial_faqs = blank_initial_faqs
+    @initial_appliance_guides = blank_initial_appliance_guides
+    @initial_recommendations = blank_initial_recommendations
   end
 
   def update
-    @initial_faqs = initial_faq_params(default: [])
+    @initial_faqs = initial_faq_params
+    @initial_appliance_guides = initial_appliance_guide_params
+    @initial_recommendations = initial_recommendation_params
 
     if params[:preview_import].present?
       @property.assign_attributes(property_params)
@@ -64,7 +71,7 @@ class PropertiesController < ApplicationController
       return
     end
 
-    if invalid_initial_faqs?
+    if invalid_initial_content?
       render :edit, status: :unprocessable_entity
       return
     end
@@ -148,6 +155,7 @@ class PropertiesController < ApplicationController
       :internal_nickname,
       :check_in_time,
       :checkout_time,
+      :checkout_instructions,
       :wifi_name,
       :wifi_password,
       :house_rules,
@@ -178,19 +186,84 @@ class PropertiesController < ApplicationController
     Array.new(INITIAL_FAQ_DEFAULT_ROWS) { { "question" => "", "answer" => "", "category" => "" } }
   end
 
+  def initial_appliance_guide_params(default: blank_initial_appliance_guides)
+    permitted = params
+      .fetch(:property, ActionController::Parameters.new)
+      .permit(initial_appliance_guides: [:title, :content, :youtube_url])
+
+    rows = Array(permitted[:initial_appliance_guides]).map do |row|
+      row.to_h.slice("title", "content", "youtube_url")
+    end
+
+    rows.presence || default
+  end
+
+  def blank_initial_appliance_guides
+    Array.new(INITIAL_APPLIANCE_GUIDE_DEFAULT_ROWS) { { "title" => "", "content" => "", "youtube_url" => "" } }
+  end
+
+  def initial_recommendation_params(default: blank_initial_recommendations)
+    permitted = params
+      .fetch(:property, ActionController::Parameters.new)
+      .permit(
+        initial_recommendations: [
+          :name,
+          :category,
+          :description,
+          :address,
+          :distance_or_walking_time
+        ]
+      )
+
+    rows = Array(permitted[:initial_recommendations]).map do |row|
+      row.to_h.slice("name", "category", "description", "address", "distance_or_walking_time")
+    end
+
+    rows.presence || default
+  end
+
+  def blank_initial_recommendations
+    Array.new(INITIAL_RECOMMENDATION_DEFAULT_ROWS) do
+      {
+        "name" => "",
+        "category" => "",
+        "description" => "",
+        "address" => "",
+        "distance_or_walking_time" => ""
+      }
+    end
+  end
+
   def completed_initial_faqs
     Array(@initial_faqs).select do |row|
       row["question"].present? || row["answer"].present? || row["category"].present?
     end
   end
 
-  def invalid_initial_faqs?
-    invalid = completed_initial_faqs.any? do |row|
+  def completed_initial_appliance_guides
+    Array(@initial_appliance_guides).select { |row| row.values.any?(&:present?) }
+  end
+
+  def completed_initial_recommendations
+    Array(@initial_recommendations).select { |row| row.values.any?(&:present?) }
+  end
+
+  def invalid_initial_content?
+    invalid_faqs = completed_initial_faqs.any? do |row|
       row["question"].blank? || row["answer"].blank?
     end
+    invalid_appliances = completed_initial_appliance_guides.any? do |row|
+      row["title"].blank? || row["content"].blank?
+    end
+    invalid_recommendations = completed_initial_recommendations.any? do |row|
+      row["name"].blank? || row["category"].blank?
+    end
 
-    @property.errors.add(:base, "Completá pregunta y respuesta en cada FAQ inicial.") if invalid
-    invalid
+    @property.errors.add(:base, "Completá pregunta y respuesta en cada FAQ.") if invalid_faqs
+    @property.errors.add(:base, "Completá nombre e instrucciones en cada electrodoméstico.") if invalid_appliances
+    @property.errors.add(:base, "Completá nombre y categoría en cada recomendación.") if invalid_recommendations
+
+    invalid_faqs || invalid_appliances || invalid_recommendations
   end
 
   def save_property_with_initial_faqs
@@ -208,6 +281,8 @@ class PropertiesController < ApplicationController
           active: true
         )
       end
+      create_initial_appliance_guides!
+      create_initial_recommendations!
     end
 
     saved
@@ -221,6 +296,8 @@ class PropertiesController < ApplicationController
       raise ActiveRecord::Rollback unless saved
 
       create_initial_faqs!
+      create_initial_appliance_guides!
+      create_initial_recommendations!
     end
 
     saved
@@ -237,6 +314,30 @@ class PropertiesController < ApplicationController
     end
   end
 
+  def create_initial_appliance_guides!
+    completed_initial_appliance_guides.each do |row|
+      @property.knowledge_blocks.create!(
+        title: row["title"],
+        category: "appliances",
+        content: row["content"],
+        youtube_url: row["youtube_url"],
+        status: "active"
+      )
+    end
+  end
+
+  def create_initial_recommendations!
+    completed_initial_recommendations.each do |row|
+      @property.recommendations.create!(
+        name: row["name"],
+        category: row["category"],
+        description: row["description"],
+        address: row["address"],
+        distance_or_walking_time: row["distance_or_walking_time"]
+      )
+    end
+  end
+
   def preview_property_import(template)
     result = AI::PropertyImportService.call(
       account: current_account,
@@ -246,14 +347,30 @@ class PropertiesController < ApplicationController
 
     @property.assign_attributes(result.property_attributes)
     @initial_faqs = merge_imported_faqs(result.faqs, @initial_faqs)
+    @initial_appliance_guides = merge_imported_rows(
+      result.appliance_guides,
+      @initial_appliance_guides,
+      keys: %w[title content youtube_url],
+      identity_key: "title",
+      blank_default: blank_initial_appliance_guides
+    )
+    @initial_recommendations = merge_imported_rows(
+      result.recommendations,
+      @initial_recommendations,
+      keys: %w[name category description address distance_or_walking_time],
+      identity_key: "name",
+      blank_default: blank_initial_recommendations
+    )
     @source_properties = current_account.properties.order(:name) if template == :new
-    @property_import_fields = imported_field_labels(result.property_attributes)
+    @property_import_fields = imported_content_labels(result)
     @property_import_notice = import_notice_for(result)
     flash.now[:notice] = @property_import_notice
     render template, status: :unprocessable_content
   rescue AI::PropertyImportService::ImportError => error
     @source_properties = current_account.properties.order(:name) if template == :new
     @initial_faqs = blank_initial_faqs if template == :new && Array(@initial_faqs).blank?
+    @initial_appliance_guides = blank_initial_appliance_guides if Array(@initial_appliance_guides).blank?
+    @initial_recommendations = blank_initial_recommendations if Array(@initial_recommendations).blank?
     @property_import_error = error.message
     flash.now[:alert] = @property_import_error
     render template, status: :unprocessable_content
@@ -275,17 +392,44 @@ class PropertiesController < ApplicationController
     row.to_h.stringify_keys.slice("question", "answer", "category")
   end
 
+  def merge_imported_rows(imported_rows, existing_rows, keys:, identity_key:, blank_default:)
+    imported = Array(imported_rows).map { |row| row.to_h.stringify_keys.slice(*keys) }
+      .select { |row| row[identity_key].present? }
+    existing = Array(existing_rows).map { |row| row.to_h.stringify_keys.slice(*keys) }
+    imported_identities = imported.map { |row| row[identity_key].to_s.downcase.strip }
+    remaining_existing = existing.reject do |row|
+      row.values.all?(&:blank?) || imported_identities.include?(row[identity_key].to_s.downcase.strip)
+    end
+
+    (imported + remaining_existing).presence || blank_default
+  end
+
   def import_notice_for(result)
-    count = result.faqs.count
-    fields = imported_field_labels(result.property_attributes)
+    faq_count = Array(result.faqs).count
+    appliance_count = Array(result.appliance_guides).count
+    recommendation_count = Array(result.recommendations).count
+    fields = imported_content_labels(result)
     if fields.any?
       message = "Ayla leyó el archivo y completó: #{fields.to_sentence}. Revisá todo antes de guardar."
     else
-      message = "Ayla leyó el archivo. No encontró campos principales, pero preparó contenido para revisar."
+      message = "Ayla leyó el archivo, pero no encontró datos claros para completar."
     end
-    return message if count.zero?
 
-    "#{message} También preparó #{count} FAQ#{'s' if count != 1} para agregar."
+    counts = []
+    counts << "#{appliance_count} guía#{'s' if appliance_count != 1} de electrodomésticos" if appliance_count.positive?
+    counts << "#{faq_count} FAQ#{'s' if faq_count != 1}" if faq_count.positive?
+    counts << "#{recommendation_count} recomendación#{'es' if recommendation_count != 1}" if recommendation_count.positive?
+    return message if counts.empty?
+
+    "#{message} Preparó #{counts.to_sentence}."
+  end
+
+  def imported_content_labels(result)
+    labels = imported_field_labels(result.property_attributes)
+    labels << "electrodomésticos" if Array(result.appliance_guides).any?
+    labels << "FAQs" if Array(result.faqs).any?
+    labels << "recomendaciones locales" if Array(result.recommendations).any?
+    labels
   end
 
   def imported_field_labels(attributes)
@@ -295,6 +439,7 @@ class PropertiesController < ApplicationController
       "internal_nickname" => "alias interno",
       "check_in_time" => "check-in",
       "checkout_time" => "checkout",
+      "checkout_instructions" => "instrucciones de salida",
       "wifi_name" => "nombre de WiFi",
       "wifi_password" => "contraseña de WiFi",
       "house_rules" => "reglas",

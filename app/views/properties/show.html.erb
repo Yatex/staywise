@@ -22,12 +22,12 @@
           <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
         <% end %>
         <%= link_to "Editar propiedad", edit_property_path(@property), class: secondary_button_class %>
-        <%= link_to "Agregar bloque de guía", new_property_knowledge_block_path(@property), class: primary_button_class %>
+        <%= link_to "Agregar electrodoméstico", new_property_knowledge_block_path(@property, category: "appliances"), class: primary_button_class %>
       </div>
     </div>
 
     <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-      <% [["Resumen", "#overview"], ["Guía del huésped", "#guest-guide"], ["Electrodomésticos", "#appliances"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Dudas nuevas", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"], ["Alertas", "#alerts"], ["Conversaciones", "#conversations"], ["Configuración", "#settings"]].each do |label, href| %>
+      <% [["Resumen", "#overview"], ["Electrodomésticos", "#appliances"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Consultas pendientes", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"], ["Configuración", "#settings"]].each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
       <% end %>
     </div>
@@ -63,7 +63,7 @@
             <%= select_tag :source_property_id, options_from_collection_for_select(@source_properties, :id, :display_name), include_blank: "Elegir propiedad", class: field_class %>
           </div>
           <div class="grid gap-3 sm:grid-cols-2">
-            <% [["guides", "Bloques de guía del huésped"], ["recommendations", "Recomendaciones"], ["faqs", "FAQs"], ["settings", "Datos de estadía y notas de IA"], ["tags", "Etiquetas"]].each do |value, label| %>
+            <% [["guides", "Contenido estructurado y electrodomésticos"], ["recommendations", "Recomendaciones"], ["faqs", "FAQs"], ["settings", "Datos de estadía y notas de IA"], ["tags", "Etiquetas"]].each do |value, label| %>
               <label class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
                 <%= check_box_tag "content_types[]", value, value.in?(%w[guides recommendations faqs]), class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
                 <%= label %>
@@ -92,41 +92,8 @@
       <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.wifi_name.presence || "Sin configurar" %></p>
     </div>
     <div class="<%= card_class %> p-4">
-      <p class="text-sm text-slate-500">Dudas nuevas</p>
+      <p class="text-sm text-slate-500">Consultas pendientes</p>
       <p class="mt-2 text-lg font-semibold text-slate-950"><%= @property.alerts.unknown_questions.open.count %></p>
-    </div>
-  </section>
-
-  <section id="guest-guide" class="<%= card_class %> overflow-hidden">
-    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <div>
-        <h3 class="text-base font-semibold text-slate-950">Guía del huésped</h3>
-        <p class="text-sm text-slate-500">Bloques estructurados que la IA puede usar para responder con datos confiables.</p>
-      </div>
-      <%= link_to "Agregar bloque", new_property_knowledge_block_path(@property), class: secondary_button_class %>
-    </div>
-    <div class="divide-y divide-slate-100">
-      <% @knowledge_blocks.each do |block| %>
-        <div class="px-5 py-4">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="font-medium text-slate-950"><%= block.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= enum_label(block.category) %></p>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(block.status) %>"><%= enum_label(block.status) %></span>
-              <%= link_to "Editar", edit_property_knowledge_block_path(@property, block), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
-            </div>
-          </div>
-          <p class="mt-3 whitespace-pre-line text-sm text-slate-600"><%= truncate(block.content, length: 260) %></p>
-          <% if block.youtube_url.present? %>
-            <p class="mt-3 text-sm"><%= link_to "Video de YouTube", block.youtube_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %></p>
-          <% end %>
-        </div>
-      <% end %>
-      <% if @knowledge_blocks.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay bloques de guía.</p>
-      <% end %>
     </div>
   </section>
 
@@ -213,7 +180,7 @@
 
   <section id="new-questions" class="<%= card_class %> overflow-hidden">
     <div class="border-b border-slate-200 px-5 py-4">
-      <h3 class="text-base font-semibold text-slate-950">Dudas nuevas</h3>
+      <h3 class="text-base font-semibold text-slate-950">Consultas pendientes</h3>
       <p class="mt-1 text-sm text-slate-500">Preguntas que la IA no supo responder. Si no requieren una acción física, guardá la respuesta como FAQ para que la IA la use la próxima vez.</p>
     </div>
     <div class="divide-y divide-slate-100">
@@ -244,53 +211,7 @@
         </div>
       <% end %>
       <% if @new_questions.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No hay dudas nuevas para enseñar en esta propiedad.</p>
-      <% end %>
-    </div>
-  </section>
-
-  <section id="alerts" class="<%= card_class %> overflow-hidden">
-    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h3 class="text-base font-semibold text-slate-950">Alertas</h3>
-      <%= link_to "Ver todas las alertas", alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
-    </div>
-    <div class="divide-y divide-slate-100">
-      <% @alerts.each do |alert| %>
-        <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= alert.guest&.display_name || "Huésped desconocido" %></p>
-            </div>
-            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>
-          </div>
-        <% end %>
-      <% end %>
-      <% if @alerts.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No hay alertas abiertas para esta propiedad.</p>
-      <% end %>
-    </div>
-  </section>
-
-  <section id="conversations" class="<%= card_class %> overflow-hidden">
-    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h3 class="text-base font-semibold text-slate-950">Conversaciones</h3>
-      <%= link_to "Ver todo", conversations_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
-    </div>
-    <div class="divide-y divide-slate-100">
-      <% @conversations.each do |conversation| %>
-        <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
-              <p class="mt-1 text-sm text-slate-500">Último mensaje <%= local_datetime(conversation.last_message_at) || "todavía no" %></p>
-            </div>
-            <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
-          </div>
-        <% end %>
-      <% end %>
-      <% if @conversations.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay conversaciones.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay consultas pendientes en esta propiedad.</p>
       <% end %>
     </div>
   </section>

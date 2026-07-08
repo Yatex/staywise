@@ -144,6 +144,8 @@ module Whatsapp
       return false if decision.response_text.blank?
 
       body = ai_response_body(conversation, decision, alert: alert)
+      return false if body.blank?
+
       message = conversation.messages.create!(
         sender: "ai",
         channel: "whatsapp",
@@ -177,10 +179,7 @@ module Whatsapp
     def safe_response_text_for(decision, alert:, conversation:)
       return decision.response_text unless decision.escalation_required && alert.blank?
 
-      AI::LanguageHelper.not_confirmed_no_alert_reply_for(
-        conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
-        fallback_language: conversation.guest.language
-      )
+      decision.safe_fallback_response
     end
 
     def missing_property_context(parsed)

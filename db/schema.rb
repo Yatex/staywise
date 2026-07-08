@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_07_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_08_161000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -243,6 +243,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_07_120000) do
     t.string "tags", default: [], null: false, array: true
     t.boolean "ai_enabled", default: true, null: false
     t.string "public_token", null: false
+    t.text "checkout_instructions"
     t.index ["account_id", "name"], name: "index_properties_on_account_id_and_name"
     t.index ["account_id"], name: "index_properties_on_account_id"
     t.index ["public_token"], name: "index_properties_on_public_token", unique: true

@@ -26,15 +26,21 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
 
     get property_path(@property)
     assert_response :success
-    assert_includes @response.body, "Dudas nuevas"
+    assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "Electrodomésticos"
     assert_includes @response.body, "Lavarropas"
     assert_includes @response.body, new_property_knowledge_block_path(@property, category: "appliances")
+    assert_not_includes @response.body, "Guía del huésped"
+    assert_select "section#alerts", count: 0
+    assert_select "section#conversations", count: 0
 
     get edit_property_path(@property)
     assert_response :success
     assert_includes @response.body, "Llegada y check-in"
     assert_includes @response.body, "Checkout"
+    assert_includes @response.body, "Instrucciones de salida"
+    assert_includes @response.body, "Electrodomésticos"
+    assert_includes @response.body, "Recomendaciones locales"
 
     get new_property_knowledge_block_path(@property)
     assert_response :success
@@ -55,7 +61,9 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_not_includes @response.body, "Volver a propiedades"
     assert_not_includes @response.body, "Agregá los datos principales"
-    assert_includes @response.body, "Preguntas frecuentes iniciales"
+    assert_includes @response.body, "Electrodomésticos"
+    assert_includes @response.body, "FAQs"
+    assert_includes @response.body, "Recomendaciones locales"
     assert_includes @response.body, "Agregar FAQ"
   end
 
@@ -114,6 +122,43 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     ], property.faqs.order(:id).pluck(:question)
   end
 
+  test "creates property with checkout instructions appliances and recommendations" do
+    assert_difference -> { @account.properties.count }, 1 do
+      assert_difference -> { KnowledgeBlock.where(category: "appliances").count }, 1 do
+        assert_difference -> { Recommendation.count }, 1 do
+          post properties_path, params: {
+            property: {
+              name: "Structured Apartment",
+              checkout_time: "11:00",
+              checkout_instructions: "Dejá las llaves sobre la mesa.",
+              initial_appliance_guides: [
+                {
+                  title: "Lavarropas",
+                  content: "Usá una ficha y el programa rápido.",
+                  youtube_url: ""
+                }
+              ],
+              initial_recommendations: [
+                {
+                  name: "Café Central",
+                  category: "cafe",
+                  description: "Buen desayuno.",
+                  address: "Calle 123",
+                  distance_or_walking_time: "5 min"
+                }
+              ]
+            }
+          }
+        end
+      end
+    end
+
+    property = @account.properties.order(:created_at).last
+    assert_equal "Dejá las llaves sobre la mesa.", property.checkout_instructions
+    assert_equal "Lavarropas", property.knowledge_blocks.find_by(category: "appliances").title
+    assert_equal "Café Central", property.recommendations.first.name
+  end
+
   test "does not create property when an initial faq is incomplete" do
     assert_no_difference -> { @account.properties.count } do
       post properties_path, params: {
@@ -140,13 +185,27 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
         "name" => "Pippa Loft",
         "wifi_name" => "Pippa",
         "wifi_password" => "Pippa123",
-        "checkout_time" => "11:00"
+        "checkout_time" => "11:00",
+        "checkout_instructions" => "Dejá las llaves sobre la mesa."
       },
+      appliance_guides: [
+        {
+          "title" => "Cafetera",
+          "content" => "Usá cápsulas Nespresso."
+        }
+      ],
       faqs: [
         {
           "question" => "¿Cómo bajo a la pileta?",
           "answer" => "Andá al -1 y después subí por la ventana.",
           "category" => "amenities"
+        }
+      ],
+      recommendations: [
+        {
+          "name" => "Café Central",
+          "category" => "cafe",
+          "description" => "Buen desayuno."
         }
       ],
       source_summary: "Datos extraídos del archivo."
@@ -173,12 +232,18 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='property[name]'][value='Pippa Loft']"
     assert_select "input[name='property[wifi_name]'][value='Pippa']"
     assert_select "input[name='property[wifi_password]'][value='Pippa123']"
+    assert_select "textarea[name='property[checkout_instructions][]']", count: 0
+    assert_select "textarea[name='property[checkout_instructions]']", text: /llaves sobre la mesa/
+    assert_select "input[name='property[initial_appliance_guides][][title]'][value='Cafetera']"
+    assert_select "input[name='property[initial_recommendations][][name]'][value='Café Central']"
     assert_includes @response.body, "¿Cómo bajo a la pileta?"
     assert_includes @response.body, "Ayla leyó el archivo"
     assert_select ".bg-emerald-50", text: /Ayla leyó el archivo/
     assert_includes @response.body, "Campos completados"
     assert_includes @response.body, "nombre"
     assert_includes @response.body, "contraseña de WiFi"
+    assert_includes @response.body, "electrodomésticos"
+    assert_includes @response.body, "recomendaciones locales"
   end
 
   test "property import preview button bypasses required fields" do
@@ -214,8 +279,13 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
       property_attributes: {
         "wifi_name" => "Pippa",
         "wifi_password" => "Pippa123",
-        "ai_general_notes" => "Lavarropas automático con fichas."
       },
+      appliance_guides: [
+        {
+          "title" => "Lavarropas",
+          "content" => "Usá fichas y el programa rápido."
+        }
+      ],
       faqs: [
         {
           "question" => "¿Cómo uso el lavarropas?",
@@ -223,6 +293,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
           "category" => "appliances"
         }
       ],
+      recommendations: [],
       source_summary: "Datos extraídos del archivo."
     )
 
@@ -240,7 +311,8 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_content
     assert_select "input[name='property[wifi_name]'][value='Pippa']"
-    assert_includes @response.body, "Preguntas frecuentes para agregar"
+    assert_select "input[name='property[initial_appliance_guides][][title]'][value='Lavarropas']"
+    assert_includes @response.body, "FAQs"
     assert_includes @response.body, "¿Cómo uso el lavarropas?"
     assert_nil @property.reload.wifi_name
 

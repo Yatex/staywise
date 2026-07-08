@@ -13,34 +13,10 @@ import {
 } from "./evidence-catalog.js";
 import { buildGroundedDecision } from "./grounded-decision-builder.js";
 import { DecisionSchema, recoverDecisionFromRawText } from "./decision-schema.js";
+import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decision-system-prompt.js";
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
-
-const PropertyImportSchema = z.object({
-  property: z.object({
-    name: z.string().nullable().optional(),
-    address: z.string().nullable().optional(),
-    internal_nickname: z.string().nullable().optional(),
-    check_in_time: z.string().nullable().optional(),
-    checkout_time: z.string().nullable().optional(),
-    wifi_name: z.string().nullable().optional(),
-    wifi_password: z.string().nullable().optional(),
-    house_rules: z.string().nullable().optional(),
-    access_instructions: z.string().nullable().optional(),
-    parking_instructions: z.string().nullable().optional(),
-    emergency_information: z.string().nullable().optional(),
-    owner_contact_instructions: z.string().nullable().optional(),
-    ai_general_notes: z.string().nullable().optional(),
-    tag_list: z.string().nullable().optional(),
-  }),
-  faqs: z.array(
-    z.object({
-      question: z.string(),
-      answer: z.string(),
-      category: z.string().nullable().optional(),
-    }),
-  ).default([]),
-  source_summary: z.string().nullable().optional(),
-});
+import { ensureSafeFallbackResponse, safeFallbackResponseFor } from "./safe-fallback-response.js";
+import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
@@ -142,40 +118,7 @@ const server = createServer(async (request, response) => {
       model: gatewayModel(),
       schema: DecisionSchema,
       schemaName: "AylaDecision",
-      system: [
-        "You are Ayla, an AI guest assistant for short-term rentals.",
-        "You are tool-first: use tools to understand and answer factual questions. Do not answer factual property or reservation questions from memory.",
-        "You must use property_brain first for property, reservation, policy, FAQ, guide, amenity, appliance, recommendation, and operational questions.",
-        "If the guest asks about WiFi, passwords, codes, keys, lockboxes, exact access instructions, entrance, or other sensitive access details, you must also call sensitive_access_info.",
-        "If the answer needs owner approval or the available evidence does not directly answer the guest, call create_escalation_draft and return outcome escalate or propose_action.",
-        "Answer only from provided tool results.",
-        "Every factual reply must cite evidence returned by tools. Use evidence_ids for evidence_id values and used_source_ids for source id values.",
-        "Do not invent evidence or source IDs. Every cited ID must appear in evidence_catalog or tool_results.",
-        "If evidence_catalog contains sufficient evidence for the guest's request, answer with that evidence instead of returning unknown, fallback, or escalation.",
-        "Evaluate evidence sufficiency generically across property facts, guest context, property brain, FAQs, guides, knowledge blocks, approved recommendations, policies, and future sources.",
-        "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
-        "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
-        "Before interpreting requests, check whether the latest guest message is a conversational closure, thanks, acknowledgement, or rejection of extra help.",
-        "If the guest says things like 'gracias', 'muchas gracias', 'perfecto', 'ok', 'dale', 'entendido', 'listo', 'no gracias', 'así está bien', 'genial', or 'excelente', return outcome no_reply. Do not escalate, ask clarification, create actions, or consult the host.",
-        "Use recommendations only when the guest asks for places, restaurants, transport, pharmacies, supermarkets, attractions, money exchange, or similar local recommendations.",
-        "Never answer a building guide, laundry, visitor, pool permission, booking change, or appliance question with unrelated check-in, checkout, YouTube music, map, restaurant, or money-exchange content.",
-        "If the guest only greets, sends the default QR/link message, or has not asked a substantive property question, respond with a friendly clarifying question. This does not require evidence.",
-        "If the guest question is ambiguous but likely refers to known property facts, ask one friendly clarifying question. This does not require evidence and must not create an owner escalation.",
-        "For ambiguous time questions like 'what time can I go?' or 'a qué hora puedo ir?', ask whether the guest means arrival/check-in or departure/checkout.",
-        "Do not invent source IDs, property facts, rules, prices, availability, refunds, or policies.",
-        "Never approve early check-in, late checkout, refunds, discounts, compensation, reservation changes, maintenance commitments, emergency dispatch, or access outside permitted windows.",
-        "For late checkout, early check-in, reservation changes, refunds, discounts, visitors, pets, or exceptions, do not promise approval. Escalate or propose an action unless a returned policy explicitly says the request is allowed without owner approval.",
-        "Escalate or propose an action requiring approval only when information is truly missing, the guest asks for an exception/approval, or a clarification cannot resolve the request.",
-        "Determine the language of the latest guest message yourself and set the language field to that language.",
-        "Write guest-facing message_body in the language of the latest guest message.",
-        "If the guest changes language, change language and message_body to the new language even when earlier conversation messages used another language.",
-        "Use base_context.guest_language_fallback only when the latest guest message is too short or unclear to identify a language.",
-        "Owner-facing escalation.summary_for_host must be written in the owner language from base_context.owner_language. Use Spanish when owner_language is es or missing.",
-        "Never use owner-facing Spanish as the guest reply when the guest wrote in another language.",
-        "If multiple intents are present, every intent must be answered, marked needs_clarification, requires_host_approval, or escalated.",
-        "Do not say the host was notified unless decision is escalate or propose_action with escalation.required=true.",
-        "Keep replies friendly, helpful, and concise.",
-      ].join("\n"),
+      system: DECISION_SYSTEM_PROMPT,
       prompt: JSON.stringify({
         base_context: safeBaseContext(payload),
         tool_results: toolResults,
@@ -198,14 +141,7 @@ const server = createServer(async (request, response) => {
         model: gatewayModel(),
         schema: DecisionSchema,
         schemaName: "AylaGroundedDecisionReview",
-        system: [
-          "Review an Ayla guest decision that escalated as unknown even though tools returned evidence.",
-          "Interpret the latest guest message and use only evidence_catalog and tool_results.",
-          "If the evidence directly answers the question, return outcome reply, the specific answered intent, a friendly answer in the latest guest message's language, and the exact evidence_ids.",
-          "Evaluate evidence sufficiency generically across all returned sources, not by hardcoded topic.",
-          "Do not escalate when direct evidence answers the question. Do not invent facts or IDs.",
-          "Keep escalation only when the available evidence truly does not answer or owner approval is required.",
-        ].join("\n"),
+        system: GROUNDED_REVIEW_SYSTEM_PROMPT,
         prompt: JSON.stringify({
           base_context: safeBaseContext(payload),
           tool_results: toolResults,
@@ -215,7 +151,10 @@ const server = createServer(async (request, response) => {
       }, generateObjectTrace);
     }
     const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
-    const finalDecision = sanitizeDecisionGuestText(groundedDecision.decision);
+    const finalDecision = ensureSafeFallbackResponse(
+      sanitizeDecisionGuestText(groundedDecision.decision),
+      payload?.guest_language_fallback || payload?.owner_language,
+    );
     const finalDecisionAudit = {
       ...((finalDecision as any).audit || {}),
     };
@@ -525,16 +464,7 @@ async function handlePropertyImport(payload: any, response: ServerResponse, gene
     model: gatewayModel(),
     schema: PropertyImportSchema,
     schemaName: "AylaPropertyImport",
-    system: [
-      "You extract short-term rental property setup data for Ayla Manager.",
-      "Extract only information explicitly present in the uploaded document/image. The current property is context only; do not echo existing fields unless the upload confirms or updates them.",
-      "Do not invent facts, amenities, rules, prices, availability, policies, addresses, codes, or passwords.",
-      "Prefer the document/image when it conflicts with blank current property fields. Preserve the owner's language for long text fields.",
-      "Normalize check-in and checkout times as short readable values like '15:00' or '11:00'.",
-      "Put appliance guides, amenity notes, pool/building directions, and miscellaneous guest-helpful details in ai_general_notes when they do not fit a dedicated field.",
-      "Create FAQs only when the source contains a reusable guest question and a clear answer, or when an instruction can naturally become a reusable FAQ.",
-      "Return null or omit fields that are not supported by evidence in the source.",
-    ].join("\n"),
+    system: PROPERTY_IMPORT_SYSTEM_PROMPT,
     messages: [
       {
         role: "user",
@@ -633,6 +563,7 @@ function fallbackDecision(payload: any) {
     decision: "escalate",
     language: guestLanguage,
     message_body: safeAckFor(guestText, guestLanguage),
+    safe_fallback_response: safeFallbackResponseFor(guestLanguage),
     intent_summary: "AI service fallback",
     detected_intents: [
       {
@@ -671,6 +602,7 @@ function closureDecision(payload: any) {
     decision: "no_reply",
     language: guestLanguage,
     message_body: null,
+    safe_fallback_response: safeFallbackResponseFor(guestLanguage),
     intent_summary: "Conversational closure or acknowledgement",
     detected_intents: [
       {
@@ -837,6 +769,7 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandato
     requested_fields: [
       "check_in_time",
       "check_out_time",
+      "checkout_instructions",
       "address",
       "parking",
       "rules",

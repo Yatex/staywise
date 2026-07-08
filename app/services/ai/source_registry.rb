@@ -13,6 +13,7 @@ module AI
     SAFE_PROPERTY_FACTS = {
       "check_in_time" => :check_in_time,
       "check_out_time" => :checkout_time,
+      "checkout_instructions" => :checkout_instructions,
       "address" => :address,
       "parking" => :parking_instructions,
       "rules" => :house_rules,
@@ -605,6 +606,8 @@ module AI
           (text.match?(/llegar|arrival|arrive/) && time_question?(text))
       when "check_out_time"
         text.match?(/check.?out|checkout|salida|salir|leave|departure/)
+      when "checkout_instructions"
+        text.match?(/check.?out|checkout|salida|salir|leave|departure|llaves|basura|luces/)
       when "address"
         text.match?(/address|direccion|ubicacion|como llego|llegar al edificio|guia|maps|mapa/)
       when "parking"

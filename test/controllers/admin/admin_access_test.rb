@@ -178,7 +178,10 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       detected_intents: [{ "type" => "check_in", "status" => "answered" }],
       evidence_ids: ["property.check_in_time"],
       ai_request_payload: AIDecisionLog.sanitize_trace({ "Authorization" => "Bearer secret-token", "body" => "a que hora es el check in?" }),
-      ai_response_payload: { "response_text" => "El check-in es a las 15:00." },
+      ai_response_payload: {
+        "response_text" => "El check-in es a las 15:00.",
+        "safe_fallback_response" => "No tengo esa información confirmada. Necesito revisarla antes de responderte."
+      },
       tool_calls: [
         {
           "tool_name" => "stay_facts",
@@ -211,7 +214,11 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
             { "evidence_id" => "property.check_in_time", "source" => "property", "field" => "check_in_time", "value" => "15:00", "valid" => true, "relevant" => true }
           ],
           "alert" => { "created" => false },
-          "whatsapp_delivery" => { "sent" => true, "delivery_status" => "sent" }
+          "whatsapp_delivery" => { "sent" => true, "delivery_status" => "sent" },
+          "safe_fallback_response" => "No tengo esa información confirmada. Necesito revisarla antes de responderte.",
+          "final_response_text" => "El check-in es a las 15:00.",
+          "rails_fallback_source" => "respuesta principal",
+          "fallback_language" => "es"
         }
       )
     )
@@ -226,6 +233,9 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_ai_trace_path(trace)
     assert_response :success
     assert_includes response.body, "CHECKIN_TRACE"
+    assert_includes response.body, "Fallback seguro del AI"
+    assert_includes response.body, "No tengo esa información confirmada"
+    assert_includes response.body, "Respuesta final de Rails"
     assert_includes response.body, "property.check_in_time"
     assert_includes response.body, "[REDACTED]"
     assert_not_includes response.body, "SuperSecret123"

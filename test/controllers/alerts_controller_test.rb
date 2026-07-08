@@ -46,6 +46,19 @@ class AlertsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "resolved", @alert.reload.status
   end
 
+  test "index lets owner mark an open alert as done" do
+    get alerts_path
+
+    assert_response :success
+    assert_select "form[action='#{alert_path(@alert)}'] button", text: I18n.t("ui.alerts.mark_done")
+
+    patch alert_path(@alert), params: { alert: { status: "resolved" } }
+
+    assert_redirected_to alerts_path
+    assert_equal "resolved", @alert.reload.status
+    assert_not_nil @alert.resolved_at
+  end
+
   private
 
   def sign_in_as(user)

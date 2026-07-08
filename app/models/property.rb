@@ -5,6 +5,7 @@ class Property < ApplicationRecord
   COPYABLE_SETTING_ATTRIBUTES = %w[
     check_in_time
     checkout_time
+    checkout_instructions
     wifi_name
     wifi_password
     house_rules

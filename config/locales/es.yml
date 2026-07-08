@@ -145,6 +145,7 @@ es:
       subtitle: "Situaciones detectadas por IA que necesitan atención del propietario."
       unknown_guest: "Huésped desconocido"
       empty: "Todavía no hay alertas."
+      mark_done: "Marcar hecha"
     guests:
       title: "Huéspedes"
       subtitle: "Los huéspedes se crean automáticamente desde conversaciones de WhatsApp."

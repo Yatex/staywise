@@ -45,7 +45,7 @@ module AI
         Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
         if validation.contract_failed?
           report_contract_validation_failure(decision, validation)
-          fallback = safe_no_reply("AI contract validation failed: #{validation.reasons.join(", ")}")
+          fallback = safe_response_from_ai_or_no_reply(decision, "AI contract validation failed: #{validation.reasons.join(", ")}", flag: "contract_validation_failed")
           audit(
             "remote_ai_contract_rejected",
             fallback,
@@ -54,6 +54,7 @@ module AI
             rejection_reason: validation.reasons.join(", "),
             rejected_decision: decision,
             fallback_reason: "contract_validation_failed",
+            rails_fallback_source: fallback_source_for(fallback),
             validation_results: validation_payload(validation, decision)
           )
           return fallback
@@ -61,7 +62,7 @@ module AI
 
         if validation.tool_mandatory_failed?
           report_tool_mandatory_failure(decision, validation)
-          fallback = safe_no_reply("AI mandatory tool validation failed: #{validation.reasons.join(", ")}", flag: "tool_mandatory_failed")
+          fallback = safe_response_from_ai_or_no_reply(decision, "AI mandatory tool validation failed: #{validation.reasons.join(", ")}", flag: "tool_mandatory_failed")
           audit(
             "remote_ai_tool_mandatory_rejected",
             fallback,
@@ -70,12 +71,13 @@ module AI
             rejection_reason: validation.reasons.join(", "),
             rejected_decision: decision,
             fallback_reason: "tool_mandatory_failed",
+            rails_fallback_source: fallback_source_for(fallback),
             validation_results: validation_payload(validation, decision)
           )
           return fallback
         end
 
-        fallback = safe_escalation("AI decision rejected: #{validation.reasons.join(", ")}")
+        fallback = safe_response_from_ai_or_no_reply(decision, "AI decision rejected: #{validation.reasons.join(", ")}", flag: "validation_rejected")
         audit(
           "remote_ai_rejected",
           fallback,
@@ -84,6 +86,7 @@ module AI
           rejection_reason: validation.reasons.join(", "),
           rejected_decision: decision,
           fallback_reason: "validation_rejected",
+          rails_fallback_source: fallback_source_for(fallback),
           validation_results: validation_payload(validation, decision)
         )
         return fallback
@@ -228,7 +231,53 @@ module AI
       )
     end
 
-    def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil, validation_results: nil, fallback_reason: nil)
+    def safe_response_from_ai_or_no_reply(decision, description, flag:)
+      safe_response = decision.safe_fallback_response.to_s.squish.presence
+      if safe_response.blank?
+        ErrorReporter.report(
+          source: "ai_validation",
+          severity: "warning",
+          account: @property.account,
+          property: @property,
+          message: "AI decision blocked without safe fallback",
+          context: ai_context.merge(
+            reason: description,
+            rejected_outcome: decision.outcome,
+            language: decision.language
+          )
+        )
+        return safe_no_reply(description, flag: flag)
+      end
+
+      DecisionResult.from_hash(
+        decision: "reply",
+        language: decision.language.presence || @fallback_language,
+        message_body: safe_response,
+        safe_fallback_response: safe_response,
+        intent_summary: description,
+        detected_intents: [{ type: flag, status: "blocked" }],
+        evidence_ids: [],
+        used_source_ids: [],
+        required_capabilities: [],
+        missing_information: [],
+        safety_flags: [flag, "ai_safe_fallback"],
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { required: false },
+        proposed_action: nil,
+        audit: decision.audit.to_h.merge(
+          "rails_fallback_source" => "ai_safe_fallback",
+          "rails_rejected_original_outcome" => decision.outcome
+        )
+      )
+    end
+
+    def fallback_source_for(decision)
+      decision.safety_flags.include?("ai_safe_fallback") ? "ai_safe_fallback" : "no_reply"
+    end
+
+    def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil, validation_results: nil, fallback_reason: nil, rails_fallback_source: nil)
       persist_decision_language(decision)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       evidence_ids = decision.evidence_ids.presence || decision.evidence.map { |item| item["evidence_id"].presence || item["source_id"] }
@@ -242,6 +291,11 @@ module AI
         outcome: decision.outcome,
         final_outcome: decision.outcome,
         final_response_text: decision.response_text,
+        safe_fallback_response: rejected_decision&.safe_fallback_response || decision.safe_fallback_response,
+        rails_fallback_source: rails_fallback_source,
+        rails_used_ai_fallback: rails_fallback_source == "ai_safe_fallback",
+        rails_used_no_reply: rails_fallback_source == "no_reply",
+        fallback_language: decision.language || @fallback_language,
         alert_type: decision.alert_type,
         evidence_ids: evidence_ids,
         evidence_trace: evidence_trace(evidence_ids, validation_results),
@@ -334,6 +388,7 @@ module AI
       decision.to_h.slice(
         :outcome,
         :response_text,
+        :safe_fallback_response,
         :language,
         :detected_intents,
         :evidence_ids,

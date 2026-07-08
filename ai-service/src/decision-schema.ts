@@ -12,6 +12,7 @@ export const DecisionSchema = z.preprocess(normalizeDecisionInput, z.object({
   ]),
   language: z.string(),
   message_body: z.string().nullable(),
+  safe_fallback_response: z.string().nullable().default(null),
   intent_summary: z.string(),
   detected_intents: z.array(z.object({
     type: z.string(),
@@ -83,8 +84,15 @@ function normalizeDecisionInput(input: unknown) {
   if (value.outcome == null && value.decision != null) value.outcome = value.decision;
   if (value.message_body == null && value.response_text != null) value.message_body = value.response_text;
   if (typeof value.message_body === "string") value.message_body = sanitizeGuestVisibleText(value.message_body);
+  if (value.safe_fallback_response === undefined && value.safe_response !== undefined) {
+    value.safe_fallback_response = value.safe_response;
+  }
+  if (typeof value.safe_fallback_response === "string") {
+    value.safe_fallback_response = sanitizeGuestVisibleText(value.safe_fallback_response);
+  }
   delete value.decision;
   delete value.response_text;
+  delete value.safe_response;
   if (value.proposed_action === undefined) value.proposed_action = null;
   if (value.escalation_required === undefined) value.escalation_required = Boolean(escalationRequired);
   if (value.escalation_reason === undefined) value.escalation_reason = null;

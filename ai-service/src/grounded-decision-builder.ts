@@ -198,7 +198,7 @@ const INTENT_CATEGORIES = [
   {
     category: "departure",
     intent: "check_out_time",
-    fields: ["check_out_time", "checkout", "check_out", "departure", "departure_time", "salida"],
+    fields: ["check_out_time", "checkout_instructions", "checkout", "check_out", "departure", "departure_time", "salida"],
     terms: ["salida", "salir", "irme", "dejar", "checkout", "departure", "depart", "leave"],
   },
   {

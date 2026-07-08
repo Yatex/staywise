@@ -35,7 +35,6 @@ module AI
       reasons << "sensitive_access_without_authorization" if sensitive_access_without_authorization?
       reasons << "sensitive_info_without_sensitive_tool" if sensitive_info_without_sensitive_tool?
       reasons << "sensitive_info_flag_without_sensitive_evidence" if sensitive_info_flag_without_sensitive_evidence?
-      reasons << "approval_request_without_escalation" if approval_request_without_escalation?
       reasons << "host_notification_claim_without_escalation" if host_notification_claim_without_escalation?
       reasons << "unresolved_detected_intents" if unresolved_detected_intents?
 
@@ -299,7 +298,7 @@ module AI
     def host_notification_claim_without_escalation?
       return false if @decision.escalation_required
 
-      @decision.response_text.to_s.match?(/(ya|already).*(avis[eé]|envi[eé]|notifi|sent|forwarded).*(host|anfitri[oó]n|dueñ[oa]|owner)/i)
+      action_claim_about_host?
     end
 
     def escalate_without_required_flag?
@@ -310,7 +309,7 @@ module AI
 
     def reply_claims_host_consult_without_alert_or_action?
       return false unless @decision.outcome == "reply"
-      return false unless host_consult_or_owner_mention?
+      return false unless action_claim_about_host?
 
       !valid_proposed_action?
     end
@@ -329,16 +328,69 @@ module AI
     end
 
     def host_mention_requires_alert_or_valid_action?
-      return false unless host_consult_or_owner_mention?
+      return false unless action_claim_about_host?
       return false if @decision.outcome.in?(%w[escalate propose_action])
       return false if valid_proposed_action?
 
       true
     end
 
-    def host_consult_or_owner_mention?
-      @decision.response_text.to_s.match?(
-        /(host|anfitri[oó]n|dueñ[oa]|owner|propietari[oa]|consult|checking|check with|verific|revis|confirmar|confirmarlo|avis[eé]|notifi|envi[eé])/i
+    def action_claim_about_host?
+      text = normalized_response_text
+      return false if text.blank?
+      return false if conditional_host_offer?(text)
+      return false if host_approval_requirement?(text)
+
+      host_action_in_progress?(text) || host_action_completed?(text) || host_future_commitment?(text)
+    end
+
+    def normalized_response_text
+      ActiveSupport::Inflector.transliterate(@decision.response_text.to_s.downcase).squish
+    end
+
+    def conditional_host_offer?(text)
+      text.match?(
+        /
+          \?|
+          \b(?:queres|quieres|necesitas|te gustaria|puedo|podemos|si necesitas|si queres|si quieres)\b.{0,90}\b(?:consult|confirm|verific|revis|pregunt|avis).{0,80}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)\b|
+          \b(?:do you want|would you like|need me|i can|we can|if you need|if you want)\b.{0,90}\b(?:check|ask|confirm|verify).{0,80}\b(?:host|owner)\b
+        /ix
+      )
+    end
+
+    def host_approval_requirement?(text)
+      text.match?(
+        /
+          \b(?:requiere|necesita|depende de|tendria que|debe|hay que)\b.{0,90}\b(?:confirm|aproba|autoriz|consult).{0,80}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)\b|
+          \b(?:requires|needs|depends on|would need)\b.{0,90}\b(?:host|owner)\b.{0,80}\b(?:approval|confirmation|authorization)\b
+        /ix
+      )
+    end
+
+    def host_action_in_progress?(text)
+      text.match?(
+        /
+          \b(?:estoy|estamos|i am|i'm|we are|we're)\b.{0,70}\b(?:consult\w*|confirm\w*|verific\w*|revis\w*|pregunt\w*|checking|asking|confirming|verifying)\b.{0,80}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)\b|
+          \b(?:lo|la|esto|this|it)\b.{0,40}\b(?:estoy|estamos|i am|i'm|we are|we're)\b.{0,70}\b(?:consult\w*|confirm\w*|verific\w*|revis\w*|pregunt\w*|checking|asking|confirming|verifying)\b
+        /ix
+      )
+    end
+
+    def host_action_completed?(text)
+      text.match?(
+        /
+          \b(?:ya|already)\b.{0,70}\b(?:consulte|consultamos|avise|avisamos|envie|enviamos|notifi|notificamos|mande|mandamos|sent|forwarded|notified|asked)\b.{0,90}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)?\b|
+          \b(?:le|les)\b.{0,20}\b(?:avise|avisamos|envie|enviamos|notifi|notificamos|mande|mandamos)\b.{0,80}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)\b
+        /ix
+      )
+    end
+
+    def host_future_commitment?(text)
+      text.match?(
+        /
+          \b(?:voy|vamos|i will|we will|i'll|we'll)\b.{0,70}\b(?:consult\w*|confirm\w*|verific\w*|revis\w*|pregunt\w*|avis\w*|notify|send|ask|check)\b.{0,90}\b(?:host|anfitrion|dueno|duena|owner|propietario|propietaria)?\b|
+          \b(?:te|you)\b.{0,30}\b(?:aviso|avisare|responderemos|respondere|let you know|get back)\b
+        /ix
       )
     end
 
@@ -424,22 +476,5 @@ module AI
       )
     end
 
-    def approval_request_without_escalation?
-      return false unless @decision.outcome == "reply"
-      return false unless approval_or_exception_request?
-
-      true
-    end
-
-    def approval_or_exception_request?
-      text = @guest_message&.body.to_s.downcase
-      normalized = ActiveSupport::Inflector.transliterate(text)
-
-      normalized.match?(
-        /(?:puedo|podria|podrias|me dejan|me dejarian|quiero|necesito|can i|could i|may i).*(?:late checkout|checkout.*tarde|salir.*tarde|check.?in.*antes|entrar.*antes|extender|extension|alargar|refund|reembolso|descuento|discount|compensation|compensacion)/
-      ) ||
-        normalized.match?(/(?:extender|alargar).*(?:reserva|reservation)/) ||
-        normalized.match?(/(?:hacer|salir).*(?:mas tarde|tarde).*(?:checkout|check out|salida)/)
-    end
   end
 end

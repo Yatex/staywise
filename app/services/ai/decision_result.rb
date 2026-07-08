@@ -3,6 +3,7 @@ module AI
     ATTRIBUTES = %i[
       outcome
       response_text
+      safe_fallback_response
       language
       intent_summary
       detected_intents
@@ -33,6 +34,7 @@ module AI
       normalized = hash.to_h.transform_keys(&:to_s)
       decision = normalized["decision"].presence || normalized["outcome"]
       message_body = normalized["message_body"].presence || normalized["response_text"]
+      safe_fallback_response = normalized["safe_fallback_response"].presence || normalized["safe_response"].presence
       used_source_ids = Array(normalized["used_source_ids"]).compact_blank
       evidence_ids = Array(normalized["evidence_ids"]).presence ||
         used_source_ids.presence ||
@@ -41,6 +43,7 @@ module AI
       new(
         outcome: decision,
         response_text: message_body,
+        safe_fallback_response: safe_fallback_response,
         language: normalized["language"],
         intent_summary: normalized["intent_summary"],
         detected_intents: normalized.fetch("detected_intents", []),

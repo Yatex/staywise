@@ -12,6 +12,16 @@ const METADATA_LABELS = [
   "matched_sources",
   "fuente",
   "fuentes",
+  "origen",
+  "orígenes",
+  "origine",
+  "origines",
+  "référence",
+  "références",
+  "reference",
+  "references",
+  "источник",
+  "источники",
   "tool",
   "tools",
   "audit",
@@ -74,6 +84,22 @@ const internalReferencePattern = [
   "[a-z0-9_.:/-]+",
 ].join("|");
 
+const SOURCE_CLAIM_PATTERNS = [
+  "\\bseg[uú]n\\s+(?:la\\s+)?informaci[oó]n\\s+disponible\\s*[,.:;-]?\\s*",
+  "\\bseg[uú]n\\s+mis\\s+registros\\s*[,.:;-]?\\s*",
+  "\\bde\\s+acuerdo\\s+con\\s+(?:la\\s+)?base\\s+de\\s+datos\\s*[,.:;-]?\\s*",
+  "\\bde\\s+acuerdo\\s+con\\s+(?:la\\s+)?informaci[oó]n\\s+disponible\\s*[,.:;-]?\\s*",
+  "\\baccording\\s+to\\s+(?:the\\s+)?available\\s+information\\s*[,.:;-]?\\s*",
+  "\\baccording\\s+to\\s+my\\s+records\\s*[,.:;-]?\\s*",
+  "\\baccording\\s+to\\s+(?:the\\s+)?database\\s*[,.:;-]?\\s*",
+  "\\bbased\\s+on\\s+(?:the\\s+)?available\\s+information\\s*[,.:;-]?\\s*",
+  "\\bselon\\s+les\\s+informations\\s+disponibles\\s*[,.:;-]?\\s*",
+  "\\bd['’]apr[eè]s\\s+les\\s+informations\\s+disponibles\\s*[,.:;-]?\\s*",
+  "(?:^|\\s)согласно\\s+доступной\\s+информации\\s*[,.:;-]?\\s*",
+  "(?:^|\\s)по\\s+моим\\s+данным\\s*[,.:;-]?\\s*",
+  "(?:^|\\s)в\\s+базе\\s+данных\\s+указано\\s*,?\\s*(?:что\\s+)?",
+];
+
 export function sanitizeGuestVisibleText(value: unknown) {
   if (value == null) return null;
 
@@ -103,6 +129,9 @@ export function sanitizeGuestVisibleText(value: unknown) {
     new RegExp(`\\b(?:${toolNamePattern})\\b`, "gi"),
     "",
   );
+  for (const pattern of SOURCE_CLAIM_PATTERNS) {
+    text = text.replace(new RegExp(pattern, "giu"), "");
+  }
   text = removeClarificationEcho(text);
 
   return cleanGuestText(text);
@@ -117,6 +146,10 @@ export function sanitizeDecisionGuestText<T extends Record<string, unknown>>(dec
 
   if ("response_text" in sanitized) {
     sanitized.response_text = sanitizeGuestVisibleText(sanitized.response_text);
+  }
+
+  if ("safe_fallback_response" in sanitized) {
+    sanitized.safe_fallback_response = sanitizeGuestVisibleText(sanitized.safe_fallback_response);
   }
 
   return sanitized as T;
@@ -159,5 +192,5 @@ function removeClarificationEcho(text: string) {
 }
 
 function capitalizeSentenceStart(text: string) {
-  return text.replace(/^([a-záéíóúñü])/, (match) => match.toUpperCase());
+  return text.replace(/^(\p{Ll})/u, (match) => match.toLocaleUpperCase());
 }

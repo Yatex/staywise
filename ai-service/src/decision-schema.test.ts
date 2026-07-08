@@ -6,6 +6,7 @@ const checkInReply = {
   outcome: "reply",
   language: "es",
   message_body: "El check-in es a las 15:00.",
+  safe_fallback_response: "No tengo esa información confirmada. Necesito revisarla antes de responderte.",
   intent_summary: "Consulta sobre hora de check-in - respondida",
   detected_intents: [{ type: "check_in_time", status: "answered" }],
   used_source_ids: ["property_fact:check_in_time"],
@@ -78,6 +79,24 @@ test("AylaDecision sanitizes internal metadata from guest-facing message_body", 
   assert.equal(parsed.message_body, "Le check-in est à 15:00.");
   assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
   assert.deepEqual(parsed.used_source_ids, ["property_fact:check_in_time"]);
+});
+
+test("AylaDecision accepts and sanitizes a localized safe fallback response", () => {
+  const parsed = DecisionSchema.parse({
+    ...checkInReply,
+    language: "fr",
+    safe_fallback_response: "Je dois vérifier cette information. (Source : property.check_in_time)",
+  });
+
+  assert.equal(parsed.safe_fallback_response, "Je dois vérifier cette information.");
+  assert.equal(parsed.language, "fr");
+});
+
+test("AylaDecision defaults the optional safe fallback response to null", () => {
+  const { safe_fallback_response: _safeFallbackResponse, ...withoutSafeFallback } = checkInReply;
+  const parsed = DecisionSchema.parse(withoutSafeFallback);
+
+  assert.equal(parsed.safe_fallback_response, null);
 });
 
 test("AylaDecision sanitizes normalized response_text without losing evidence", () => {

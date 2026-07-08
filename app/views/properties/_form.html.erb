@@ -6,7 +6,7 @@
           <div class="h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600"></div>
         </div>
         <p class="mt-4 text-base font-semibold text-slate-950">Ayla está leyendo el archivo</p>
-        <p class="mt-2 text-sm leading-6 text-slate-500">Está detectando datos de la propiedad, FAQs y notas útiles. Esto puede tardar unos segundos.</p>
+        <p class="mt-2 text-sm leading-6 text-slate-500">Está organizando datos, electrodomésticos, FAQs y recomendaciones. Esto puede tardar unos segundos.</p>
       </div>
     </div>
   </div>
@@ -115,7 +115,7 @@
           </div>
           <div class="md:col-span-2">
             <%= form.label :ai_general_notes, "Notas útiles para responder durante la estadía", class: label_class %>
-            <%= form.text_area :ai_general_notes, rows: 5, class: field_class, placeholder: "Electrodomésticos, calefacción, TV, lavarropas, amenities, recomendaciones internas." %>
+            <%= form.text_area :ai_general_notes, rows: 5, class: field_class, placeholder: "Información general que no corresponda a acceso, estacionamiento, reglas, checkout, electrodomésticos, FAQs o recomendaciones." %>
           </div>
         </div>
       </div>
@@ -150,71 +150,186 @@
       <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">5</span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">Checkout</h2>
-        <div class="mt-4">
-          <%= form.label :checkout_time, "Horario de checkout", class: label_class %>
-          <%= form.text_field :checkout_time, class: field_class, placeholder: "11:00" %>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= form.label :checkout_time, "Horario de checkout", class: label_class %>
+            <%= form.text_field :checkout_time, class: field_class, placeholder: "11:00" %>
+          </div>
+          <div>
+            <%= form.label :checkout_instructions, "Instrucciones de salida", class: label_class %>
+            <%= form.text_area :checkout_instructions, rows: 5, class: field_class, placeholder: "Dónde dejar las llaves, basura, luces, aire acondicionado y pasos antes de salir." %>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <% show_initial_faqs = !property.persisted? || Array(@initial_faqs).any? { |faq| faq.to_h.values.any?(&:present?) } %>
-  <% if show_initial_faqs %>
-    <section class="<%= card_class %> p-5" data-controller="initial-faqs" data-initial-faqs-next-index-value="<%= Array(@initial_faqs).length %>">
-      <div class="flex items-start gap-4">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
-        <div class="min-w-0 flex-1">
-          <h2 class="text-base font-semibold text-slate-950"><%= property.persisted? ? "Preguntas frecuentes para agregar" : "Preguntas frecuentes iniciales" %></h2>
-          <% if property.persisted? %>
-            <p class="mt-1 text-sm text-slate-500">Estas FAQs se van a agregar a la propiedad cuando guardes los cambios.</p>
-          <% end %>
-          <div class="mt-4 space-y-4" data-initial-faqs-target="list">
-            <% Array(@initial_faqs).each_with_index do |faq, index| %>
-              <div class="rounded-lg border border-slate-200 p-4">
-                <div class="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <%= label_tag "property_initial_faqs_#{index}_question", "Pregunta", class: label_class %>
-                    <%= text_field_tag "property[initial_faqs][][question]", faq["question"], id: "property_initial_faqs_#{index}_question", class: field_class, placeholder: "¿A qué hora es el checkout?" %>
-                  </div>
-                  <div>
-                    <%= label_tag "property_initial_faqs_#{index}_category", "Categoría", class: label_class %>
-                    <%= text_field_tag "property[initial_faqs][][category]", faq["category"], id: "property_initial_faqs_#{index}_category", class: field_class, placeholder: "checkout, acceso, amenities" %>
-                  </div>
-                  <div class="md:col-span-2">
-                    <%= label_tag "property_initial_faqs_#{index}_answer", "Respuesta", class: label_class %>
-                    <%= text_area_tag "property[initial_faqs][][answer]", faq["answer"], id: "property_initial_faqs_#{index}_answer", rows: 3, class: field_class, placeholder: "El checkout es a las 11:00. Dejás las llaves sobre la mesa." %>
-                  </div>
-                </div>
-              </div>
-            <% end %>
-          </div>
-          <template data-initial-faqs-target="template">
+  <section class="<%= card_class %> p-5" data-controller="initial-faqs" data-initial-faqs-next-index-value="<%= Array(@initial_appliance_guides).length %>">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">6</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Electrodomésticos</h2>
+        <p class="mt-1 text-sm text-slate-500">Guías de uso para lavarropas, aire acondicionado, TV, horno, cafetera y otros equipos.</p>
+        <div class="mt-4 space-y-4" data-initial-faqs-target="list">
+          <% Array(@initial_appliance_guides).each_with_index do |guide, index| %>
             <div class="rounded-lg border border-slate-200 p-4">
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <%= label_tag "property_initial_faqs___INDEX___question", "Pregunta", class: label_class %>
-                  <%= text_field_tag "property[initial_faqs][][question]", nil, id: "property_initial_faqs___INDEX___question", class: field_class, placeholder: "¿A qué hora es el checkout?" %>
+                  <%= label_tag "property_initial_appliance_guides_#{index}_title", "Electrodoméstico", class: label_class %>
+                  <%= text_field_tag "property[initial_appliance_guides][][title]", guide["title"], id: "property_initial_appliance_guides_#{index}_title", class: field_class, placeholder: "Lavarropas" %>
                 </div>
                 <div>
-                  <%= label_tag "property_initial_faqs___INDEX___category", "Categoría", class: label_class %>
-                  <%= text_field_tag "property[initial_faqs][][category]", nil, id: "property_initial_faqs___INDEX___category", class: field_class, placeholder: "checkout, acceso, amenities" %>
+                  <%= label_tag "property_initial_appliance_guides_#{index}_youtube_url", "Video de YouTube opcional", class: label_class %>
+                  <%= url_field_tag "property[initial_appliance_guides][][youtube_url]", guide["youtube_url"], id: "property_initial_appliance_guides_#{index}_youtube_url", class: field_class, placeholder: "https://youtube.com/..." %>
                 </div>
                 <div class="md:col-span-2">
-                  <%= label_tag "property_initial_faqs___INDEX___answer", "Respuesta", class: label_class %>
-                  <%= text_area_tag "property[initial_faqs][][answer]", nil, id: "property_initial_faqs___INDEX___answer", rows: 3, class: field_class, placeholder: "El checkout es a las 11:00. Dejás las llaves sobre la mesa." %>
+                  <%= label_tag "property_initial_appliance_guides_#{index}_content", "Instrucciones de uso", class: label_class %>
+                  <%= text_area_tag "property[initial_appliance_guides][][content]", guide["content"], id: "property_initial_appliance_guides_#{index}_content", rows: 4, class: field_class, placeholder: "Explicá los pasos, controles, programas y cuidados importantes." %>
                 </div>
               </div>
             </div>
-          </template>
-          <button type="button" class="<%= secondary_button_class %> mt-4" data-action="initial-faqs#add">Agregar FAQ</button>
+          <% end %>
         </div>
+        <template data-initial-faqs-target="template">
+          <div class="rounded-lg border border-slate-200 p-4">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <%= label_tag "property_initial_appliance_guides___INDEX___title", "Electrodoméstico", class: label_class %>
+                <%= text_field_tag "property[initial_appliance_guides][][title]", nil, id: "property_initial_appliance_guides___INDEX___title", class: field_class, placeholder: "Lavarropas" %>
+              </div>
+              <div>
+                <%= label_tag "property_initial_appliance_guides___INDEX___youtube_url", "Video de YouTube opcional", class: label_class %>
+                <%= url_field_tag "property[initial_appliance_guides][][youtube_url]", nil, id: "property_initial_appliance_guides___INDEX___youtube_url", class: field_class, placeholder: "https://youtube.com/..." %>
+              </div>
+              <div class="md:col-span-2">
+                <%= label_tag "property_initial_appliance_guides___INDEX___content", "Instrucciones de uso", class: label_class %>
+                <%= text_area_tag "property[initial_appliance_guides][][content]", nil, id: "property_initial_appliance_guides___INDEX___content", rows: 4, class: field_class, placeholder: "Explicá los pasos, controles, programas y cuidados importantes." %>
+              </div>
+            </div>
+          </div>
+        </template>
+        <button type="button" class="<%= secondary_button_class %> mt-4" data-action="initial-faqs#add">Agregar electrodoméstico</button>
       </div>
-    </section>
-  <% end %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5" data-controller="initial-faqs" data-initial-faqs-next-index-value="<%= Array(@initial_faqs).length %>">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">7</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">FAQs</h2>
+        <p class="mt-1 text-sm text-slate-500">Preguntas frecuentes que se agregarán al guardar la propiedad.</p>
+        <div class="mt-4 space-y-4" data-initial-faqs-target="list">
+          <% Array(@initial_faqs).each_with_index do |faq, index| %>
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <%= label_tag "property_initial_faqs_#{index}_question", "Pregunta", class: label_class %>
+                  <%= text_field_tag "property[initial_faqs][][question]", faq["question"], id: "property_initial_faqs_#{index}_question", class: field_class, placeholder: "¿A qué hora es el checkout?" %>
+                </div>
+                <div>
+                  <%= label_tag "property_initial_faqs_#{index}_category", "Categoría", class: label_class %>
+                  <%= text_field_tag "property[initial_faqs][][category]", faq["category"], id: "property_initial_faqs_#{index}_category", class: field_class, placeholder: "checkout, acceso, amenities" %>
+                </div>
+                <div class="md:col-span-2">
+                  <%= label_tag "property_initial_faqs_#{index}_answer", "Respuesta", class: label_class %>
+                  <%= text_area_tag "property[initial_faqs][][answer]", faq["answer"], id: "property_initial_faqs_#{index}_answer", rows: 3, class: field_class, placeholder: "El checkout es a las 11:00. Dejás las llaves sobre la mesa." %>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+        <template data-initial-faqs-target="template">
+          <div class="rounded-lg border border-slate-200 p-4">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <%= label_tag "property_initial_faqs___INDEX___question", "Pregunta", class: label_class %>
+                <%= text_field_tag "property[initial_faqs][][question]", nil, id: "property_initial_faqs___INDEX___question", class: field_class, placeholder: "¿A qué hora es el checkout?" %>
+              </div>
+              <div>
+                <%= label_tag "property_initial_faqs___INDEX___category", "Categoría", class: label_class %>
+                <%= text_field_tag "property[initial_faqs][][category]", nil, id: "property_initial_faqs___INDEX___category", class: field_class, placeholder: "checkout, acceso, amenities" %>
+              </div>
+              <div class="md:col-span-2">
+                <%= label_tag "property_initial_faqs___INDEX___answer", "Respuesta", class: label_class %>
+                <%= text_area_tag "property[initial_faqs][][answer]", nil, id: "property_initial_faqs___INDEX___answer", rows: 3, class: field_class, placeholder: "El checkout es a las 11:00. Dejás las llaves sobre la mesa." %>
+              </div>
+            </div>
+          </div>
+        </template>
+        <button type="button" class="<%= secondary_button_class %> mt-4" data-action="initial-faqs#add">Agregar FAQ</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5" data-controller="initial-faqs" data-initial-faqs-next-index-value="<%= Array(@initial_recommendations).length %>">
+    <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">8</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Recomendaciones locales</h2>
+        <p class="mt-1 text-sm text-slate-500">Lugares aprobados por el anfitrión que se agregarán al guardar.</p>
+        <div class="mt-4 space-y-4" data-initial-faqs-target="list">
+          <% Array(@initial_recommendations).each_with_index do |recommendation, index| %>
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <%= label_tag "property_initial_recommendations_#{index}_name", "Nombre", class: label_class %>
+                  <%= text_field_tag "property[initial_recommendations][][name]", recommendation["name"], id: "property_initial_recommendations_#{index}_name", class: field_class, placeholder: "Café del barrio" %>
+                </div>
+                <div>
+                  <%= label_tag "property_initial_recommendations_#{index}_category", "Categoría", class: label_class %>
+                  <%= select_tag "property[initial_recommendations][][category]", options_for_select(Recommendation::CATEGORIES.map { |category| [enum_label(category), category] }, recommendation["category"]), include_blank: "Elegir categoría", id: "property_initial_recommendations_#{index}_category", class: field_class %>
+                </div>
+                <div>
+                  <%= label_tag "property_initial_recommendations_#{index}_address", "Dirección", class: label_class %>
+                  <%= text_field_tag "property[initial_recommendations][][address]", recommendation["address"], id: "property_initial_recommendations_#{index}_address", class: field_class %>
+                </div>
+                <div>
+                  <%= label_tag "property_initial_recommendations_#{index}_distance", "Distancia o tiempo", class: label_class %>
+                  <%= text_field_tag "property[initial_recommendations][][distance_or_walking_time]", recommendation["distance_or_walking_time"], id: "property_initial_recommendations_#{index}_distance", class: field_class, placeholder: "6 min caminando" %>
+                </div>
+                <div class="md:col-span-2">
+                  <%= label_tag "property_initial_recommendations_#{index}_description", "Descripción", class: label_class %>
+                  <%= text_area_tag "property[initial_recommendations][][description]", recommendation["description"], id: "property_initial_recommendations_#{index}_description", rows: 3, class: field_class %>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+        <template data-initial-faqs-target="template">
+          <div class="rounded-lg border border-slate-200 p-4">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <%= label_tag "property_initial_recommendations___INDEX___name", "Nombre", class: label_class %>
+                <%= text_field_tag "property[initial_recommendations][][name]", nil, id: "property_initial_recommendations___INDEX___name", class: field_class, placeholder: "Café del barrio" %>
+              </div>
+              <div>
+                <%= label_tag "property_initial_recommendations___INDEX___category", "Categoría", class: label_class %>
+                <%= select_tag "property[initial_recommendations][][category]", options_for_select(Recommendation::CATEGORIES.map { |category| [enum_label(category), category] }), include_blank: "Elegir categoría", id: "property_initial_recommendations___INDEX___category", class: field_class %>
+              </div>
+              <div>
+                <%= label_tag "property_initial_recommendations___INDEX___address", "Dirección", class: label_class %>
+                <%= text_field_tag "property[initial_recommendations][][address]", nil, id: "property_initial_recommendations___INDEX___address", class: field_class %>
+              </div>
+              <div>
+                <%= label_tag "property_initial_recommendations___INDEX___distance", "Distancia o tiempo", class: label_class %>
+                <%= text_field_tag "property[initial_recommendations][][distance_or_walking_time]", nil, id: "property_initial_recommendations___INDEX___distance", class: field_class, placeholder: "6 min caminando" %>
+              </div>
+              <div class="md:col-span-2">
+                <%= label_tag "property_initial_recommendations___INDEX___description", "Descripción", class: label_class %>
+                <%= text_area_tag "property[initial_recommendations][][description]", nil, id: "property_initial_recommendations___INDEX___description", rows: 3, class: field_class %>
+              </div>
+            </div>
+          </div>
+        </template>
+        <button type="button" class="<%= secondary_button_class %> mt-4" data-action="initial-faqs#add">Agregar recomendación</button>
+      </div>
+    </div>
+  </section>
 
   <section class="<%= card_class %> p-5">
     <div class="flex items-start gap-4">
-      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white"><%= show_initial_faqs ? "7" : "6" %></span>
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">9</span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">IA de esta propiedad</h2>
         <label class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">

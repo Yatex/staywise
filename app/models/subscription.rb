@@ -1,11 +1,12 @@
 class Subscription < ApplicationRecord
-  PLANS = %w[starter growth pro business].freeze
+  PLANS = %w[starter growth business scale pro].freeze
   STATUSES = %w[trialing active past_due canceled incomplete].freeze
   PLAN_LIMITS = {
     "starter" => 3,
     "growth" => 10,
-    "pro" => 25,
-    "business" => 50
+    "business" => 20,
+    "scale" => 35,
+    "pro" => 60
   }.freeze
 
   belongs_to :account

@@ -166,6 +166,7 @@ en:
       subtitle: "AI-detected situations that need owner attention."
       unknown_guest: "Unknown guest"
       empty: "No alerts yet."
+      mark_done: "Mark done"
     guests:
       title: "Guests"
       subtitle: "Guests are created automatically from WhatsApp conversations."

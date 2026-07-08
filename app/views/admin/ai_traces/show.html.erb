@@ -6,6 +6,8 @@
 <% alert_trace = payload["alert"].presence || { "created" => false } %>
 <% whatsapp_trace = payload["whatsapp_delivery"].presence || {} %>
 <% generated_response = @trace.ai_response_payload.to_h["response_text"].presence || @trace.ai_response_payload.to_h["message_body"].presence || payload["rejected_candidate"].to_h["response_text"].presence || payload["outcome"].presence %>
+<% safe_fallback_response = payload["safe_fallback_response"].presence || @trace.ai_response_payload.to_h["safe_fallback_response"].presence || payload["rejected_candidate"].to_h["safe_fallback_response"].presence %>
+<% final_response = payload["final_response_text"].presence %>
 
 <div class="space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -148,15 +150,25 @@
 
   <section class="<%= card_class %> p-5">
     <h3 class="text-base font-semibold text-slate-950">Respuesta y validaciones</h3>
-    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div class="mt-4 grid gap-4 lg:grid-cols-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta generada por IA</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta candidata</p>
         <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= generated_response.presence || "Sin respuesta generada" %></p>
       </div>
       <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Fallback seguro del AI</p>
+        <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= safe_fallback_response.presence || "No provisto" %></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta final de Rails</p>
+        <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= final_response.presence || "No se envió respuesta" %></p>
+      </div>
+      <div class="lg:col-span-3">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Validaciones Rails</p>
         <div class="mt-2 rounded-lg bg-slate-50 p-4 text-sm text-slate-800">
           <p>Resultado: <strong><%= validation.to_h["status"] || @trace.validator_result || "Sin datos" %></strong></p>
+          <p class="mt-1">Acción: <strong><%= payload["rails_fallback_source"].presence || "respuesta principal" %></strong></p>
+          <p class="mt-1">Idioma: <strong><%= payload["fallback_language"].presence || @trace.language.presence || "Sin datos" %></strong></p>
           <% reasons = validation.to_h["reasons"].presence || Array(@trace.rejection_reason) %>
           <% if reasons.present? %>
             <ul class="mt-2 list-disc pl-5">

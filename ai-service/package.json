@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "tsx --test src/rails-tool-client.test.ts src/evidence-catalog.test.ts src/grounded-decision-builder.test.ts src/decision-schema.test.ts src/guest-message-sanitizer.test.ts",
+    "test": "tsx --test src/rails-tool-client.test.ts src/evidence-catalog.test.ts src/grounded-decision-builder.test.ts src/decision-schema.test.ts src/guest-message-sanitizer.test.ts src/decision-system-prompt.test.ts src/safe-fallback-response.test.ts src/property-import-schema.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
