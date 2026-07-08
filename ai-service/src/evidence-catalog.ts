@@ -12,8 +12,15 @@ export type EvidenceCatalogEntry = {
   category: string | null;
   value: unknown;
   text: string;
+  sensitivity: string | null;
+  authorization_required: boolean;
+  authorized: boolean | null;
   metadata: Record<string, unknown>;
   tool_name: string;
+};
+
+type EvidenceContext = {
+  authorized?: boolean | null;
 };
 
 export function buildEvidenceCatalog(toolResults: ToolResultRow[]): EvidenceCatalogEntry[] {
@@ -53,6 +60,9 @@ export function canonicalEvidenceId(value: unknown) {
   const propertySource = normalized.match(/^property_(.+)$/i);
   if (propertySource) return `property.${propertySource[1]}`;
 
+  const sensitiveSource = normalized.match(/^sensitive_(.+)$/i);
+  if (sensitiveSource) return `property.${sensitiveSource[1]}`;
+
   const reservationSource = normalized.match(/^reservation_(.+)$/i);
   if (reservationSource) return `reservation.${reservationSource[1]}`;
 
@@ -69,17 +79,21 @@ export function shouldRetryGroundedDecision(decision: any, evidenceCatalog: Evid
   return ["escalate", "propose_action"].includes(outcome) && unknownIntent && citedEvidence.length === 0;
 }
 
-function evidenceEntries(value: unknown, toolName: string): EvidenceCatalogEntry[] {
-  if (Array.isArray(value)) return value.flatMap((item) => evidenceEntries(item, toolName));
+function evidenceEntries(value: unknown, toolName: string, context: EvidenceContext = {}): EvidenceCatalogEntry[] {
+  if (Array.isArray(value)) return value.flatMap((item) => evidenceEntries(item, toolName, context));
   if (!value || typeof value !== "object") return [];
 
   const item = value as Record<string, unknown>;
+  const itemContext = {
+    ...context,
+    authorized: booleanOrNull(item.authorized) ?? context.authorized ?? null,
+  };
   const rawId = item.evidence_id || item.source_id || item.id;
   const entryValue = item.value ?? item.content ?? item.excerpt;
   const directEntry: EvidenceCatalogEntry[] = rawId && entryValue !== undefined
-    ? [catalogEntry(item, rawId, entryValue, toolName)]
+    ? [catalogEntry(item, rawId, entryValue, toolName, itemContext)]
     : [];
-  const nestedEntries = Object.values(item).flatMap((nested) => evidenceEntries(nested, toolName));
+  const nestedEntries = Object.values(item).flatMap((nested) => evidenceEntries(nested, toolName, itemContext));
 
   return directEntry.concat(nestedEntries);
 }
@@ -89,11 +103,16 @@ function catalogEntry(
   rawId: unknown,
   value: unknown,
   toolName: string,
+  context: EvidenceContext,
 ): EvidenceCatalogEntry {
   const field = stringOrNull(item.field || item.label || item.title);
   const label = stringOrNull(item.label || item.title || item.field);
   const sourceType = stringOrNull(item.source_type || item.type);
   const category = stringOrNull(item.category);
+  const sensitivity = stringOrNull(item.sensitivity || item.sensitive_level) || inferredSensitivity(toolName, rawId, field, label, sourceType);
+  const authorizationRequired = booleanOrNull(item.authorization_required ?? item.requires_authorization) ??
+    (sensitivity !== null || toolName === "sensitive_access_info");
+  const authorized = booleanOrNull(item.authorized) ?? context.authorized ?? (authorizationRequired ? null : true);
   const metadata = Object.fromEntries(
     Object.entries(item).filter(([key]) => ![
       "evidence_id",
@@ -108,6 +127,11 @@ function catalogEntry(
       "value",
       "content",
       "excerpt",
+      "sensitivity",
+      "sensitive_level",
+      "authorization_required",
+      "requires_authorization",
+      "authorized",
     ].includes(key)),
   );
 
@@ -120,9 +144,26 @@ function catalogEntry(
     category,
     value,
     text: [label, field, category, sourceType, value].filter(Boolean).join(" "),
+    sensitivity,
+    authorization_required: authorizationRequired,
+    authorized,
     metadata,
     tool_name: toolName,
   };
+}
+
+function inferredSensitivity(toolName: string, rawId: unknown, field: string | null, label: string | null, sourceType: string | null) {
+  const haystack = [toolName, rawId, field, label, sourceType].filter(Boolean).join(" ").toLowerCase();
+  if (toolName === "sensitive_access_info" || /\b(sensitive|password|wifi_password|access_code|lockbox|key|code)\b/.test(haystack)) {
+    return "sensitive";
+  }
+  return null;
+}
+
+function booleanOrNull(value: unknown) {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return null;
 }
 
 function stringOrNull(value: unknown) {

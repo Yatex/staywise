@@ -16,6 +16,13 @@ test("check-in evidence aliases are normalized to the Rails evidence id", () => 
   }
 });
 
+test("sensitive WiFi evidence aliases are normalized to property evidence ids", () => {
+  assert.equal(canonicalEvidenceId("sensitive_wifi_name"), "property.wifi_name");
+  assert.equal(canonicalEvidenceId("sensitive_wifi_password"), "property.wifi_password");
+  assert.equal(canonicalEvidenceId("property_fact:wifi_name"), "property.wifi_name");
+  assert.equal(canonicalEvidenceId("property_fact:wifi_password"), "property.wifi_password");
+});
+
 test("tool results produce a grounded check-in evidence catalog", () => {
   const catalog = buildEvidenceCatalog([
     {
@@ -45,6 +52,9 @@ test("tool results produce a grounded check-in evidence catalog", () => {
     category: null,
     value: "15:00",
     text: "check_in_time check_in_time 15:00",
+    sensitivity: null,
+    authorization_required: false,
+    authorized: true,
     metadata: {},
     tool_name: "stay_facts",
   });
@@ -60,6 +70,9 @@ test("unknown escalation without citations is reviewed when tool evidence exists
     category: null,
     value: "15:00",
     text: "check_in_time check_in_time property_fact 15:00",
+    sensitivity: null,
+    authorization_required: false,
+    authorized: true,
     metadata: {},
     tool_name: "stay_facts",
   }];

@@ -29,6 +29,12 @@ type Candidate = {
   inference_reason: string | null;
 };
 
+type EvidenceGroup = {
+  intent: string;
+  candidates: Candidate[];
+  top_score: number;
+};
+
 type RepairDecisionDiagnostic = {
   value: boolean;
   reason: string;
@@ -178,6 +184,12 @@ const DEFAULT_MAX_CLARIFICATION_ATTEMPTS = 2;
 
 const INTENT_CATEGORIES = [
   {
+    category: "access",
+    intent: "access",
+    fields: ["access", "access_instructions", "access_code", "entrance", "entry", "entry_code", "lockbox", "key", "keys", "codigo", "llave"],
+    terms: ["acceso", "entrada", "entrar", "entro", "ingresar", "ingreso", "codigo", "código", "llave", "key", "keys", "code", "lockbox", "door"],
+  },
+  {
     category: "arrival",
     intent: "check_in_time",
     fields: ["check_in_time", "checkin", "check_in", "arrival", "arrival_time", "ingreso", "entrada"],
@@ -193,13 +205,19 @@ const INTENT_CATEGORIES = [
     category: "parking",
     intent: "parking",
     fields: ["parking", "parking_instructions", "garage", "cochera", "estacionamiento"],
-    terms: ["auto", "coche", "carro", "estacionar", "parking", "garage", "cochera"],
+    terms: ["auto", "coche", "carro", "estacionar", "estaciono", "parking", "garage", "cochera"],
   },
   {
     category: "address",
     intent: "address",
     fields: ["address", "location", "direccion", "ubicacion"],
     terms: ["direccion", "ubicacion", "location", "address", "maps", "mapa"],
+  },
+  {
+    category: "recommendation",
+    intent: "recommendation",
+    fields: ["recommendation", "recommendations", "place", "name", "address", "restaurant", "cafe"],
+    terms: ["recomendar", "recomendacion", "recommendation", "recommend", "cafe", "restaurant", "restaurante", "comer", "cenar"],
   },
   {
     category: "rules",
@@ -210,8 +228,8 @@ const INTENT_CATEGORIES = [
   {
     category: "wifi",
     intent: "wifi",
-    fields: ["wifi", "wifi_name", "wifi_password", "internet"],
-    terms: ["wifi", "internet", "contrasena", "clave", "password"],
+    fields: ["wifi", "wifi_name", "wifi_password", "internet", "network"],
+    terms: ["wifi", "wi-fi", "internet", "red", "network", "contrasena", "contraseña", "clave", "password"],
   },
 ] as const;
 
@@ -289,10 +307,13 @@ export function buildGroundedDecision(
     );
   }
 
-  const sufficient = sufficientCandidates(candidates, thresholds);
+  const sufficientGroup = sufficientEvidenceGroup(candidates, thresholds);
+  const sufficient = sufficientGroup?.candidates || [];
   const sufficiencyAudit = sufficientCandidateAudit(candidates, sufficient);
   if (sufficient.length > 0) {
-    if (sufficient.some((candidate) => approvalRequired(candidate.evidence))) {
+    const approvalCandidates = sufficient.filter((candidate) => approvalRequired(candidate.evidence));
+    const replyCandidates = sufficient.filter((candidate) => !approvalRequired(candidate.evidence));
+    if (approvalCandidates.length > 0 && (approvalRequest(guestMessage) || replyCandidates.length === 0)) {
       return withGroundedAudit(
         approvalDecision(decision, payload, sufficient, previousOutcome),
         buildAudit(baseAudit, sufficiencyAudit, "approval_required", null, {
@@ -304,8 +325,9 @@ export function buildGroundedDecision(
       );
     }
 
-    const strategy = sufficient.some((candidate) => candidate.strategy === "inference") ? "reply_with_inference" : "direct_reply";
-    const replyScores = scoresForCandidates(sufficient, thresholds, { safetyScore: 95 });
+    const groundedReplyCandidates = replyCandidates.length > 0 ? replyCandidates : sufficient;
+    const strategy = groundedReplyCandidates.some((candidate) => candidate.strategy === "inference") ? "reply_with_inference" : "direct_reply";
+    const replyScores = scoresForCandidates(groundedReplyCandidates, thresholds, { safetyScore: 95 });
     if (replyScores.safety_score < thresholds.safety_score_threshold && attempts < thresholds.max_clarification_attempts) {
       const clarification = clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
       return withGroundedAudit(
@@ -321,11 +343,11 @@ export function buildGroundedDecision(
     }
 
     return withGroundedAudit(
-      replyDecision(decision, payload, sufficient, previousOutcome, strategy),
+      replyDecision(decision, payload, groundedReplyCandidates, previousOutcome, strategy),
       buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null, {
         strategy,
-        inferredIntent: sufficient[0]?.inferred_intent || null,
-        inferenceReason: sufficient[0]?.inference_reason || null,
+        inferredIntent: groundedReplyCandidates[0]?.inferred_intent || null,
+        inferenceReason: groundedReplyCandidates[0]?.inference_reason || null,
         scores: replyScores,
       }),
     );
@@ -394,19 +416,40 @@ function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry
         inference_reason: debug.inference_reason,
       };
     })
-    .filter((candidate) => candidate.score > 0)
+    .filter((candidate) => candidate.score > 0 && evidenceUsableForGuest(candidate.evidence))
     .sort((left, right) => right.score - left.score);
 }
 
-function sufficientCandidates(candidates: Candidate[], thresholds: DecisionThresholds) {
+function sufficientEvidenceGroup(candidates: Candidate[], thresholds: DecisionThresholds): EvidenceGroup | null {
   const topScore = candidates[0]?.score || 0;
-  if (relevanceScore(candidates) < thresholds.high_score_threshold) return [];
+  if (relevanceScore(candidates) < thresholds.high_score_threshold) return null;
 
-  const topCandidates = candidates.filter((candidate) => candidate.score === topScore);
-  const distinctLabels = unique(topCandidates.map((candidate) => humanLabel(candidate.evidence)));
-  if (distinctLabels.length > 1) return [];
+  const groups = groupedCandidatesByIntent(candidates);
+  const topGroups = groups.filter((group) => group.top_score === topScore);
+  if (topGroups.length !== 1) return null;
 
-  return topCandidates;
+  return topGroups[0];
+}
+
+function groupedCandidatesByIntent(candidates: Candidate[]) {
+  const groups = new Map<string, Candidate[]>();
+  for (const candidate of candidates) {
+    const key = candidate.inferred_intent || inferredIntent(candidate.evidence);
+    groups.set(key, (groups.get(key) || []).concat(candidate));
+  }
+
+  return Array.from(groups.entries()).map(([intent, intentCandidates]) => {
+    const topScore = Math.max(...intentCandidates.map((candidate) => candidate.score));
+    const compatibleCandidates = intentCandidates
+      .filter((candidate) => candidate.score >= Math.max(1, topScore - 2))
+      .sort((left, right) => right.score - left.score);
+
+    return {
+      intent,
+      candidates: compatibleCandidates,
+      top_score: topScore,
+    };
+  }).sort((left, right) => right.top_score - left.top_score);
 }
 
 function scoreEvidence(queryTokens: string[], evidence: EvidenceCatalogEntry) {
@@ -476,8 +519,8 @@ function replyDecision(
   const evidenceIds = unique(candidates.map((candidate) => candidate.evidence.evidence_id));
   const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
   const messageBody = strategy === "reply_with_inference"
-    ? inferredResponseFromEvidence(primary, language, candidates[0].inferred_intent)
-    : responseFromEvidence(primary, language);
+    ? inferredResponseFromEvidence(primary, language, candidates[0].inferred_intent, candidates)
+    : responseFromEvidenceGroup(candidates, language);
 
   return {
     override: {
@@ -503,6 +546,7 @@ function replyDecision(
       used_source_ids: [],
       required_capabilities: [],
       proposed_action: null,
+      sensitive_info_used: Boolean(decision?.sensitive_info_used) || candidates.some((candidate) => sensitiveEvidence(candidate.evidence)),
       escalation: {
         required: false,
         reason_code: null,
@@ -621,6 +665,17 @@ function clarificationDecision(
   };
 }
 
+function responseFromEvidenceGroup(candidates: Candidate[], language: string) {
+  if (candidates.length === 0) return "";
+  const entries = uniqueEvidence(candidates.map((candidate) => candidate.evidence));
+  if (entries.length === 1) return responseFromEvidence(entries[0], language);
+
+  const recommendation = recommendationResponseFromGroup(entries);
+  if (recommendation) return sentence(recommendation);
+
+  return sentence(entries.map((entry) => `${fieldDisplayLabel(entry, language)}: ${String(entry.value || "").trim()}`).filter((part) => !part.endsWith(":")).join(". "));
+}
+
 function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) {
   const value = String(evidence.value || "").trim();
   const label = humanLabel(evidence);
@@ -645,13 +700,12 @@ function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) 
     return value.endsWith(".") ? value : `${value}.`;
   }
 
-  if (language === "es") return `${label}: ${value}.`;
-  if (language === "fr") return `${label} : ${value}.`;
-  return `${label}: ${value}.`;
+  return fallbackLabeledResponse(fieldDisplayLabel(evidence, language) || label, value, language);
 }
 
-function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string) {
+function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string, candidates: Candidate[] = []) {
   const value = String(evidence.value || "").trim();
+  if (candidates.length > 1) return responseFromEvidenceGroup(candidates, language);
   return directResponseForIntent(value, language, intent) || responseFromEvidence(evidence, language);
 }
 
@@ -678,6 +732,53 @@ function directResponseForIntent(value: string, language: string, intent: string
   }
 
   return null;
+}
+
+function fallbackLabeledResponse(label: string, value: string, language: string) {
+  if (language === "es") return `${label}: ${value}.`;
+  if (language === "fr") return `${label} : ${value}.`;
+  return `${label}: ${value}.`;
+}
+
+function recommendationResponseFromGroup(entries: EvidenceCatalogEntry[]) {
+  if (!entries.some((entry) => entry.source_type === "recommendation")) return null;
+
+  return entries.map((entry) => {
+    const details = [
+      humanLabel(entry),
+      entry.value,
+      entry.metadata.address,
+      entry.metadata.distance_or_walking_time,
+      entry.metadata.google_maps_url,
+    ].filter(Boolean).join(" - ");
+    return details;
+  }).filter(Boolean).join(". ");
+}
+
+function fieldDisplayLabel(evidence: EvidenceCatalogEntry, language: string) {
+  const field = evidenceField(evidence);
+  const labels: Record<string, Record<string, string>> = {
+    wifi_name: { es: "Red de WiFi", fr: "Réseau WiFi", en: "WiFi network" },
+    wifi_password: { es: "Contraseña de WiFi", fr: "Mot de passe WiFi", en: "WiFi password" },
+    parking: { es: "Estacionamiento", fr: "Stationnement", en: "Parking" },
+    parking_available: { es: "Estacionamiento disponible", fr: "Stationnement disponible", en: "Parking availability" },
+    parking_instructions: { es: "Instrucciones de estacionamiento", fr: "Instructions de stationnement", en: "Parking instructions" },
+    check_in_time: { es: "Check-in", fr: "Check-in", en: "Check-in" },
+    early_check_in_policy: { es: "Política de early check-in", fr: "Politique d'arrivée anticipée", en: "Early check-in policy" },
+    check_out_time: { es: "Checkout", fr: "Check-out", en: "Checkout" },
+    late_check_out_policy: { es: "Política de late checkout", fr: "Politique de départ tardif", en: "Late checkout policy" },
+    access_instructions: { es: "Instrucciones de acceso", fr: "Instructions d'accès", en: "Access instructions" },
+    access_code: { es: "Código de acceso", fr: "Code d'accès", en: "Access code" },
+    address: { es: "Dirección", fr: "Adresse", en: "Address" },
+  };
+
+  return labels[field]?.[language] || labels[field]?.en || humanLabel(evidence);
+}
+
+function sentence(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 function approvalMessage(evidence: EvidenceCatalogEntry, language: string) {
@@ -770,13 +871,32 @@ function approvalRequired(evidence: EvidenceCatalogEntry) {
   return APPROVAL_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function approvalRequest(message: string) {
+  const text = normalizeText(message);
+  return /\b(puedo|puede|podria|podrias|can|could|may|allowed|permitido|autoriz|aprobar|approval|antes|temprano|early|tarde|late|extender|extension|after|before|despues)\b/.test(text);
+}
+
+function evidenceUsableForGuest(evidence: EvidenceCatalogEntry) {
+  return !(sensitiveEvidence(evidence) && evidence.authorized === false);
+}
+
+function sensitiveEvidence(evidence: EvidenceCatalogEntry) {
+  return evidence.authorization_required || evidence.sensitivity != null;
+}
+
 function inferredIntent(evidence: EvidenceCatalogEntry) {
   return canonicalIntentName(snakeCase(evidence.field || evidence.label || evidence.category || evidence.source_type || "grounded_answer"));
 }
 
 function canonicalIntentName(intent: string) {
   if (intent === "checkin_time" || intent === "check_in" || intent === "checkin") return "check_in_time";
+  if (intent === "early_checkin_policy" || intent === "early_check_in_policy" || intent === "arrival_time") return "check_in_time";
   if (intent === "checkout_time" || intent === "check_out" || intent === "checkout") return "check_out_time";
+  if (intent === "late_checkout_policy" || intent === "late_check_out_policy" || intent === "departure_time") return "check_out_time";
+  if (intent === "parking_available" || intent === "parking_availability" || intent === "parking_instructions" || intent === "garage" || intent === "cochera" || intent === "estacionamiento") return "parking";
+  if (intent === "access_instructions" || intent === "access_code" || intent === "entry_code" || intent === "entrance" || intent === "entry" || intent === "lockbox" || intent === "key" || intent === "keys" || intent === "codigo" || intent === "llave") return "access";
+  if (intent === "wifi_name" || intent === "wifi_password" || intent === "wi_fi" || intent === "internet" || intent === "network") return "wifi";
+  if (intent === "recommendations" || intent === "restaurant" || intent === "cafe" || intent === "place") return "recommendation";
   return intent;
 }
 
@@ -857,6 +977,12 @@ function normalizeText(value: string) {
 
 function expandTokens(tokens: string[]) {
   const expanded = tokens.slice();
+  if (tokens.some((token) => ["wifi", "internet", "red", "network"].includes(token))) {
+    expanded.push("wifi", "internet", "network");
+  }
+  if (tokens.some((token) => ["clave", "contrasena", "contraseña", "password"].includes(token))) {
+    expanded.push("password", "wifi_password");
+  }
   if (tokens.some((token) => ["visita", "visitas", "invitado", "invitados", "invitar", "gente", "visitor", "visitors", "guests", "friends"].includes(token))) {
     expanded.push("visitors", "permission");
   }
@@ -919,14 +1045,14 @@ function sufficientCandidateAudit(candidates: Candidate[], sufficient: Candidate
   const sufficientIds = new Set(sufficient.map((candidate) => candidate.evidence.evidence_id));
   const topScore = candidates[0]?.score || 0;
   const topCandidates = candidates.filter((candidate) => candidate.score === topScore);
-  const distinctLabels = unique(topCandidates.map((candidate) => humanLabel(candidate.evidence)));
+  const distinctIntents = unique(topCandidates.map((candidate) => candidate.inferred_intent));
 
   return topCandidates.map((candidate) => {
-    let reason = "top_score_meets_threshold_single_label";
+    let reason = "top_score_meets_threshold_single_intent";
     if (!sufficientIds.has(candidate.evidence.evidence_id)) {
       if (topScore < 3) {
         reason = "score_below_sufficiency_threshold";
-      } else if (distinctLabels.length > 1) {
+      } else if (distinctIntents.length > 1) {
         reason = "ambiguous_top_candidates";
       } else {
         reason = "not_selected_as_sufficient";
@@ -1132,6 +1258,20 @@ function withGroundedAudit(build: GroundedDecisionBuild, audit: GroundedDecision
 
 function includesEvidenceId(evidenceCatalog: EvidenceCatalogEntry[], evidenceId: string) {
   return evidenceCatalog.some((entry) => entry.evidence_id === evidenceId);
+}
+
+function evidenceField(evidence: EvidenceCatalogEntry) {
+  return snakeCase(evidence.field || evidence.label || evidence.evidence_id || "");
+}
+
+function uniqueEvidence(entries: EvidenceCatalogEntry[]) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = `${entry.evidence_id}:${JSON.stringify(entry.value)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function unique(values: string[]) {

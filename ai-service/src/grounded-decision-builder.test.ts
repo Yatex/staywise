@@ -267,6 +267,211 @@ test("guide or knowledge block evidence answers operational question", () => {
   assert.match(result.decision.message_body, /tachos/);
 });
 
+test("authorized sensitive access info answers internet question with WiFi details", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "hay internet aca?",
+  }, sensitiveAccessCatalog(true));
+
+  assert.equal(result.override?.reason, "sufficient_evidence");
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["property.wifi_name", "property.wifi_password"].sort());
+  assert.equal(result.decision.detected_intents[0].type, "wifi");
+  assert.match(result.decision.message_body, /Pippa/);
+  assert.match(result.decision.message_body, /Pippa123/);
+  assert.doesNotMatch(result.decision.message_body, /consultando|anfitri[oó]n/i);
+});
+
+test("authorized sensitive access info answers wifi question", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cuál es el wifi?",
+  }, sensitiveAccessCatalog(true));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["property.wifi_name", "property.wifi_password"].sort());
+  assert.equal(result.decision.message_body, "Red de WiFi: Pippa. Contraseña de WiFi: Pippa123.");
+});
+
+test("authorized sensitive access info answers wifi password question", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "me pasás la clave del wifi?",
+  }, sensitiveAccessCatalog(true));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.wifi_password"]);
+  assert.equal(result.decision.message_body, "Contraseña de WiFi: Pippa123.");
+});
+
+test("unauthorized sensitive access info does not reveal WiFi details", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "me pasás la clave del wifi?",
+  }, sensitiveAccessCatalog(false));
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.escalation_required, true);
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.doesNotMatch(result.decision.message_body, /Pippa|Pippa123/);
+});
+
+test("missing WiFi evidence leaves escalation as last resort", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cuál es el wifi?",
+  }, []);
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.escalation_required, true);
+  assert.deepEqual(result.decision.evidence_ids, []);
+});
+
+test("parking evidence group answers with availability and instructions", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "donde estaciono?",
+  }, catalogFromSources([
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:parking_available",
+      evidence_id: "property.parking_available",
+      field: "parking_available",
+      label: "parking_available",
+      value: "Hay cochera incluida",
+    },
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:parking_instructions",
+      evidence_id: "property.parking_instructions",
+      field: "parking_instructions",
+      label: "parking_instructions",
+      value: "Entrá por el portón gris y usá el espacio 12",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["property.parking_available", "property.parking_instructions"].sort());
+  assert.match(result.decision.message_body, /Hay cochera incluida/);
+  assert.match(result.decision.message_body, /espacio 12/);
+});
+
+test("check-in evidence group can include supporting early check-in policy", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora es el check in?",
+  }, catalogFromSources([
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_in_time",
+      evidence_id: "property.check_in_time",
+      field: "check_in_time",
+      label: "check_in_time",
+      value: "15:00",
+    },
+    {
+      source_type: "policy",
+      source_id: "policy:early_check_in_policy",
+      evidence_id: "policy.early_check_in_policy",
+      field: "early_check_in_policy",
+      label: "early_check_in_policy",
+      value: "El ingreso anticipado puede solicitarse según disponibilidad.",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["policy.early_check_in_policy", "property.check_in_time"].sort());
+  assert.match(result.decision.message_body, /15:00/);
+  assert.match(result.decision.message_body, /anticipado/);
+});
+
+test("access evidence group answers with authorized instructions and code", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "como entro?",
+  }, buildEvidenceCatalog([{
+    toolName: "sensitive_access_info",
+    result: {
+      authorized: true,
+      sources: [
+        source({
+          source_type: "property_fact",
+          source_id: "property_fact:access_instructions",
+          evidence_id: "property.access_instructions",
+          field: "access_instructions",
+          label: "access_instructions",
+          value: "Entrada por costado lateral",
+        }),
+        source({
+          source_type: "property_fact",
+          source_id: "property_fact:access_code",
+          evidence_id: "property.access_code",
+          field: "access_code",
+          label: "access_code",
+          value: "4321",
+        }),
+      ],
+    },
+  }]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.sensitive_info_used, true);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["property.access_code", "property.access_instructions"].sort());
+  assert.match(result.decision.message_body, /Entrada por costado lateral/);
+  assert.match(result.decision.message_body, /4321/);
+});
+
+test("recommendation evidence group answers with name and address", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "recomendame un cafe cerca",
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:3",
+      evidence_id: "recommendation.3.name",
+      field: "name",
+      label: "Café Roma",
+      value: "Café Roma",
+      category: "cafe",
+    },
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:3:address",
+      evidence_id: "recommendation.3.address",
+      field: "address",
+      label: "Dirección",
+      value: "Calle 1 123",
+      category: "cafe",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["recommendation.3.address", "recommendation.3.name"].sort());
+  assert.match(result.decision.message_body, /Café Roma/);
+  assert.match(result.decision.message_body, /Calle 1 123/);
+});
+
+test("unauthorized sensitive evidence is filtered before grouped replies", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "como entro?",
+  }, buildEvidenceCatalog([{
+    toolName: "sensitive_access_info",
+    result: {
+      authorized: false,
+      sources: [
+        source({
+          source_type: "property_fact",
+          source_id: "property_fact:access_code",
+          evidence_id: "property.access_code",
+          field: "access_code",
+          label: "access_code",
+          value: "4321",
+        }),
+      ],
+    },
+  }]));
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.doesNotMatch(result.decision.message_body, /4321/);
+  assert.deepEqual(result.decision.evidence_ids, []);
+});
+
 test("policy evidence that requires approval proposes a narrow escalation without promising", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "Puedo invitar visitas?",
@@ -459,6 +664,47 @@ function catalogFromSource(data: Record<string, unknown>) {
 
 function catalogFromSources(items: Array<Record<string, unknown>>) {
   return buildEvidenceCatalog([{ toolName: "property_brain", result: items.map(source) }]);
+}
+
+function sensitiveAccessCatalog(authorized: boolean) {
+  return buildEvidenceCatalog([{
+    toolName: "sensitive_access_info",
+    result: authorized
+      ? {
+          authorized: true,
+          sources: [
+            source({
+              source_type: "property_fact",
+              source_id: "property_fact:wifi_name",
+              evidence_id: "property.wifi_name",
+              field: "wifi_name",
+              label: "wifi_name",
+              value: "Pippa",
+            }),
+            source({
+              source_type: "property_fact",
+              source_id: "property_fact:wifi_password",
+              evidence_id: "property.wifi_password",
+              field: "wifi_password",
+              label: "wifi_password",
+              value: "Pippa123",
+            }),
+            source({
+              source_type: "property_fact",
+              source_id: "property_fact:access_instructions",
+              evidence_id: "property.access_instructions",
+              field: "access_instructions",
+              label: "access_instructions",
+              value: "Entrada por costado lateral",
+            }),
+          ],
+        }
+      : {
+          authorized: false,
+          reason: "guest_not_authorized",
+          sources: [],
+        },
+  }]);
 }
 
 function source(data: Record<string, unknown>) {

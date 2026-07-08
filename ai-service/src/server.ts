@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { gateway, generateObject, generateText, stepCountIs } from "ai";
+import { gateway, generateObject } from "ai";
 import { z } from "zod";
 import {
   callRailsTool,
@@ -47,6 +47,12 @@ const TranslationSchema = z.object({
 }).strict();
 
 type MandatoryToolName = "guest_context" | "stay_facts" | "property_brain";
+
+type ToolResultRecord = {
+  toolName: string;
+  input: Record<string, unknown>;
+  result: any;
+};
 
 type MandatoryToolStatus = {
   attempted: boolean;
@@ -819,37 +825,7 @@ async function collectToolResults(payload: any, toolTrace: any[] = [], mandatory
     return [];
   }
 
-  const initialToolResults = await mandatoryToolResults(payload, toolTrace, mandatoryTrace);
-  const result = await generateText({
-    model: gatewayModel(),
-    system: [
-      "You select the minimum read-only Ayla tools needed to answer or classify the guest message.",
-      "If the latest guest message is only thanks, ok, no thanks, or a conversational closure, do not call tools and summarize it as no_reply.",
-      "property_brain is already loaded and is the source of non-sensitive property knowledge.",
-      "Call sensitive_access_info only for WiFi, passwords, keys, access codes, entrance instructions, lockboxes, or other sensitive access details.",
-      "Call create_escalation_draft if the evidence is missing, ambiguous after one clarification, or needs owner approval.",
-      "Never request arbitrary record IDs. Tools are scoped by the signed decision_context_id.",
-      "Do not provide a final guest answer. Return a short retrieval summary after tool calls.",
-    ].join("\n"),
-    prompt: JSON.stringify(safeBaseContext(payload)),
-    tools: buildTools({
-      ...(payload?.tool_context || {}),
-      tool_endpoint: payload?.tool_endpoint,
-    }, toolTrace),
-    stopWhen: stepCountIs(3),
-  });
-
-  return initialToolResults.concat(result.toolResults.map((toolResult: any) => {
-    const row = {
-      toolName: toolResult.toolName,
-      input: toolResult.input,
-      result: toolResult.output,
-    };
-    if (!toolTrace.some((item) => item.tool_name === toolResult.toolName && JSON.stringify(item.input) === JSON.stringify(toolResult.input))) {
-      toolTrace.push(traceToolResult(toolResult.toolName, toolResult.input, toolResult.output, undefined, undefined));
-    }
-    return row;
-  }));
+  return mandatoryToolResults(payload, toolTrace, mandatoryTrace);
 }
 
 async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandatoryTrace = newToolMandatoryTrace(payload)) {
@@ -874,14 +850,23 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandato
     conversation_summary: conversationSummary(payload?.conversation_history),
     limit: 8,
   };
+  const sensitiveAccessInput = {
+    guest_message: payload?.guest_message,
+  };
+  const includeSensitiveAccess = shouldLoadSensitiveAccessInfo(payload?.guest_message);
 
   if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
     try {
-      return await Promise.all([
+      const calls: Array<Promise<ToolResultRecord>> = [
         tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace, mandatoryTrace),
         tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace, mandatoryTrace),
         tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace, mandatoryTrace),
-      ]);
+      ];
+      if (includeSensitiveAccess) {
+        calls.push(tracedOptionalRailsTool(payload.tool_endpoint, "sensitive_access_info", sensitiveAccessInput, toolTrace));
+      }
+
+      return await Promise.all(calls);
     } finally {
       mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
     }
@@ -901,25 +886,40 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandato
     const stayFacts = payload.tool_context.stay_facts ||
       Object.values(payload.tool_context.safe_property_facts || {}).concat(Object.values(payload.tool_context.reservation_facts || {}));
     const propertyBrain = payload.tool_context.property_brain || payload.tool_context;
+    const sensitiveAccess = payload.tool_context.sensitive_access_info || { authorized: false, reason: "not_available", sources: [] };
 
     toolTrace.push(traceToolResult("guest_context", guestContextInput, guestContext, undefined, 0));
     toolTrace.push(traceToolResult("stay_facts", stayFactsInput, stayFacts, undefined, 0));
     toolTrace.push(traceToolResult("property_brain", propertyBrainInput, propertyBrain, undefined, 0));
+    if (includeSensitiveAccess) {
+      toolTrace.push(traceToolResult("sensitive_access_info", sensitiveAccessInput, sensitiveAccess, undefined, 0));
+    }
     markMandatoryResult(mandatoryTrace, "guest_context", guestContext);
     markMandatoryResult(mandatoryTrace, "stay_facts", stayFacts);
     markMandatoryResult(mandatoryTrace, "property_brain", propertyBrain);
     mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
 
-    return [
+    const results: ToolResultRecord[] = [
       { toolName: "guest_context", input: guestContextInput, result: guestContext },
       { toolName: "stay_facts", input: stayFactsInput, result: stayFacts },
       { toolName: "property_brain", input: propertyBrainInput, result: propertyBrain },
     ];
+    if (includeSensitiveAccess) results.push({ toolName: "sensitive_access_info", input: sensitiveAccessInput, result: sensitiveAccess });
+    return results;
   }
 
   mandatoryTrace.skip_reason = missingMandatoryContextReason(payload);
   mandatoryTrace.tool_execution_time_ms = Date.now() - mandatoryStartedAt;
   return [];
+}
+
+function shouldLoadSensitiveAccessInfo(message?: string) {
+  const normalized = String(message || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+  return /\b(wifi|wi-fi|internet|red|network|password|contrasena|clave|access|acceso|entrada|entrar|codigo|code|llave|key|lockbox|caja)\b/.test(normalized);
 }
 
 async function tracedMandatoryRailsTool(
@@ -948,6 +948,34 @@ async function tracedMandatoryRailsTool(
     toolTrace.push(traceToolResult(toolName, input, null, classifiedError, Date.now() - startedAt));
     markMandatoryResult(mandatoryTrace, toolName, null, classifiedError);
     throw error;
+  }
+}
+
+async function tracedOptionalRailsTool(
+  toolEndpoint: any,
+  toolName: string,
+  input: Record<string, unknown>,
+  toolTrace: any[],
+) {
+  const startedAt = Date.now();
+
+  try {
+    const result = await callRailsTool(toolEndpoint, toolName, input);
+    toolTrace.push(traceToolResult(toolName, input, result, result?.error, Date.now() - startedAt));
+
+    return {
+      toolName,
+      input,
+      result,
+    };
+  } catch (error: any) {
+    const classifiedError = classifyMandatoryToolException(error);
+    toolTrace.push(traceToolResult(toolName, input, null, classifiedError, Date.now() - startedAt));
+    return {
+      toolName,
+      input,
+      result: { error: classifiedError },
+    };
   }
 }
 
