@@ -90,6 +90,75 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_equal 3, @admin_account.ai_max_clarification_attempts
   end
 
+  test "admin ai settings shows rejected evaluated cases with scores" do
+    property = @admin_account.properties.create!(name: "Admin Apartment")
+    guest = @admin_account.guests.create!(phone_number: "+15550004444", property: property)
+    conversation = guest.conversations.create!(property: property)
+    message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "hay internet?")
+    AIDecisionLog.create!(
+      account: @admin_account,
+      property: property,
+      guest: guest,
+      conversation: conversation,
+      message: message,
+      original_message: message,
+      route: "remote_ai_rejected",
+      decision: "escalate",
+      final_outcome: "escalate",
+      language: "es",
+      validator_result: "rejected",
+      rejection_reason: "invalid_evidence:property.not_real",
+      detected_intents: [{ "type" => "wifi", "status" => "answered" }],
+      evidence_ids: ["property.wifi_name"],
+      ai_response_payload: {
+        "outcome" => "reply",
+        "message_body" => "Sí, hay Wi-Fi.",
+        "audit" => {
+          "grounded_decision_builder" => {
+            "decision_scores" => {
+              "answer_confidence" => 93,
+              "evidence_relevance_score" => 100,
+              "safety_score" => 90
+            },
+            "score_thresholds" => {
+              "high_score_threshold" => 75,
+              "medium_score_threshold" => 40,
+              "safety_score_threshold" => 75
+            }
+          }
+        }
+      },
+      validation_results: {
+        "status" => "rejected",
+        "passed" => false,
+        "reasons" => ["invalid_evidence:property.not_real"]
+      },
+      fallback_reason: "validation_rejected",
+      payload: {
+        "rejected_candidate" => {
+          "outcome" => "reply",
+          "response_text" => "Sí, hay Wi-Fi.",
+          "confidence" => 0.93,
+          "evidence_ids" => ["property.wifi_name"]
+        },
+        "final_response_text" => "Gracias por tu mensaje. Lo estoy consultando con el anfitrión y te responderé en breve."
+      }
+    )
+
+    sign_in_as(@admin)
+
+    get admin_ai_settings_path
+
+    assert_response :success
+    assert_includes response.body, "Últimos casos evaluados"
+    assert_includes response.body, "hay internet?"
+    assert_includes response.body, "Sí, hay Wi-Fi."
+    assert_includes response.body, "invalid_evidence:property.not_real"
+    assert_includes response.body, "93"
+    assert_includes response.body, "100"
+    assert_includes response.body, "Fallback"
+  end
+
   test "admin can inspect sanitized ai decision trace" do
     guest = @owner_account.guests.create!(phone_number: "+15550003333", property: @property)
     conversation = guest.conversations.create!(property: @property)

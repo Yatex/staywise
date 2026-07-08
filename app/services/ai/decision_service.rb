@@ -241,6 +241,7 @@ module AI
         route: route,
         outcome: decision.outcome,
         final_outcome: decision.outcome,
+        final_response_text: decision.response_text,
         alert_type: decision.alert_type,
         evidence_ids: evidence_ids,
         evidence_trace: evidence_trace(evidence_ids, validation_results),
@@ -381,7 +382,7 @@ module AI
         {
           evidence_id: evidence_id,
           valid: registry.valid_evidence?(item),
-          relevant: registry.relevant_evidence?(item, @guest_message.body),
+          relevant: ai_marked_evidence_relevant?(decision, evidence_id),
           source: source&.dig("source_type") || source&.dig("type"),
           field: source&.dig("field"),
           value: source&.dig("value")
@@ -404,6 +405,52 @@ module AI
           valid: validation.fetch(:valid, validation.fetch("valid", nil)),
           relevant: validation.fetch(:relevant, validation.fetch("relevant", nil))
         }
+      end
+    end
+
+    def ai_marked_evidence_relevant?(decision, evidence_id)
+      audit = decision.audit.to_h["grounded_decision_builder"] || decision.audit.to_h[:grounded_decision_builder]
+      return nil if audit.blank?
+
+      canonical_id = canonical_evidence_reference(evidence_id)
+      sufficient_ids = Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
+        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
+      end
+      return true if sufficient_ids.include?(canonical_id)
+
+      candidates = Array(audit["ranked_candidates"] || audit[:ranked_candidates]) |
+        Array(audit["evidence_candidates_ranked"] || audit[:evidence_candidates_ranked])
+      candidates.any? do |candidate|
+        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id]) == canonical_id &&
+          (candidate.to_h["score"] || candidate.to_h[:score]).to_f.positive?
+      end
+    end
+
+    def canonical_evidence_reference(reference)
+      value = reference.to_s
+      return if value.blank?
+
+      case value
+      when /\Aproperty_fact:(.+)\z/
+        "property.#{$1}"
+      when /\Aproperty_(.+)\z/
+        "property.#{$1}"
+      when /\Asensitive_(.+)\z/
+        "property.#{$1}"
+      when /\Areservation_fact:(.+)\z/
+        "reservation.#{$1}"
+      when /\Areservation_(.+)\z/
+        "reservation.#{$1}"
+      when /\Afaq_(\d+)\z/
+        "faq.#{$1}"
+      when /\Aguide_(\d+)\z/
+        "guide.#{$1}"
+      when /\Arecommendation_(\d+)\z/
+        "recommendation.#{$1}"
+      when /\Apolicy_(.+)\z/
+        "policy.#{$1}"
+      else
+        value.tr(":", ".")
       end
     end
 

@@ -12,6 +12,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       check_in_time: "3:00 PM",
       checkout_time: "11:00 AM",
       parking_instructions: "Street parking is available.",
+      house_rules: "No parties are allowed.",
+      emergency_information: "For emergencies call 911.",
       wifi_name: "Test WiFi",
       wifi_password: "secret"
     )
@@ -237,6 +239,22 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
         field: "address",
         semantic_match: "address",
         response: "La dirección es 123 Test Street."
+      },
+      {
+        guest_message: "cuales son las reglas?",
+        intent: "rules",
+        evidence_id: "property.rules",
+        field: "rules",
+        semantic_match: "rules",
+        response: "No se permiten fiestas."
+      },
+      {
+        guest_message: "que hago en una emergencia?",
+        intent: "emergency_information",
+        evidence_id: "property.emergency_information",
+        field: "emergency_information",
+        semantic_match: "emergency",
+        response: "En una emergencia llamá al 911."
       }
     ]
 
@@ -261,6 +279,44 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       assert_equal "accepted", audit.validator_result, item.fetch(:guest_message)
       assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:#{item.fetch(:evidence_id)}", item.fetch(:guest_message)
     end
+  end
+
+  test "validator accepts ai grounded sensitive wifi evidence without recalculating semantic relevance" do
+    message = @conversation.messages.create!(sender: "guest", body: "hay internet?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Sí, hay Wi-Fi. La red se llama Test WiFi y la contraseña es secret.",
+      evidence_ids: ["property.wifi_name", "property.wifi_password"],
+      used_source_ids: ["sensitive_wifi_name", "sensitive_wifi_password"],
+      sensitive_info_used: true,
+      detected_intents: [{ type: "wifi", status: "answered" }],
+      audit: default_tool_audit.merge(
+        grounded_decision_builder: {
+          called: true,
+          ranked_candidates: [
+            { evidence_id: "property.wifi_name", field: "wifi_name", score: 5, inferred_intent: "wifi", semantic_matches: ["wifi"] },
+            { evidence_id: "property.wifi_password", field: "wifi_password", score: 5, inferred_intent: "wifi", semantic_matches: ["wifi"] }
+          ],
+          sufficient_candidates: [
+            { evidence_id: "property.wifi_name", sufficiency_score: 5 },
+            { evidence_id: "property.wifi_password", sufficiency_score: 5 }
+          ],
+          decision_scores: {
+            answer_confidence: 93,
+            evidence_relevance_score: 100,
+            safety_score: 90
+          }
+        }
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_equal "accepted", audit.validator_result
+    assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:property.wifi_name"
+    assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:property.wifi_password"
+    assert_includes decision.response_text, "Test WiFi"
   end
 
   test "validator respects ai clarification instead of escalating semantic uncertainty" do
@@ -874,7 +930,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert result.escalation_required
   end
 
-  test "ai reply with irrelevant recommendation evidence is rejected" do
+  test "validator does not act as semantic judge for valid scoped recommendation evidence" do
     recommendation = @property.recommendations.create!(
       name: "Western Union",
       category: "other",
@@ -882,28 +938,18 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       address: "Scalabrini Ortiz 2354"
     )
     message = @conversation.messages.create!(sender: "guest", body: "Me decís los horarios del lavadero?", channel: "whatsapp")
-    decision = AI::DecisionResult.from_hash(
-      outcome: "reply",
-      response_text: "Te comparto un lugar para cambiar dinero a pesos: Western Union.",
-      confidence: 0.9,
-      evidence: [{ source_type: "recommendation", source_id: "recommendation:#{recommendation.id}", claim: "Money exchange nearby." }],
-      escalation: { required: false, category: nil, urgency: nil, summary: nil },
-      proposed_action: nil,
+    result = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Te comparto un lugar para cambiar dinero a pesos: Western Union.",
+      used_source_ids: ["recommendation_#{recommendation.id}"],
+      detected_intents: [{ type: "recommendation", status: "answered" }],
       audit: default_tool_audit
-    )
-    service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) do |_payload|
-        instance_variable_set(:@tool_calls, Array(decision.audit["tool_calls"]))
-        decision
-      end
-    end
-    service = service_class.new(conversation: @conversation, guest_message: message)
+    ))
 
-    result = service.call
-
-    assert_equal "escalate", result.outcome
-    assert result.escalation_required
-    assert_not_includes result.response_text, "Western Union"
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal "reply", result.outcome
+    assert_equal "accepted", audit.validator_result
+    assert_includes result.response_text, "Western Union"
   end
 
   test "accepts ai reply using property brain faq source id" do

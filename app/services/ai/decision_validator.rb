@@ -134,14 +134,8 @@ module AI
         reasons = []
         source_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
         reasons << "invalid_evidence:#{source_id}" unless @registry.valid_evidence?(item)
-        reasons << "irrelevant_evidence:#{source_id}" unless semantically_relevant_evidence?(item)
         reasons
       end
-    end
-
-    def semantically_relevant_evidence?(item)
-      grounded_decision_relevant_evidence?(item) ||
-        @registry.relevant_evidence?(item, @guest_message&.body)
     end
 
     def grounded_decision_relevant_evidence?(item)
@@ -154,14 +148,7 @@ module AI
       candidate = grounded_decision_candidate_for(evidence_id)
       return false if candidate.blank?
       candidate = candidate.to_h
-      return false unless grounded_decision_sufficient_evidence_ids.include?(evidence_id) || (candidate["score"] || candidate[:score]).to_f.positive?
-
-      inferred_intent = canonical_decision_intent(candidate["inferred_intent"] || candidate[:inferred_intent])
-      answered_intents = answered_decision_intents
-      return true if answered_intents.blank?
-      return true if inferred_intent.blank?
-
-      answered_intents.include?(inferred_intent)
+      grounded_decision_sufficient_evidence_ids.include?(evidence_id) || (candidate["score"] || candidate[:score]).to_f.positive?
     end
 
     def grounded_decision_audit
@@ -184,25 +171,6 @@ module AI
       audit = grounded_decision_audit.to_h
       Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
         canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
-      end
-    end
-
-    def answered_decision_intents
-      @decision.detected_intents.filter_map do |intent|
-        next unless intent.to_h["status"].to_s.in?(%w[answered answered_with_inference])
-
-        canonical_decision_intent(intent.to_h["type"])
-      end.compact_blank
-    end
-
-    def canonical_decision_intent(intent)
-      case intent.to_s
-      when "checkin", "check_in", "checkin_time"
-        "check_in_time"
-      when "checkout", "check_out", "checkout_time"
-        "check_out_time"
-      else
-        intent.to_s.presence
       end
     end
 

@@ -2,7 +2,7 @@ module Admin
   class AISettingsController < BaseController
     def show
       @account = current_account
-      @approved_cases = approved_cases
+      @evaluated_cases = evaluated_cases
     end
 
     def update
@@ -11,7 +11,7 @@ module Admin
       if @account.update(ai_settings_params)
         redirect_to admin_ai_settings_path, notice: "Configuración de IA actualizada."
       else
-        @approved_cases = approved_cases
+        @evaluated_cases = evaluated_cases
         render :show, status: :unprocessable_entity
       end
     end
@@ -27,11 +27,10 @@ module Admin
       )
     end
 
-    def approved_cases
+    def evaluated_cases
       AIDecisionLog
         .includes(:account, :property, :conversation, :original_message, :message)
-        .where(validator_result: "accepted")
-        .where(final_outcome: "reply")
+        .where(account: current_account)
         .recent
         .limit(20)
     end

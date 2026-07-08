@@ -269,6 +269,34 @@ module ApplicationHelper
       "Respuesta no disponible"
   end
 
+  def ai_decision_candidate_answer(trace)
+    trace.payload.to_h.dig("rejected_candidate", "response_text").presence ||
+      trace.ai_response_payload.to_h["message_body"].presence ||
+      trace.ai_response_payload.to_h["response_text"].presence ||
+      "Respuesta candidata no disponible"
+  end
+
+  def ai_decision_final_answer(trace)
+    trace.payload.to_h["final_response_text"].presence ||
+      trace.ai_response_payload.to_h["message_body"].presence ||
+      trace.ai_response_payload.to_h["response_text"].presence ||
+      trace.final_outcome.presence ||
+      "Respuesta final no disponible"
+  end
+
+  def ai_decision_original_outcome(trace)
+    trace.payload.to_h.dig("rejected_candidate", "outcome").presence ||
+      trace.ai_response_payload.to_h["outcome"].presence ||
+      trace.ai_response_payload.to_h["decision"].presence ||
+      trace.decision
+  end
+
+  def ai_decision_rejection_reason(trace)
+    trace.rejection_reason.presence ||
+      Array(trace.validation_results.to_h["reasons"]).join(", ").presence ||
+      "Sin rechazo"
+  end
+
   def label_class
     "text-sm font-medium text-slate-700"
   end

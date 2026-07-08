@@ -8,7 +8,7 @@
   <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
     <div>
       <h2 class="text-lg font-semibold text-slate-950">Configuración IA</h2>
-      <p class="mt-0.5 text-sm text-slate-500">Thresholds de decisión para <%= @account.name %> y últimos casos aceptados.</p>
+      <p class="mt-0.5 text-sm text-slate-500">Thresholds de decisión para <%= @account.name %> y últimos casos evaluados.</p>
     </div>
     <div class="flex gap-2">
       <%= link_to "AI Trace", admin_ai_traces_path, class: "#{compact_button_class} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" %>
@@ -51,38 +51,68 @@
 
   <section class="<%= card_class %> overflow-hidden">
     <div class="border-b border-slate-200 px-4 py-3">
-      <h3 class="text-base font-semibold text-slate-950">Últimos casos aprobados</h3>
-      <p class="mt-0.5 text-sm text-slate-500">Pregunta, respuesta y números usados por la capa de decisión.</p>
+      <h3 class="text-base font-semibold text-slate-950">Últimos casos evaluados</h3>
+      <p class="mt-0.5 text-sm text-slate-500">Incluye aprobados, rechazados y fallbacks para ver qué generó la IA y qué terminó enviando Rails.</p>
     </div>
 
     <div class="divide-y divide-slate-100">
-      <% @approved_cases.each do |trace| %>
+      <% @evaluated_cases.each do |trace| %>
         <% scores = ai_decision_scores(trace) %>
         <% thresholds = ai_decision_thresholds(trace) %>
         <%= link_to admin_ai_trace_path(trace), class: "block px-4 py-3 transition hover:bg-slate-50" do %>
-          <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px] xl:items-start">
+          <div class="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_320px] xl:items-start">
             <div class="min-w-0">
               <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Pregunta</p>
               <p class="mt-1 line-clamp-2 text-sm font-semibold text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
               <p class="mt-1 truncate text-xs text-slate-500"><%= trace.property&.display_name || "Propiedad sin asociar" %> · <%= local_datetime(trace.created_at) %></p>
             </div>
             <div class="min-w-0">
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta</p>
-              <p class="mt-1 line-clamp-2 text-sm text-slate-700"><%= ai_decision_answer(trace) %></p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta candidata</p>
+              <p class="mt-1 line-clamp-2 text-sm text-slate-700"><%= ai_decision_candidate_answer(trace) %></p>
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta final</p>
+              <p class="mt-1 line-clamp-2 text-sm text-slate-700"><%= ai_decision_final_answer(trace) %></p>
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 <%= pill_class(trace.validator_result || trace.validation_results.to_h['status'] || 'sin_validar') %>">
+                  <%= trace.validator_result.presence || trace.validation_results.to_h["status"].presence || "sin validar" %>
+                </span>
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                  <%= ai_decision_original_outcome(trace) %> → <%= trace.final_outcome.presence || trace.decision %>
+                </span>
+                <% if trace.fallback? %>
+                  <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 <%= pill_class('warning') %>">Fallback</span>
+                <% end %>
+                <% if trace.escalation_required %>
+                  <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 <%= pill_class('escalated') %>">Alerta</span>
+                <% end %>
+              </div>
             </div>
             <div class="grid grid-cols-3 gap-2 text-center text-xs">
               <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
-                <p class="font-semibold text-slate-950"><%= scores["answer_confidence"] || "-" %></p>
+                <p class="font-semibold text-slate-950"><%= scores["answer_confidence"] || "Sin score" %></p>
                 <p class="text-slate-500">Confianza</p>
               </div>
               <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
-                <p class="font-semibold text-slate-950"><%= scores["evidence_relevance_score"] || "-" %></p>
+                <p class="font-semibold text-slate-950"><%= scores["evidence_relevance_score"] || "Sin score" %></p>
                 <p class="text-slate-500">Evidencia</p>
               </div>
               <div class="rounded-lg bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
-                <p class="font-semibold text-slate-950"><%= scores["safety_score"] || "-" %></p>
+                <p class="font-semibold text-slate-950"><%= scores["safety_score"] || "Sin score" %></p>
                 <p class="text-slate-500">Safety</p>
               </div>
+              <p class="col-span-3 truncate text-left text-[11px] text-slate-500">
+                Rechazo: <%= ai_decision_rejection_reason(trace) %>
+              </p>
+              <p class="col-span-3 truncate text-left text-[11px] text-slate-500">
+                Evidence: <%= Array(trace.evidence_ids).presence&.join(", ") || "Sin evidence_ids" %>
+              </p>
+              <p class="col-span-3 truncate text-left text-[11px] text-slate-500">
+                Intents: <%= Array(trace.detected_intents).map { |intent| intent.to_h["type"] || intent.to_h[:type] }.compact_blank.join(", ").presence || "Sin intents" %>
+              </p>
+              <p class="col-span-3 truncate text-left text-[11px] text-slate-500">
+                Route: <%= trace.route %>
+              </p>
               <% if thresholds.present? %>
                 <p class="col-span-3 text-left text-[11px] text-slate-400">
                   Thresholds: alto <%= thresholds["high_score_threshold"] %>, medio <%= thresholds["medium_score_threshold"] %>, safety <%= thresholds["safety_score_threshold"] %>
@@ -93,8 +123,8 @@
         <% end %>
       <% end %>
 
-      <% if @approved_cases.blank? %>
-        <div class="px-5 py-10 text-center text-sm text-slate-500">Todavía no hay respuestas aprobadas para mostrar.</div>
+      <% if @evaluated_cases.blank? %>
+        <div class="px-5 py-10 text-center text-sm text-slate-500">Todavía no hay casos evaluados para mostrar.</div>
       <% end %>
     </div>
   </section>
