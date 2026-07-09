@@ -11,6 +11,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       address: "123 Test Street",
       check_in_time: "3:00 PM",
       checkout_time: "11:00 AM",
+      access_instructions: "Entrá por el portón lateral y subí al piso 3.",
       parking_instructions: "Street parking is available.",
       house_rules: "No parties are allowed.",
       emergency_information: "For emergencies call 911.",
@@ -319,6 +320,62 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:property.wifi_name"
     assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:property.wifi_password"
     assert_includes decision.response_text, "Test WiFi"
+  end
+
+  test "validator accepts grounded access instructions selected by ai service" do
+    message = @conversation.messages.create!(sender: "guest", body: "cómo entro?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Para entrar: entrá por el portón lateral y subí al piso 3.",
+      evidence_ids: ["property.access_instructions"],
+      used_source_ids: ["sensitive_access_instructions"],
+      sensitive_info_used: true,
+      detected_intents: [{ type: "access", status: "answered_with_inference" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "property.access_instructions",
+        field: "access_instructions",
+        inferred_intent: "access",
+        semantic_match: "access"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_equal "accepted", audit.validator_result
+    assert_equal true, audit.validation_results.dig("evidence", 0, "relevant")
+    assert_not_includes audit.validation_results["reasons"], "invalid_evidence:property.access_instructions"
+  end
+
+  test "validator accepts grounded appliance guide evidence selected by ai service" do
+    @property.knowledge_blocks.create!(
+      title: "Lavarropas",
+      category: "appliances",
+      content: "Usá programa rápido y agregá una ficha.",
+      status: "active"
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "cómo uso la lavadora?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "Usá programa rápido y agregá una ficha.",
+      evidence_ids: ["appliance.washer"],
+      detected_intents: [{ type: "appliance_instructions", status: "answered_with_inference" }],
+      audit: grounded_semantic_audit(
+        evidence_id: "appliance.washer",
+        field: "Lavarropas",
+        inferred_intent: "appliance_instructions",
+        semantic_match: "appliance",
+        source_type: "knowledge_block"
+      )
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "reply", decision.outcome
+    assert_equal "accepted", audit.validator_result
+    assert_equal true, audit.validation_results.dig("evidence", 0, "relevant")
+    assert_not_includes audit.validation_results["reasons"], "invalid_evidence:appliance.washer"
+    assert_no_match(/Fuente|Source|property\.|evidence_id|source_id/i, decision.response_text)
   end
 
   test "validator respects ai clarification instead of escalating semantic uncertainty" do
@@ -1279,7 +1336,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     }
   end
 
-  def grounded_semantic_audit(evidence_id:, field:, inferred_intent:, semantic_match:)
+  def grounded_semantic_audit(evidence_id:, field:, inferred_intent:, semantic_match:, source_type: "property_fact")
     default_tool_audit.merge(
       grounded_decision_builder: {
         called: true,
@@ -1291,7 +1348,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
             score: 4,
             matched_terms: [],
             semantic_matches: [semantic_match],
-            source_type: "property_fact",
+            source_type: source_type,
             reason_included_or_excluded: "included_score_positive",
             inferred_intent: inferred_intent,
             inference_reason: "query_category:#{semantic_match}"

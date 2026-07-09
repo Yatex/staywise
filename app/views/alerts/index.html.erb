@@ -24,7 +24,17 @@
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.status) %>"><%= enum_label(alert.status) %></span>
               <% if alert.status.in?(%w[open in_progress]) %>
-                <%= button_to t("ui.alerts.mark_done"), alert_path(alert), method: :patch, params: { alert: { status: "resolved" } }, class: "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100" %>
+                <%= button_to alert_path(alert),
+                  method: :patch,
+                  params: { alert: { status: "resolved" } },
+                  class: "inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2",
+                  title: t("ui.alerts.mark_done"),
+                  aria: { label: t("ui.alerts.mark_done") } do %>
+                  <span class="sr-only"><%= t("ui.alerts.mark_done") %></span>
+                  <svg class="h-5 w-5" aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                    <path d="M4.5 10.5 8 14l7.5-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                <% end %>
               <% end %>
             </div>
           </div>

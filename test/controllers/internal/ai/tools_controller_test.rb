@@ -7,6 +7,8 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
       name: "Tools Apartment",
       check_in_time: "15:00",
       checkout_time: "11:00",
+      access_instructions: "Entrá por el portón lateral y subí al piso 3.",
+      parking_instructions: "Cochera 12 en subsuelo.",
       wifi_name: "Tools WiFi",
       wifi_password: "tools-secret"
     )
@@ -150,6 +152,66 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     source_ids = body.fetch("matched_sources").map { |item| item["id"] }
     assert_includes source_ids, "faq_#{faq.id}"
     assert_includes source_ids, "policy_late_checkout"
+  end
+
+  test "property brain returns authorized access instructions for access questions" do
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Cómo entro al edificio?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    source = body.fetch("matched_sources").find { |item| item["evidence_id"] == "property.access_instructions" }
+    assert source
+    assert_equal "property_fact", source["source_type"]
+    assert_equal "access_instructions", source["field"]
+    assert_includes source["value"], "portón lateral"
+  end
+
+  test "guest context exposes appliance guides with stable evidence ids and aliases" do
+    @property.knowledge_blocks.create!(
+      title: "Lavarropas",
+      category: "appliances",
+      content: "Usá programa rápido y agregá una ficha.",
+      status: "active"
+    )
+
+    post "/internal/ai/tools/guest_context", params: {
+      decision_context_id: @decision_context_id,
+      query: "Cómo uso la lavadora?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    guide = body.fetch("appliance_guides").find { |item| item["evidence_id"] == "appliance.washer" }
+    assert guide
+    assert_equal "knowledge_block", guide["source_type"]
+    assert_equal "appliances", guide["category"]
+    assert_includes guide["aliases"], "lavadora"
+    assert_includes guide["value"], "programa rápido"
+  end
+
+  test "property brain matches appliance guide aliases" do
+    @property.knowledge_blocks.create!(
+      title: "Cafetera",
+      category: "appliances",
+      content: "Poné agua atrás y usá cápsulas chicas.",
+      status: "active"
+    )
+
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Cómo funciona la coffee machine?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    source = body.fetch("matched_sources").find { |item| item["evidence_id"] == "appliance.coffee_machine" }
+    assert source
+    assert_equal "Cafetera", source["appliance_name"]
+    assert_includes source["aliases"], "coffee_machine"
+    assert_includes source["value"], "cápsulas"
   end
 
   test "search property knowledge returns approximate faq matches" do

@@ -417,6 +417,108 @@ test("access evidence group answers with authorized instructions and code", () =
   assert.match(result.decision.message_body, /4321/);
 });
 
+test("access instructions answer common Spanish entry questions", () => {
+  for (const guestMessage of ["cómo entro?", "cómo ingreso al depto?", "cómo se entra al edificio?", "cómo hago el ingreso?"]) {
+    const result = buildGroundedDecision(unknownEscalation("es"), {
+      guest_message: guestMessage,
+    }, catalogFromSource({
+      source_type: "property_fact",
+      source_id: "property_fact:access_instructions",
+      evidence_id: "property.access_instructions",
+      field: "access_instructions",
+      label: "access_instructions",
+      value: "Entrá por el portón lateral y subí al piso 3.",
+    }));
+
+    assert.equal(result.decision.outcome, "reply", guestMessage);
+    assert.equal(result.decision.escalation_required, false, guestMessage);
+    assert.equal(result.decision.detected_intents[0].type, "access", guestMessage);
+    assert.deepEqual(result.decision.evidence_ids, ["property.access_instructions"], guestMessage);
+    assert.match(result.decision.message_body, /portón lateral/, guestMessage);
+    assert.doesNotMatch(result.decision.message_body, /Fuente|Source|property\.|evidence_id|source_id/i, guestMessage);
+  }
+});
+
+test("appliance guides answer washer coffee maker air conditioner oven and tv questions", () => {
+  const cases = [
+    {
+      guest_message: "cómo uso la lavadora?",
+      evidence_id: "appliance.washer",
+      title: "Lavarropas",
+      aliases: ["lavarropas", "lavadora", "washer"],
+      content: "Usá programa rápido y agregá una ficha.",
+      expected: /programa rápido/,
+    },
+    {
+      guest_message: "cómo funciona la cafetera?",
+      evidence_id: "appliance.coffee_machine",
+      title: "Cafetera",
+      aliases: ["cafetera", "coffee_machine", "coffee"],
+      content: "Poné agua atrás y usá cápsulas chicas.",
+      expected: /cápsulas/,
+    },
+    {
+      guest_message: "cómo prendo el aire?",
+      evidence_id: "appliance.air_conditioner",
+      title: "Aire acondicionado",
+      aliases: ["aire", "acondicionado", "air_conditioner"],
+      content: "Encendelo con el control blanco y elegí modo frío.",
+      expected: /control blanco/,
+    },
+    {
+      guest_message: "cómo uso el horno?",
+      evidence_id: "appliance.oven",
+      title: "Horno",
+      aliases: ["horno", "oven"],
+      content: "Girás la perilla izquierda y esperás cinco minutos.",
+      expected: /perilla izquierda/,
+    },
+    {
+      guest_message: "cómo veo Netflix?",
+      evidence_id: "appliance.tv",
+      title: "TV",
+      aliases: ["tv", "television", "netflix"],
+      content: "Abrí Netflix desde el botón del control remoto.",
+      expected: /Netflix/,
+    },
+  ];
+
+  for (const item of cases) {
+    const result = buildGroundedDecision(unknownEscalation("es"), {
+      guest_message: item.guest_message,
+    }, catalogFromSource({
+      source_type: "knowledge_block",
+      source_id: "knowledge_block:33",
+      evidence_id: item.evidence_id,
+      field: item.title,
+      label: item.title,
+      value: item.content,
+      category: "appliances",
+      appliance_name: item.title,
+      aliases: item.aliases,
+    }));
+
+    assert.equal(result.decision.outcome, "reply", item.guest_message);
+    assert.equal(result.decision.escalation_required, false, item.guest_message);
+    assert.equal(result.decision.detected_intents[0].type, "appliance_instructions", item.guest_message);
+    assert.deepEqual(result.decision.evidence_ids, [item.evidence_id], item.guest_message);
+    assert.match(result.decision.message_body, item.expected, item.guest_message);
+    assert.doesNotMatch(result.decision.message_body, /Fuente|Source|Источник|property\.|property_fact:|evidence_id|source_id/i, item.guest_message);
+  }
+});
+
+test("missing appliance guide asks before escalating and does not expose metadata", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cómo uso la lavadora?",
+  }, []);
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.match(result.decision.message_body, /No tengo instrucciones cargadas/);
+  assert.match(result.decision.message_body, /anfitrión/);
+  assert.doesNotMatch(result.decision.message_body, /Fuente|Source|Источник|property\.|property_fact:|evidence_id|source_id/i);
+});
+
 test("recommendation evidence group answers with name and address", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "recomendame un cafe cerca",

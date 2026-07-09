@@ -187,13 +187,13 @@ const INTENT_CATEGORIES = [
     category: "access",
     intent: "access",
     fields: ["access", "access_instructions", "access_code", "entrance", "entry", "entry_code", "lockbox", "key", "keys", "codigo", "llave"],
-    terms: ["acceso", "entrada", "entrar", "entro", "ingresar", "ingreso", "codigo", "código", "llave", "key", "keys", "code", "lockbox", "door"],
+    terms: ["acceso", "entrada", "entrar", "entro", "ingresar", "ingreso", "edificio", "depto", "departamento", "porton", "puerta", "codigo", "código", "llave", "key", "keys", "code", "lockbox", "door"],
   },
   {
     category: "arrival",
     intent: "check_in_time",
     fields: ["check_in_time", "checkin", "check_in", "arrival", "arrival_time", "ingreso", "entrada"],
-    terms: ["entrada", "entrar", "ingresar", "ingreso", "llegada", "llegar", "depto", "departamento", "arrival", "arrive", "checkin"],
+    terms: ["llegada", "llegar", "arrival", "arrive", "checkin"],
   },
   {
     category: "departure",
@@ -230,6 +230,12 @@ const INTENT_CATEGORIES = [
     intent: "wifi",
     fields: ["wifi", "wifi_name", "wifi_password", "internet", "network"],
     terms: ["wifi", "wi-fi", "internet", "red", "network", "contrasena", "contraseña", "clave", "password"],
+  },
+  {
+    category: "appliance",
+    intent: "appliance_instructions",
+    fields: ["appliance", "appliances", "appliance_name", "washer", "coffee_machine", "air_conditioner", "tv", "oven", "microwave", "dishwasher", "dryer"],
+    terms: ["electrodomestico", "electrodomesticos", "lavarropas", "lavadora", "lavar", "washer", "laundry", "cafetera", "cafe", "coffee", "aire", "acondicionado", "calefaccion", "prendo", "enciendo", "air", "conditioner", "tv", "television", "netflix", "horno", "oven", "microondas", "microwave", "lavavajillas"],
   },
 ] as const;
 
@@ -681,7 +687,7 @@ function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) 
   const label = humanLabel(evidence);
   const intent = inferredIntent(evidence);
 
-  if (["check_in_time", "check_out_time", "parking", "address"].includes(intent)) {
+  if (["check_in_time", "check_out_time", "parking", "address", "access"].includes(intent)) {
     return directResponseForIntent(value, language, intent);
   }
 
@@ -729,6 +735,11 @@ function directResponseForIntent(value: string, language: string, intent: string
     if (language === "es") return `La dirección es: ${value}.`;
     if (language === "fr") return `L'adresse est : ${value}.`;
     return `The address is: ${value}.`;
+  }
+  if (intent === "access") {
+    if (language === "es") return `Para entrar: ${value}.`;
+    if (language === "fr") return `Pour entrer : ${value}.`;
+    return `To enter: ${value}.`;
   }
 
   return null;
@@ -856,6 +867,11 @@ function clarificationWithoutEvidenceMessage(category: string, language: string)
     if (language === "fr") return "Qu'est-ce qui ne fonctionne pas exactement : le WiFi, la porte, l'eau, l'électricité ou autre chose ?";
     return "What exactly is not working: WiFi, the door, water, electricity, or something else?";
   }
+  if (category === "appliance") {
+    if (language === "es") return "No tengo instrucciones cargadas para ese electrodoméstico. ¿Querés que lo consulte con el anfitrión?";
+    if (language === "fr") return "Je n'ai pas d'instructions enregistrées pour cet appareil. Voulez-vous que je demande à l'hôte ?";
+    return "I don't have instructions saved for that appliance. Would you like me to check with the host?";
+  }
 
   if (language === "es") return "¿Me aclarás un poco más a qué te referís?";
   if (language === "fr") return "Pouvez-vous préciser un peu ce que vous voulez dire ?";
@@ -896,6 +912,7 @@ function canonicalIntentName(intent: string) {
   if (intent === "parking_available" || intent === "parking_availability" || intent === "parking_instructions" || intent === "garage" || intent === "cochera" || intent === "estacionamiento") return "parking";
   if (intent === "access_instructions" || intent === "access_code" || intent === "entry_code" || intent === "entrance" || intent === "entry" || intent === "lockbox" || intent === "key" || intent === "keys" || intent === "codigo" || intent === "llave") return "access";
   if (intent === "wifi_name" || intent === "wifi_password" || intent === "wi_fi" || intent === "internet" || intent === "network") return "wifi";
+  if (intent === "appliances" || intent === "appliance" || intent === "washer" || intent === "coffee_machine" || intent === "air_conditioner" || intent === "tv" || intent === "oven" || intent === "microwave" || intent === "dishwasher" || intent === "dryer") return "appliance_instructions";
   if (intent === "recommendations" || intent === "restaurant" || intent === "cafe" || intent === "place") return "recommendation";
   return intent;
 }
@@ -930,7 +947,9 @@ function queryIntentCategories(message: string) {
 
   const hasTimeLanguage = intersects(rawTokens, ["hora", "horario", "cuando", "time", "heure", "quel", "quelle"]);
   const genericArrivalOrDeparture = intersects(rawTokens, ["ir", "voy", "go", "aller"]);
+  const timedAccessLanguage = intersects(rawTokens, ["entrar", "ingresar", "ingreso", "entrada"]);
   if (hasTimeLanguage && genericArrivalOrDeparture) categories.push("arrival", "departure");
+  if (hasTimeLanguage && timedAccessLanguage) categories.push("arrival");
   if (text.includes("no anda") || text.includes("no funciona") || text.includes("not working") || text.includes("doesnt work")) {
     categories.push("issue");
   }
@@ -958,7 +977,10 @@ function intentForCategory(category: string) {
 }
 
 function clarificationCategory(message: string) {
-  return queryIntentCategories(message).includes("issue") ? "issue" : null;
+  const categories = queryIntentCategories(message);
+  if (categories.includes("issue")) return "issue";
+  if (categories.includes("appliance")) return "appliance";
+  return null;
 }
 
 function normalizeText(value: string) {
@@ -988,6 +1010,24 @@ function expandTokens(tokens: string[]) {
   }
   if (tokens.some((token) => ["cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "recomendar", "recommendation"].includes(token))) {
     expanded.push("recommendation");
+  }
+  if (tokens.some((token) => ["lavarropas", "lavadora", "washer", "laundry"].includes(token))) {
+    expanded.push("appliance", "washer");
+  }
+  if (tokens.some((token) => ["cafetera", "cafe", "coffee"].includes(token))) {
+    expanded.push("appliance", "coffee_machine");
+  }
+  if (tokens.some((token) => ["aire", "acondicionado", "calefaccion", "air", "conditioner"].includes(token))) {
+    expanded.push("appliance", "air_conditioner");
+  }
+  if (tokens.some((token) => ["tv", "television", "netflix"].includes(token))) {
+    expanded.push("appliance", "tv");
+  }
+  if (tokens.some((token) => ["horno", "oven"].includes(token))) {
+    expanded.push("appliance", "oven");
+  }
+  if (tokens.some((token) => ["microondas", "microwave"].includes(token))) {
+    expanded.push("appliance", "microwave");
   }
   return expanded;
 }

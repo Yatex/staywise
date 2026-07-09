@@ -771,8 +771,11 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandato
       "check_out_time",
       "checkout_instructions",
       "address",
+      "access_instructions",
+      "wifi_name",
+      "wifi_password",
       "parking",
-      "rules",
+      "house_rules",
       "emergency_information",
       "reservation_status",
       "reservation_dates",
@@ -852,7 +855,7 @@ function shouldLoadSensitiveAccessInfo(message?: string) {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-  return /\b(wifi|wi-fi|internet|red|network|password|contrasena|clave|access|acceso|entrada|entrar|codigo|code|llave|key|lockbox|caja)\b/.test(normalized);
+  return /\b(wifi|wi-fi|internet|red|network|password|contrasena|clave|access|acceso|entrada|entrar|ingreso|ingresar|edificio|porton|puerta|codigo|code|llave|key|lockbox|caja)\b/.test(normalized);
 }
 
 async function tracedMandatoryRailsTool(

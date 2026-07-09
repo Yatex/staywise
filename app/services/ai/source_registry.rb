@@ -16,6 +16,7 @@ module AI
       "checkout_instructions" => :checkout_instructions,
       "address" => :address,
       "parking" => :parking_instructions,
+      "house_rules" => :house_rules,
       "rules" => :house_rules,
       "emergency_information" => :emergency_information
     }.freeze
@@ -30,6 +31,17 @@ module AI
       "wifi_name" => "sensitive_wifi_name",
       "wifi_password" => "sensitive_wifi_password",
       "access_instructions" => "sensitive_access_instructions"
+    }.freeze
+
+    APPLIANCE_ALIASES = {
+      "washer" => %w[lavarropas lavadora lavar lavado laundry washer washing machine washing_machine],
+      "coffee_machine" => %w[cafetera cafe coffee coffee_machine coffee maker],
+      "air_conditioner" => %w[aire acondicionado aire_acondicionado calefaccion calefacción ac air conditioner air_conditioner],
+      "tv" => %w[tv television televisión netflix smart smart_tv],
+      "oven" => %w[horno oven],
+      "microwave" => %w[microondas microwave],
+      "dishwasher" => %w[lavavajillas dishwasher],
+      "dryer" => %w[secadora dryer]
     }.freeze
 
     def initialize(conversation:, guest_message: nil)
@@ -56,8 +68,10 @@ module AI
           guest_is_authorized_for_access: @authorization.sensitive_access_authorized?
         },
         public_facts: SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
+        authorized_access_facts: authorized_sensitive_facts.values,
         relevant_faqs: search_property_knowledge(query: query.presence || @guest_message&.body, topic: "faq", limit: 5).select { |source| source["source_type"] == "faq" },
         relevant_guides: search_property_knowledge(query: query.presence || @guest_message&.body, limit: 5).select { |source| source["source_type"] == "knowledge_block" },
+        appliance_guides: appliance_sources(query: query.presence || @guest_message&.body, limit: 5),
         available_capabilities: {
           can_request_early_checkin: true,
           can_request_late_checkout: true,
@@ -163,7 +177,14 @@ module AI
     def knowledge_source(block)
       return unless block&.property_id == @property.id
 
-      source("knowledge_block", "knowledge_block:#{block.id}", block.title, block.content, record: block, evidence_id: "guide.#{block.id}").merge("category" => block.category)
+      appliance = block.category == "appliances"
+      source("knowledge_block", "knowledge_block:#{block.id}", block.title, block.content, record: block, evidence_id: appliance ? "appliance.#{appliance_slug_for(block.title)}" : "guide.#{block.id}").merge(
+        "category" => block.category,
+        "appliance_name" => appliance ? block.title : nil,
+        "aliases" => appliance ? appliance_aliases_for(block.title) : nil,
+        "location" => nil,
+        "youtube_url" => block.youtube_url
+      ).compact
     end
 
     def recommendation_source(recommendation)
@@ -197,8 +218,12 @@ module AI
         id = record_id_from_reference(evidence_id, "faq")
         @property.faqs.exists?(id: id)
       when "knowledge_block"
-        id = record_id_from_reference(evidence_id, "guide", "knowledge_block")
-        @property.knowledge_blocks.exists?(id: id)
+        if evidence_id.to_s.start_with?("appliance.")
+          appliance_block_for_reference(evidence_id).present?
+        else
+          id = record_id_from_reference(evidence_id, "guide", "knowledge_block")
+          @property.knowledge_blocks.exists?(id: id)
+        end
       when "recommendation"
         id = record_id_from_reference(evidence_id, "recommendation")
         @property.recommendations.exists?(id: id)
@@ -247,6 +272,7 @@ module AI
         sensitive_property_facts: authorized_sensitive_facts,
         faqs: @property.faqs.active.order(:category, :question).map { |faq| faq_source(faq) },
         knowledge_blocks: @property.knowledge_blocks.active.order(:category, :title).map { |block| knowledge_source(block) },
+        appliance_guides: @property.knowledge_blocks.active.where(category: "appliances").order(:title).map { |block| knowledge_source(block) },
         recommendations: @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) },
         policies: policies
       }
@@ -293,6 +319,7 @@ module AI
     def property_brain_sources(query:, limit:)
       candidates = [
         SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
+        authorized_sensitive_facts.values,
         reservation_fact("reservation_status"),
         reservation_fact("reservation_dates"),
         policies.values,
@@ -302,7 +329,9 @@ module AI
       ].flatten.compact
 
       sources = if query.present?
-        search_sources(candidates, query).first(limit)
+        matched = search_sources(candidates, query)
+        matched = candidates.select { |source| relevant_evidence?(source, query) } if matched.blank?
+        matched.first(limit)
       else
         candidates.first(limit)
       end
@@ -322,6 +351,15 @@ module AI
       return [] unless recommendation_intent?(search_tokens(query))
 
       @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
+    end
+
+    def appliance_sources(query:, limit: 5)
+      sources = @property.knowledge_blocks.active.where(category: "appliances").order(:title).map { |block| knowledge_source(block) }
+      return sources.first(limit) if query.blank?
+
+      matched = search_sources(sources, query)
+      matched = sources.select { |source| appliance_source_matches_query?(source, query) } if matched.blank?
+      matched.first(limit)
     end
 
     def sensitive_access_sources(query:)
@@ -354,13 +392,18 @@ module AI
         "distance_or_walking_time",
         "google_maps_url",
         "website_url",
-        "phone_number"
+        "phone_number",
+        "appliance_name",
+        "aliases",
+        "location",
+        "youtube_url"
       ).compact
     end
 
     def context_evidence
       [
         SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
+        authorized_sensitive_facts.values,
         reservation_fact("reservation_status"),
         reservation_fact("reservation_dates"),
         policies.values
@@ -380,7 +423,11 @@ module AI
         faq = @property.faqs.active.find_by(id: record_id_from_reference(evidence_id, "faq"))
         faq_source(faq)
       when "knowledge_block"
-        block = @property.knowledge_blocks.active.find_by(id: record_id_from_reference(evidence_id, "guide", "knowledge_block"))
+        block = if evidence_id.to_s.start_with?("appliance.")
+          appliance_block_for_reference(evidence_id)
+        else
+          @property.knowledge_blocks.active.find_by(id: record_id_from_reference(evidence_id, "guide", "knowledge_block"))
+        end
         knowledge_source(block)
       when "recommendation"
         recommendation = @property.recommendations.find_by(id: record_id_from_reference(evidence_id, "recommendation"))
@@ -401,6 +448,8 @@ module AI
       when /\Afaq[._]/
         "faq"
       when /\Aguide[._]/
+        "knowledge_block"
+      when /\Aappliance[._]/
         "knowledge_block"
       when /\Arecommendation[._]/
         "recommendation"
@@ -456,7 +505,7 @@ module AI
       when "faq"
         "faq_#{record_id_from_reference(evidence_id, "faq")}"
       when "knowledge_block"
-        "guide_#{record_id_from_reference(evidence_id, "guide", "knowledge_block")}"
+        evidence_id.to_s.start_with?("appliance.") ? evidence_id.to_s.tr(".", "_") : "guide_#{record_id_from_reference(evidence_id, "guide", "knowledge_block")}"
       when "recommendation"
         "recommendation_#{record_id_from_reference(evidence_id, "recommendation")}"
       when "policy"
@@ -504,6 +553,39 @@ module AI
         .delete_prefix("policy:")
     end
 
+    def appliance_block_for_reference(reference)
+      slug = reference.to_s.delete_prefix("appliance.").delete_prefix("appliance_")
+      return if slug.blank?
+
+      @property.knowledge_blocks.active.where(category: "appliances").find do |block|
+        appliance_slug_for(block.title) == slug
+      end
+    end
+
+    def appliance_slug_for(title)
+      tokens = search_tokens(title)
+      canonical = APPLIANCE_ALIASES.find do |_slug, aliases|
+        (tokens & aliases.flat_map { |alias_name| search_tokens(alias_name) }).any?
+      end
+
+      canonical&.first || ActiveSupport::Inflector.transliterate(title.to_s.downcase)
+        .gsub(/[^a-z0-9]+/, "_")
+        .gsub(/\A_+|_+\z/, "")
+        .presence || "guide"
+    end
+
+    def appliance_aliases_for(title)
+      slug = appliance_slug_for(title)
+      aliases = APPLIANCE_ALIASES[slug] || []
+      (aliases + search_tokens(title)).uniq
+    end
+
+    def appliance_source_matches_query?(source, query)
+      message_tokens = search_tokens(query)
+      source_tokens = search_tokens([source["label"], source["value"], source["category"], source["aliases"], source["appliance_name"]].join(" "))
+      (message_tokens & source_tokens).any?
+    end
+
     def best_record_for(message, records)
       message_tokens = search_tokens(message)
       return if message_tokens.blank? || records.blank?
@@ -529,7 +611,7 @@ module AI
 
       sources
         .map do |source|
-          haystack = [source["label"], source["value"], source["category"], source["source_type"]].compact.join(" ")
+          haystack = [source["label"], source["value"], source["category"], source["source_type"], source["aliases"], source["appliance_name"], source["location"]].compact.join(" ")
           source_tokens = search_tokens(haystack)
           next unless source_matches_intent?(message_tokens, source_tokens)
 
@@ -582,7 +664,7 @@ module AI
 
     def knowledge_relevant?(source, message)
       message_tokens = search_tokens(message)
-      source_tokens = search_tokens([source["label"], source["value"], source["category"]].join(" "))
+      source_tokens = search_tokens([source["label"], source["value"], source["category"], source["aliases"], source["appliance_name"], source["location"]].join(" "))
       return false unless source_matches_intent?(message_tokens, source_tokens)
 
       match_score(message_tokens, source_tokens) >= minimum_match_score(message_tokens)
@@ -612,12 +694,12 @@ module AI
         text.match?(/address|direccion|ubicacion|como llego|llegar al edificio|guia|maps|mapa/)
       when "parking"
         text.match?(/parking|garage|estacionamiento|cochera/)
-      when "rules"
+      when "house_rules", "rules"
         text.match?(/house rules|rules|reglas|normas/)
       when "wifi_name", "wifi_password"
         text.match?(/wifi|wi-fi|password|contrasena|contraseña|red/)
       when "access_instructions"
-        text.match?(/access|entrada|acceso|cerradura|codigo|código|llave|porton|portón|como llego|guia/)
+        text.match?(/access|entrada|entrar|ingresar|ingreso|edificio|depto|departamento|puerta|acceso|cerradura|codigo|código|llave|porton|portón|como llego|guia/)
       else
         knowledge_relevant?(source, message)
       end

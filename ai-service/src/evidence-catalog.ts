@@ -143,13 +143,22 @@ function catalogEntry(
     source_type: sourceType,
     category,
     value,
-    text: [label, field, category, sourceType, value].filter(Boolean).join(" "),
+    text: [label, field, category, sourceType, value, metadataSearchText(metadata)].filter(Boolean).join(" "),
     sensitivity,
     authorization_required: authorizationRequired,
     authorized,
     metadata,
     tool_name: toolName,
   };
+}
+
+function metadataSearchText(metadata: Record<string, unknown>) {
+  return [
+    metadata.appliance_name,
+    metadata.aliases,
+    metadata.location,
+    metadata.youtube_url,
+  ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ");
 }
 
 function inferredSensitivity(toolName: string, rawId: unknown, field: string | null, label: string | null, sourceType: string | null) {
