@@ -288,7 +288,10 @@ export function buildGroundedDecision(
     );
   }
 
-  const candidates = rankedCandidates(guestMessage, evidenceCatalog);
+  let candidates = rankedCandidates(guestMessage, evidenceCatalog);
+  if (candidates.length === 0 && neutralRecommendationPreference(guestMessage, payload)) {
+    candidates = recommendationFallbackCandidates(evidenceCatalog);
+  }
   if (candidates.length === 0) {
     const clarification = attempts < thresholds.max_clarification_attempts
       ? clarificationWithoutEvidence(guestMessage, decision, payload, previousOutcome)
@@ -559,8 +562,8 @@ function replyDecision(
   const evidenceIds = unique(candidates.map((candidate) => candidate.evidence.evidence_id));
   const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
   const messageBody = strategy === "reply_with_inference"
-    ? inferredResponseFromEvidence(primary, language, candidates[0].inferred_intent, candidates)
-    : responseFromEvidenceGroup(candidates, language);
+    ? inferredResponseFromEvidence(primary, language, candidates[0].inferred_intent, candidates, payload?.guest_message || "")
+    : responseFromEvidenceGroup(candidates, language, payload?.guest_message || "");
 
   return {
     override: {
@@ -748,9 +751,13 @@ function clarificationDecision(
   };
 }
 
-function responseFromEvidenceGroup(candidates: Candidate[], language: string) {
+function responseFromEvidenceGroup(candidates: Candidate[], language: string, guestMessage = "") {
   if (candidates.length === 0) return "";
   const entries = uniqueEvidence(candidates.map((candidate) => candidate.evidence));
+
+  const access = accessResponseFromGroup(entries, language, guestMessage);
+  if (access) return access;
+
   if (entries.length === 1) return responseFromEvidence(entries[0], language);
 
   const recommendation = recommendationResponseFromGroup(entries);
@@ -786,9 +793,12 @@ function responseFromEvidence(evidence: EvidenceCatalogEntry, language: string) 
   return fallbackLabeledResponse(fieldDisplayLabel(evidence, language) || label, value, language);
 }
 
-function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string, candidates: Candidate[] = []) {
+function inferredResponseFromEvidence(evidence: EvidenceCatalogEntry, language: string, intent: string, candidates: Candidate[] = [], guestMessage = "") {
   const value = String(evidence.value || "").trim();
-  if (candidates.length > 1) return responseFromEvidenceGroup(candidates, language);
+  if (candidates.length > 1) return responseFromEvidenceGroup(candidates, language, guestMessage);
+  if (intent === "access") {
+    return accessResponseFromGroup([evidence], language, guestMessage) || directResponseForIntent(value, language, intent) || responseFromEvidence(evidence, language);
+  }
   return directResponseForIntent(value, language, intent) || responseFromEvidence(evidence, language);
 }
 
@@ -841,6 +851,73 @@ function recommendationResponseFromGroup(entries: EvidenceCatalogEntry[]) {
     ].filter(Boolean).join(" - ");
     return details;
   }).filter(Boolean).join(". ");
+}
+
+function accessResponseFromGroup(entries: EvidenceCatalogEntry[], language: string, guestMessage = "") {
+  const accessEntries = entries.filter((entry) => inferredIntent(entry) === "access");
+  if (accessEntries.length === 0) return null;
+
+  const allLines = accessEntries.flatMap(accessEvidenceLines);
+  const detailed = detailedAccessRequest(guestMessage);
+  const codeFocused = accessCodeRequest(guestMessage);
+  const lines = codeFocused
+    ? prioritizedAccessCodeLines(allLines)
+    : allLines;
+  const selected = unique(lines).slice(0, detailed ? 12 : 6);
+  if (selected.length === 0) return null;
+
+  const prefix = accessPrefix(language);
+  if (detailed || selected.length > 1) {
+    return `${prefix}\n${selected.map((line) => `- ${line}`).join("\n")}`;
+  }
+
+  return directResponseForIntent(selected[0], language, "access");
+}
+
+function accessEvidenceLines(entry: EvidenceCatalogEntry) {
+  const value = String(entry.value || "").trim();
+  if (value.length === 0) return [];
+
+  const field = evidenceField(entry);
+  const lines = accessInstructionLines(value);
+  if (field === "access_code" || field === "entry_code") {
+    const label = String(entry.label || field).toLowerCase().includes("code") || String(entry.label || field).toLowerCase().includes("codigo")
+      ? humanLabel(entry)
+      : "Código de acceso";
+    if (lines.length <= 1) return [`${label}: ${value}`];
+  }
+
+  return lines;
+}
+
+function accessInstructionLines(value: string) {
+  return value
+    .split(/\r?\n|[;•]+|(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ0-9])/u)
+    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .filter((line) => line.length > 0);
+}
+
+function detailedAccessRequest(message: string) {
+  const text = normalizeText(message);
+  return /\b(detalle|detallad|completo|paso a paso|full|details|detailed|complete|step by step)\b/.test(text);
+}
+
+function accessCodeRequest(message: string) {
+  const text = normalizeText(message);
+  return /\b(codigo|code|clave|pin|caja|lockbox|llave|key|cerradura|consejeria|portero)\b/.test(text);
+}
+
+function prioritizedAccessCodeLines(lines: string[]) {
+  const important = lines.filter((line) => accessCodeRequest(line));
+  const rest = lines.filter((line) => !accessCodeRequest(line));
+  return important.concat(rest);
+}
+
+function accessPrefix(language: string) {
+  if (language === "es") return "Para entrar:";
+  if (language === "fr") return "Pour entrer :";
+  if (language === "pt") return "Para entrar:";
+  return "To enter:";
 }
 
 function fieldDisplayLabel(evidence: EvidenceCatalogEntry, language: string) {
@@ -1065,6 +1142,40 @@ function clarificationCategory(message: string) {
   if (categories.includes("appliance")) return "appliance";
   if (categories.includes("recommendation")) return "recommendation";
   return null;
+}
+
+function neutralRecommendationPreference(message: string, payload: any) {
+  const text = normalizeText(message);
+  const neutral = /\b(me da igual|como sea|cualquiera|lo que recomiendes|lo que recomendas|recomendame vos|todo sirve|no importa|me es igual|anything|whatever|up to you|your choice|anywhere|qualquer|tanto faz|voce escolhe|você escolhe)\b/.test(text);
+  if (!neutral) return false;
+
+  const history = conversationHistoryText(payload?.conversation_history);
+  if (queryIntentCategories(history).includes("recommendation")) return true;
+  return /\b(recomendacion|recomendaciones|recomendame|recomendar|recommendation|recommend|cafe|restaurant|restaurante|comer|farmacia|supermercado|pharmacy|grocery|nearby|cerca)\b/.test(normalizeText(history));
+}
+
+function recommendationFallbackCandidates(evidenceCatalog: EvidenceCatalogEntry[]): Candidate[] {
+  return evidenceCatalog
+    .filter((evidence) => evidence.source_type === "recommendation" && evidenceUsableForGuest(evidence))
+    .map((evidence) => ({
+      evidence,
+      score: 5,
+      matched_terms: [],
+      semantic_matches: ["recommendation"],
+      strategy: "inference" as const,
+      inferred_intent: "recommendation",
+      inference_reason: "neutral_preference_after_recommendation_context",
+    }))
+    .sort(compareCandidates)
+    .slice(0, 6);
+}
+
+function conversationHistoryText(history: any) {
+  if (!Array.isArray(history)) return "";
+  return history
+    .slice(-6)
+    .map((message: any) => String(message?.body || ""))
+    .join(" ");
 }
 
 function normalizeText(value: string) {

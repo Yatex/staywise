@@ -507,6 +507,76 @@ test("access evidence group answers with authorized instructions and code", () =
   assert.match(result.decision.message_body, /4321/);
 });
 
+test("access code question returns code with its use and available entry instructions", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Me puedes dar el código de acceso",
+  }, buildEvidenceCatalog([{
+    toolName: "sensitive_access_info",
+    result: {
+      authorized: true,
+      sources: [
+        source({
+          source_type: "property_fact",
+          source_id: "property_fact:access_instructions",
+          evidence_id: "property.access_instructions",
+          field: "access_instructions",
+          label: "access_instructions",
+          value: "Entrada por costado lateral. Usá la caja de llaves del pasillo para retirar la llave. Código de la caja: 4321. Luego subí al piso 3.",
+        }),
+      ],
+    },
+  }]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.access_instructions"]);
+  assert.match(result.decision.message_body, /Código de la caja: 4321/);
+  assert.match(result.decision.message_body, /caja de llaves/);
+  assert.match(result.decision.message_body, /Entrada por costado lateral/);
+  assert.doesNotMatch(result.decision.message_body, /Fuente|Source|property\.|evidence_id|source_id/i);
+});
+
+test("access question gives concise instructions and detailed request can include the full block", () => {
+  const accessInstructions = [
+    "Entrá por el portón lateral",
+    "Tocá el timbre 3B",
+    "El código de la puerta es 2468",
+    "La caja de llaves está detrás de la maceta",
+    "Usá la llave azul para el edificio",
+    "Usá la llave plateada para el departamento",
+    "El ascensor queda al fondo del pasillo",
+    "El departamento está en el piso 6",
+  ].join(". ");
+
+  const concise = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cómo entro?",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:access_instructions",
+    evidence_id: "property.access_instructions",
+    field: "access_instructions",
+    label: "access_instructions",
+    value: accessInstructions,
+  }));
+
+  const detailed = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "me pasás las instrucciones de acceso completas paso a paso?",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:access_instructions",
+    evidence_id: "property.access_instructions",
+    field: "access_instructions",
+    label: "access_instructions",
+    value: accessInstructions,
+  }));
+
+  assert.equal(concise.decision.outcome, "reply");
+  assert.match(concise.decision.message_body, /Entrá por el portón lateral/);
+  assert.doesNotMatch(concise.decision.message_body, /piso 6/);
+  assert.equal(detailed.decision.outcome, "reply");
+  assert.match(detailed.decision.message_body, /piso 6/);
+});
+
 test("access instructions answer common Spanish entry questions", () => {
   for (const guestMessage of ["cómo entro?", "cómo ingreso al depto?", "cómo se entra al edificio?", "cómo hago el ingreso?"]) {
     const result = buildGroundedDecision(unknownEscalation("es"), {
@@ -734,6 +804,55 @@ test("recommendation request without evidence does not invent places", () => {
   assert.deepEqual(result.decision.evidence_ids, []);
   assert.match(result.decision.message_body, /No tengo recomendaciones guardadas/);
   assert.doesNotMatch(result.decision.message_body, /Café|Restaurante|Farmacia|Supermercado/);
+});
+
+test("neutral preference after recommendation question chooses saved recommendations instead of asking again", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "me da igual, lo que recomiendes",
+    conversation_history: [
+      { sender: "guest", body: "Qué me recomendás cerca del departamento?" },
+      { sender: "ai", body: "¿Preferís restaurante, café, supermercado, farmacia u otro lugar?" },
+    ],
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:1",
+      evidence_id: "recommendation.1",
+      label: "Café Roma",
+      field: "Café Roma",
+      value: "Buen café a dos cuadras.",
+      category: "cafe",
+      address: "Calle 1 123",
+    },
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:2",
+      evidence_id: "recommendation.2",
+      label: "Mercado Verde",
+      field: "Mercado Verde",
+      value: "Supermercado chico para compras rápidas.",
+      category: "grocery",
+      address: "Calle 2 456",
+    },
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:3",
+      evidence_id: "recommendation.3",
+      label: "La Esquina",
+      field: "La Esquina",
+      value: "Restaurante simple para cenar.",
+      category: "food",
+      address: "Calle 3 789",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["recommendation.1", "recommendation.2", "recommendation.3"].sort());
+  assert.match(result.decision.message_body, /Café Roma/);
+  assert.match(result.decision.message_body, /Mercado Verde/);
+  assert.match(result.decision.message_body, /La Esquina/);
+  assert.doesNotMatch(result.decision.message_body, /prefer/i);
 });
 
 test("partial evidence asks for clarification", () => {

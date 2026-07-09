@@ -128,9 +128,10 @@ const server = createServer(async (request, response) => {
       }),
     }, generateObjectTrace);
 
+    let groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     let groundingRetry = false;
     let retryModelInputTrace: any = null;
-    if (shouldRetryGroundedDecision(result.object, evidenceCatalog)) {
+    if (!groundedDecision.override?.applied && shouldRetryGroundedDecision(result.object, evidenceCatalog)) {
       groundingRetry = true;
       const previousDecisionForTrace = result.object as any;
       retryModelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog, {
@@ -151,8 +152,8 @@ const server = createServer(async (request, response) => {
           previous_decision: result.object,
         }),
       }, generateObjectTrace);
+      groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     }
-    const groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     const finalDecision = ensureSafeFallbackResponse(
       sanitizeDecisionGuestText(groundedDecision.decision),
       payload?.guest_language_fallback || payload?.owner_language,
