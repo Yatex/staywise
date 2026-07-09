@@ -27,6 +27,13 @@ module AI
       "listo gracias",
       "👍"
     ].freeze
+    CONVERSATIONAL_ONLY_TOKENS = %w[
+      a ahi algo asi ate bem boa boas bom buen buena buenas bueno buenos bye chao chau coisa cualquier
+      dale de dia dias entendido es esta excelente fine genial good goodbye gracias great hello hey hi hola
+      afternoon evening is it later listo logo mais manana manha morning muchas muito need night no noite noches
+      obrigada obrigado ok okay ola
+      perfect perfecto perfeito see si sim tarde tardes thank thanks then todo tudo you welcome
+    ].freeze
 
     def initialize(conversation:, guest_message:)
       @conversation = conversation
@@ -40,10 +47,31 @@ module AI
     end
 
     def call
-      simple_acknowledgement_decision || intro_decision || human_handoff_decision || emergency_decision
+      conversational_only_decision || intro_decision || human_handoff_decision || emergency_decision
     end
 
     private
+
+    def conversational_only_decision
+      return unless conversational_only?
+
+      decision(
+        outcome: "reply",
+        response_text: LanguageHelper.conversational_reply_for(@guest_message.body, fallback_language: @guest_language),
+        should_reply: true,
+        confidence: 1.0,
+        evidence: [],
+        escalation: { "required" => false, "category" => nil, "urgency" => nil, "summary" => nil },
+        alert_type: nil,
+        alert_title: nil,
+        alert_description: nil,
+        suggested_owner_action: nil,
+        audit: {
+          "route" => "deterministic_conversational_only",
+          "classification" => conversational_closure? ? "closure_or_acknowledgement" : "greeting_or_small_talk"
+        }
+      )
+    end
 
     def intro_decision
       return unless intro_message?
@@ -100,26 +128,18 @@ module AI
       )
     end
 
-    def simple_acknowledgement_decision
-      return unless conversational_closure?
-
-      decision(
-        outcome: "no_reply",
-        response_text: nil,
-        should_reply: false,
-        confidence: 1.0,
-        evidence: [],
-        escalation: { "required" => false, "category" => nil, "urgency" => nil, "summary" => nil },
-        alert_type: nil,
-        alert_title: nil,
-        alert_description: nil,
-        suggested_owner_action: nil,
-        audit: { "route" => "deterministic_conversational_closure" }
-      )
-    end
-
     def conversational_closure?
       CONVERSATIONAL_CLOSURES.include?(@normalized_text)
+    end
+
+    def conversational_only?
+      return true if conversational_closure?
+
+      tokens = @normalized_text.split(/\s+/).compact_blank
+      return false if tokens.blank?
+      return false unless @normalized_text.match?(/\b(hola|buenas|buenos|buen|hello|hi|hey|good|ola|bom|boa|gracias|thanks|obrigado|obrigada|ok|okay|dale|perfecto|perfeito|bye|chau|chao)\b/)
+
+      tokens.all? { |token| CONVERSATIONAL_ONLY_TOKENS.include?(token) }
     end
 
     def human_handoff_decision

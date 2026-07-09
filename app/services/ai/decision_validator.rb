@@ -1,6 +1,6 @@
 module AI
   class DecisionValidator
-    Result = Struct.new(:valid?, :reasons, :contract_failed?, :tool_mandatory_failed?, keyword_init: true)
+    Result = Struct.new(:valid?, :reasons, :warnings, :contract_failed?, :tool_mandatory_failed?, keyword_init: true)
 
     FORBIDDEN_APPROVAL_PATTERNS = [
       /yes,?\s+you can/i,
@@ -37,10 +37,12 @@ module AI
       reasons << "sensitive_info_flag_without_sensitive_evidence" if sensitive_info_flag_without_sensitive_evidence?
       reasons << "host_notification_claim_without_escalation" if host_notification_claim_without_escalation?
       reasons << "unresolved_detected_intents" if unresolved_detected_intents?
+      warnings = validation_warnings
 
       Result.new(
         valid?: reasons.empty?,
         reasons: reasons,
+        warnings: warnings,
         contract_failed?: reasons.any? { |reason| reason.to_s.start_with?("contract_") },
         tool_mandatory_failed?: reasons.any? { |reason| reason.to_s.start_with?("tool_mandatory_failed") }
       )
@@ -71,6 +73,7 @@ module AI
     end
 
     def tool_mandatory_reasons
+      return [] if conversational_only_decision?
       return [] unless real_guest_message?
 
       reasons = []
@@ -125,6 +128,7 @@ module AI
     def evidence_reasons
       return [] unless SafetyConfig.evidence_required?
       return [] unless @decision.outcome == "reply"
+      return [] if conversational_only_decision?
 
       evidence_refs = evidence_refs_for_decision
       return ["missing_evidence"] if evidence_refs.blank?
@@ -137,68 +141,6 @@ module AI
       end
     end
 
-    def grounded_decision_relevant_evidence?(item)
-      audit = grounded_decision_audit
-      return false if audit.blank?
-
-      evidence_id = canonical_evidence_reference(item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"])
-      return false if evidence_id.blank?
-
-      candidate = grounded_decision_candidate_for(evidence_id)
-      return false if candidate.blank?
-      candidate = candidate.to_h
-      grounded_decision_sufficient_evidence_ids.include?(evidence_id) || (candidate["score"] || candidate[:score]).to_f.positive?
-    end
-
-    def grounded_decision_audit
-      @grounded_decision_audit ||= @decision.audit.to_h["grounded_decision_builder"] || @decision.audit.to_h[:grounded_decision_builder]
-    end
-
-    def grounded_decision_candidate_for(evidence_id)
-      grounded_decision_candidates.find do |candidate|
-        canonical_evidence_reference(candidate["evidence_id"] || candidate[:evidence_id]) == evidence_id
-      end
-    end
-
-    def grounded_decision_candidates
-      audit = grounded_decision_audit.to_h
-      Array(audit["ranked_candidates"] || audit[:ranked_candidates]) |
-        Array(audit["evidence_candidates_ranked"] || audit[:evidence_candidates_ranked])
-    end
-
-    def grounded_decision_sufficient_evidence_ids
-      audit = grounded_decision_audit.to_h
-      Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
-        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
-      end
-    end
-
-    def canonical_evidence_reference(reference)
-      value = reference.to_s
-      return if value.blank?
-
-      case value
-      when /\Aproperty_fact:(.+)\z/
-        "property.#{$1}"
-      when /\Aproperty_(.+)\z/
-        "property.#{$1}"
-      when /\Areservation_fact:(.+)\z/
-        "reservation.#{$1}"
-      when /\Areservation_(.+)\z/
-        "reservation.#{$1}"
-      when /\Afaq_(\d+)\z/
-        "faq.#{$1}"
-      when /\Aguide_(\d+)\z/
-        "guide.#{$1}"
-      when /\Arecommendation_(\d+)\z/
-        "recommendation.#{$1}"
-      when /\Apolicy_(.+)\z/
-        "policy.#{$1}"
-      else
-        value.tr(":", ".")
-      end
-    end
-
     def evidence_refs_for_decision
       @decision.evidence.presence ||
         @decision.used_source_ids.map { |source_id| { "id" => source_id } }.presence ||
@@ -207,6 +149,7 @@ module AI
 
     def response_contradicts_evidence?
       return false unless @decision.outcome == "reply"
+      return false if conversational_only_decision?
 
       evidence_refs_for_decision.any? do |item|
         evidence_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
@@ -474,6 +417,90 @@ module AI
       @decision.response_text.to_s.match?(
         /(?:wifi|wi-fi).{0,50}(?:password|contrase(?:ñ|n)a|clave|red|network|is|es)|(?:password|contrase(?:ñ|n)a|clave).{0,50}(?:wifi|wi-fi|is|es)|(?:c[oó]digo|code|lockbox|caja de llaves|cerradura|llave|keys?|access code|instrucciones de acceso)/i
       )
+    end
+
+    def conversational_only_decision?
+      @decision.outcome == "reply" &&
+        @decision.evidence_ids.blank? &&
+        @decision.used_source_ids.blank? &&
+        @decision.detected_intents.any? do |intent|
+          intent.to_h["type"].to_s.in?(%w[greeting small_talk conversational_closure acknowledgement thanks goodbye])
+        end
+    end
+
+    def validation_warnings
+      semantic_relevance_warnings
+    end
+
+    def semantic_relevance_warnings
+      return [] unless @decision.outcome == "reply"
+      return [] if conversational_only_decision?
+      return [] if grounded_decision_audit.blank?
+
+      evidence_refs_for_decision.filter_map do |item|
+        next unless @registry.valid_evidence?(item)
+
+        evidence_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
+        next if ai_marked_evidence_relevant?(evidence_id)
+
+        "semantic_relevance_unverified:#{evidence_id}"
+      end
+    end
+
+    def ai_marked_evidence_relevant?(evidence_id)
+      canonical_id = canonical_evidence_reference(evidence_id)
+      return true if grounded_decision_sufficient_evidence_ids.include?(canonical_id)
+
+      grounded_decision_candidates.any? do |candidate|
+        candidate = candidate.to_h
+        canonical_evidence_reference(candidate["evidence_id"] || candidate[:evidence_id]) == canonical_id &&
+          (candidate["score"] || candidate[:score]).to_f.positive?
+      end
+    end
+
+    def grounded_decision_audit
+      @grounded_decision_audit ||= @decision.audit.to_h["grounded_decision_builder"] || @decision.audit.to_h[:grounded_decision_builder]
+    end
+
+    def grounded_decision_candidates
+      audit = grounded_decision_audit.to_h
+      Array(audit["ranked_candidates"] || audit[:ranked_candidates]) |
+        Array(audit["evidence_candidates_ranked"] || audit[:evidence_candidates_ranked])
+    end
+
+    def grounded_decision_sufficient_evidence_ids
+      audit = grounded_decision_audit.to_h
+      Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
+        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
+      end
+    end
+
+    def canonical_evidence_reference(reference)
+      value = reference.to_s
+      return if value.blank?
+
+      case value
+      when /\Aproperty_fact:(.+)\z/
+        "property.#{$1}"
+      when /\Aproperty_(.+)\z/
+        "property.#{$1}"
+      when /\Areservation_fact:(.+)\z/
+        "reservation.#{$1}"
+      when /\Areservation_(.+)\z/
+        "reservation.#{$1}"
+      when /\Asensitive_(.+)\z/
+        "property.#{$1}"
+      when /\Afaq_(\d+)\z/
+        "faq.#{$1}"
+      when /\Aguide_(\d+)\z/
+        "guide.#{$1}"
+      when /\Arecommendation_(\d+)\z/
+        "recommendation.#{$1}"
+      when /\Apolicy_(.+)\z/
+        "policy.#{$1}"
+      else
+        value.tr(":", ".")
+      end
     end
 
   end

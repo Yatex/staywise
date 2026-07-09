@@ -116,7 +116,6 @@ module Whatsapp
         metadata: {
           "message_type" => ROUTING_GREETING_MESSAGE_TYPE,
           "handled_by" => "rails",
-          "owner_disclosure" => true,
           "delivery_status" => "pending",
           "delivery_status_updated_at" => Time.current.iso8601
         }
@@ -126,14 +125,7 @@ module Whatsapp
     end
 
     def routing_greeting_for(property, text)
-      property_name = property.display_name
-
-      case AI::LanguageHelper.detect(text, fallback: property.account.ai_preferred_language)
-      when "es"
-        "Hola, soy Ayla, la asistente de #{property_name}. ¿En qué puedo ayudarte?\n\nTené en cuenta que el dueño de la propiedad también puede leer este chat."
-      else
-        "Hi, I’m Ayla, the assistant for #{property_name}. How can I help you?\n\nPlease note that the property owner can also read this chat."
-      end
+      AI::LanguageHelper.multilingual_welcome
     end
 
     def maybe_reply(conversation, guest, decision, alert:)

@@ -87,7 +87,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     system_message = @conversation.messages.create!(
       sender: "system",
       channel: "whatsapp",
-      body: "Ya vinculé este chat con Conversation Apartment.",
+      body: AI::LanguageHelper.multilingual_welcome,
       metadata: { delivery_status: "sent" }
     )
     ai_message = @conversation.messages.create!(

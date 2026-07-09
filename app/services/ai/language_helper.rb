@@ -78,34 +78,56 @@ module AI
     end
 
     def intro_reply_for(property, text, fallback_language: nil)
-      property_name = property&.display_name.presence || property&.name.presence || "the property"
+      multilingual_welcome
+    end
 
-      case detect(text, fallback: fallback_language)
-      when "es"
-        "Hola, soy Ayla, la asistente de #{property_name}. ¿En qué puedo ayudarte?"
-      when "fr"
-        "Bonjour, je suis Ayla, l'assistante de #{property_name}. Comment puis-je vous aider ?"
-      when "de"
-        "Hallo, ich bin Ayla, die Assistentin für #{property_name}. Wie kann ich helfen?"
-      when "pt"
-        "Olá, sou Ayla, a assistente de #{property_name}. Como posso ajudar?"
-      when "it"
-        "Ciao, sono Ayla, l'assistente di #{property_name}. Come posso aiutarti?"
-      when "zh"
-        "你好，我是 #{property_name} 的助理 Ayla。有什么可以帮你？"
-      when "ja"
-        "こんにちは、#{property_name} のアシスタント Ayla です。どのようにお手伝いできますか？"
-      when "ko"
-        "안녕하세요, #{property_name}의 어시스턴트 Ayla입니다. 무엇을 도와드릴까요?"
-      when "ar"
-        "مرحبًا، أنا Ayla، مساعدة #{property_name}. كيف يمكنني مساعدتك؟"
-      when "he"
-        "שלום, אני Ayla, העוזרת של #{property_name}. איך אפשר לעזור?"
-      when "ru"
-        "Здравствуйте, я Ayla, ассистент #{property_name}. Чем могу помочь?"
-      else
-        "Hi, I'm Ayla, the assistant for #{property_name}. How can I help?"
+    def multilingual_welcome
+      "👋 Hola, soy Ayla, tu asistente.\n\n" \
+        "🇪🇸 Escribí en español.\n" \
+        "🇬🇧 Write in English.\n" \
+        "🇧🇷 Escreva em português.\n\n" \
+        "💬 También puedo entender muchos otros idiomas."
+    end
+
+    def conversational_reply_for(text, fallback_language: nil)
+      normalized = ActiveSupport::Inflector.transliterate(text.to_s)
+        .downcase
+        .gsub(/[^\p{Alnum}\s]+/, " ")
+        .squish
+      language = detect(text, fallback: fallback_language)
+
+      if normalized.match?(/\b(chau|chao|hasta luego|bye|goodbye|see you|tchau|ate logo)\b/)
+        return language == "en" ? "Goodbye. Let me know if you need anything else." : language == "pt" ? "Até logo. Se precisar de algo mais, é só me avisar." : "Hasta luego. Cualquier cosa escribime."
       end
+
+      if normalized.match?(/\b(gracias|muchas gracias|thanks|thank you|obrigado|obrigada)\b/)
+        return language == "en" ? "You're welcome. Let me know if you need anything else." : language == "pt" ? "De nada. Se precisar de algo mais, é só me avisar." : "De nada. Avisame si necesitás algo más."
+      end
+
+      if normalized.match?(/\b(ok|okay|dale|listo|perfecto|entendido|genial|excelente|perfect|great|got it|perfeito|entendi|beleza)\b/) &&
+          !normalized.match?(/\b(hola|buenas|hello|hi|hey|ola|bom dia|boa tarde|boa noite)\b/)
+        return language == "en" ? "Perfect, let me know if you need anything else." : language == "pt" ? "Perfeito, qualquer coisa é só me escrever." : "Perfecto, cualquier cosa escribime."
+      end
+
+      if language == "en"
+        return "Good afternoon. How can I help?" if normalized.include?("good afternoon")
+        return "Good evening. How can I help?" if normalized.match?(/\bgood (evening|night)\b/)
+        return "Good morning. How can I help?" if normalized.include?("good morning")
+        return "Hi, how can I help?"
+      end
+
+      if language == "pt"
+        return "Boa tarde. Como posso ajudar?" if normalized.include?("boa tarde")
+        return "Boa noite. Como posso ajudar?" if normalized.include?("boa noite")
+        return "Bom dia. Como posso ajudar?" if normalized.include?("bom dia")
+        return "Olá, como posso ajudar?"
+      end
+
+      return "Hola, buenas tardes. ¿En qué puedo ayudarte?" if normalized.include?("buenas tardes")
+      return "Buenas noches. ¿En qué puedo ayudarte?" if normalized.include?("buenas noches")
+      return "Buen día. ¿En qué puedo ayudarte?" if normalized.match?(/\bbuen(os)? dia(s)?\b/)
+
+      "Hola, ¿en qué puedo ayudarte?"
     end
 
     def ambiguous_time_reply_for(text, fallback_language: nil)

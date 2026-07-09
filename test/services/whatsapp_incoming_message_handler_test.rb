@@ -187,7 +187,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         {
           "From" => "whatsapp:+15550000008",
           "To" => "whatsapp:+15550009999",
-          "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+          "Body" => "#{@property.whatsapp_reference}"
         },
         provider: provider
       ).call
@@ -206,8 +206,10 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal 1, conversation.messages.where(sender: "system").count
     assert_equal "routing_greeting", conversation.messages.where(sender: "system").last.metadata["message_type"]
     assert_includes provider.sent_messages.last.fetch(:body), "Hola, soy Ayla"
-    assert_includes provider.sent_messages.last.fetch(:body), "¿En qué puedo ayudarte?"
-    assert_includes provider.sent_messages.last.fetch(:body), "el dueño de la propiedad también puede leer este chat"
+    assert_includes provider.sent_messages.last.fetch(:body), "Write in English"
+    assert_includes provider.sent_messages.last.fetch(:body), "Escreva em português"
+    assert_not_includes provider.sent_messages.last.fetch(:body), "tengo una consulta"
+    assert_not_includes provider.sent_messages.last.fetch(:body), "dueño de la propiedad"
   end
 
   test "routing greeting is persisted before whatsapp delivery is attempted" do
@@ -217,7 +219,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       {
         "From" => "whatsapp:+15550000017",
         "To" => "whatsapp:+15550009999",
-        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+        "Body" => "#{@property.whatsapp_reference}"
       },
       provider: provider
     ).call
@@ -238,7 +240,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       {
         "From" => from,
         "To" => "whatsapp:+15550009999",
-        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+        "Body" => "#{@property.whatsapp_reference}"
       },
       provider: Whatsapp::Providers::NullProvider.new
     ).call
@@ -360,7 +362,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes ai_message.body, "equipaje"
   end
 
-  test "guest closure after ai offer does not reply or create alert" do
+  test "guest closure after ai offer replies naturally without creating alert" do
     provider = RecordingProvider.new
     guest = @account.guests.create!(phone_number: "+15550000020", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
@@ -380,12 +382,37 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     ).call
 
     assert_equal conversation, result.fetch(:conversation)
-    assert_not result.fetch(:replied)
+    assert result.fetch(:replied)
     assert_nil result.fetch(:alert)
     assert_equal "active", conversation.reload.status
     assert_equal 0, conversation.alerts.count
-    assert_equal ["ai", "guest"], conversation.messages.order(:id).pluck(:sender)
-    assert_empty provider.sent_messages
+    assert_equal ["ai", "guest", "ai"], conversation.messages.order(:id).pluck(:sender)
+    assert_equal 1, provider.sent_messages.size
+    assert_match(/De nada|Perfecto/, provider.sent_messages.last.fetch(:body))
+  end
+
+  test "guest greeting replies naturally without creating alert" do
+    provider = RecordingProvider.new
+    guest = @account.guests.create!(phone_number: "+15550000021", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15550000021",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "hola buenas tardes"
+      },
+      provider: provider
+    ).call
+
+    assert_equal conversation, result.fetch(:conversation)
+    assert result.fetch(:replied)
+    assert_nil result.fetch(:alert)
+    assert_equal 0, conversation.alerts.count
+    assert_equal ["guest", "ai"], conversation.messages.order(:id).pluck(:sender)
+    assert_equal 1, provider.sent_messages.size
+    assert_includes provider.sent_messages.last.fetch(:body), "Hola, buenas tardes"
+    assert_no_match(/address|check_in|parking|property\./i, provider.sent_messages.last.fetch(:body))
   end
 
   test "first concrete ai answer also discloses that chat is shared with owner" do
@@ -409,7 +436,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes body, "este chat está compartido con el dueño de la propiedad"
   end
 
-  test "owner disclosure is not repeated after first ai response" do
+  test "owner disclosure is still added to first ai response after routing welcome" do
     @property.update!(checkout_time: "11:00")
     phone_number = "whatsapp:+15550000010"
 
@@ -417,7 +444,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       {
         "From" => phone_number,
         "To" => "whatsapp:+15550009999",
-        "Body" => "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}"
+        "Body" => "#{@property.whatsapp_reference}"
       },
       provider: Whatsapp::Providers::NullProvider.new
     ).call
@@ -436,7 +463,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     body = result.fetch(:conversation).messages.where(sender: "ai").last.body
 
     assert_includes body, "El checkout es a las 11:00"
-    assert_not_includes body, "este chat está compartido con el dueño de la propiedad"
+    assert_includes body, "este chat está compartido con el dueño de la propiedad"
   end
 
   test "asks unknown guests to scan property qr instead of using a default property" do

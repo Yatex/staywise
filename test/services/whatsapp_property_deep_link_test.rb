@@ -28,5 +28,6 @@ class WhatsappPropertyDeepLinkTest < ActiveSupport::TestCase
 
     assert_includes link, "https://wa.me/59899999999"
     assert_includes CGI.unescape(link), @property.whatsapp_reference
+    assert_not_includes CGI.unescape(link), "Hola, tengo una consulta"
   end
 end

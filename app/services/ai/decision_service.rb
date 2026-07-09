@@ -481,6 +481,7 @@ module AI
         contract_failed: validation.contract_failed?,
         tool_mandatory_failed: validation.tool_mandatory_failed?,
         reasons: validation.reasons,
+        warnings: validation.warnings,
         evidence: evidence_validation(decision)
       }
     end

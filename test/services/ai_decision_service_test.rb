@@ -322,6 +322,83 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_includes decision.response_text, "Test WiFi"
   end
 
+  test "validator does not block valid evidence when semantic relevance is unverified by rails" do
+    cases = [
+      {
+        guest_message: "a qué hora puedo entrar?",
+        response: "Podés entrar a partir de las 3:00 PM.",
+        evidence_ids: ["property.check_in_time"],
+        used_source_ids: [],
+        sensitive: false,
+        intent: "check_in_time"
+      },
+      {
+        guest_message: "hay internet?",
+        response: "Sí, hay Wi-Fi. La red se llama Test WiFi y la contraseña es secret.",
+        evidence_ids: ["property.wifi_name", "property.wifi_password"],
+        used_source_ids: ["sensitive_wifi_name", "sensitive_wifi_password"],
+        sensitive: true,
+        intent: "wifi"
+      },
+      {
+        guest_message: "cómo entro?",
+        response: "Para entrar: entrá por el portón lateral y subí al piso 3.",
+        evidence_ids: ["property.access_instructions"],
+        used_source_ids: ["sensitive_access_instructions"],
+        sensitive: true,
+        intent: "access"
+      }
+    ]
+
+    cases.each do |item|
+      message = @conversation.messages.create!(sender: "guest", body: item.fetch(:guest_message), channel: "whatsapp")
+      decision = run_with_remote_decision(message, ai_reply(
+        language: "es",
+        message_body: item.fetch(:response),
+        evidence_ids: item.fetch(:evidence_ids),
+        used_source_ids: item.fetch(:used_source_ids),
+        sensitive_info_used: item.fetch(:sensitive),
+        detected_intents: [{ type: item.fetch(:intent), status: "answered" }],
+        audit: default_tool_audit.merge(
+          grounded_decision_builder: {
+            called: true,
+            ranked_candidates: [],
+            sufficient_candidates: [],
+            decision_scores: {
+              answer_confidence: 95,
+              evidence_relevance_score: 90,
+              safety_score: 90
+            }
+          }
+        )
+      ))
+      audit = AIDecisionLog.where(message: message).last
+
+      assert_equal "reply", decision.outcome, item.fetch(:guest_message)
+      assert_equal "accepted", audit.validator_result, item.fetch(:guest_message)
+      assert_empty audit.validation_results["reasons"], item.fetch(:guest_message)
+      item.fetch(:evidence_ids).each do |evidence_id|
+        assert_includes audit.validation_results["warnings"], "semantic_relevance_unverified:#{evidence_id}", item.fetch(:guest_message)
+        assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:#{evidence_id}", item.fetch(:guest_message)
+      end
+    end
+  end
+
+  test "validator accepts clarification without evidence for missing appliance guide" do
+    message = @conversation.messages.create!(sender: "guest", body: "cómo se usa la lavadora?", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, ai_clarification(
+      language: "es",
+      message_body: "No tengo una guía cargada para la lavadora. ¿Querés que lo consulte con el anfitrión?",
+      detected_intents: [{ type: "appliance_instructions", status: "needs_clarification" }]
+    ))
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "ask_clarifying_question", decision.outcome
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
+  end
+
   test "validator accepts grounded access instructions selected by ai service" do
     message = @conversation.messages.create!(sender: "guest", body: "cómo entro?", channel: "whatsapp")
 
@@ -938,7 +1015,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
   test "default qr intro asks how to help without alerting owner" do
     message = @conversation.messages.create!(
       sender: "guest",
-      body: "Hola, tengo una consulta sobre #{@property.display_name}. #{@property.whatsapp_reference}",
+      body: "#{@property.whatsapp_reference}",
       channel: "whatsapp"
     )
 
@@ -947,7 +1024,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "ask_clarifying_question", decision.outcome
     assert_not decision.escalation_required
     assert_nil decision.alert_type
-    assert_includes decision.response_text, "¿En qué puedo ayudarte?"
+    assert_includes decision.response_text, "Hola, soy Ayla"
+    assert_includes decision.response_text, "Write in English"
+    assert_includes decision.response_text, "Escreva em português"
   end
 
   test "guest fallback reply uses guest language while owner alert stays spanish" do
@@ -971,10 +1050,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       "perfecto",
       "ok",
       "listo",
-      "muchas gracias"
+      "muchas gracias",
+      "hola buenas tardes",
+      "hello good afternoon",
+      "olá boa tarde"
     ]
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| raise "closure messages should not reach remote AI" }
+      define_method(:remote_decision) { |_payload| raise "conversational messages should not reach remote AI" }
     end
 
     examples.each do |body|
@@ -982,12 +1064,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       decision = service_class.new(conversation: @conversation, guest_message: message).call
       audit = AIDecisionLog.where(message: message).last
 
-      assert_equal "no_reply", decision.outcome, body
-      assert_not decision.should_reply, body
+      assert_equal "reply", decision.outcome, body
+      assert decision.should_reply, body
+      assert decision.response_text.present?, body
       assert_not decision.escalation_required, body
       assert_nil decision.alert_type, body
+      assert_empty decision.evidence_ids, body
       assert_equal "deterministic", audit.route, body
-      assert_equal "deterministic_conversational_closure", decision.audit["route"], body
+      assert_equal "deterministic_conversational_only", decision.audit["route"], body
     end
   end
 

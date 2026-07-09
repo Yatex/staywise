@@ -3,6 +3,67 @@ import test from "node:test";
 import { buildEvidenceCatalog } from "./evidence-catalog.js";
 import { buildGroundedDecision } from "./grounded-decision-builder.js";
 
+test("spanish greeting is answered as small talk without matching property evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "hola buenas tardes",
+  }, catalogFromSources([
+    propertyFact("address", "property.address", "Av. Siempre Viva 123"),
+    propertyFact("check_in_time", "property.check_in_time", "15:00"),
+    propertyFact("parking_instructions", "property.parking_instructions", "Cochera 12"),
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.equal(result.decision.detected_intents[0].type, "greeting");
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.deepEqual(result.decision.safety_flags, []);
+  assert.match(result.decision.message_body, /buenas tardes/i);
+  assert.doesNotMatch(result.decision.message_body, /address|check_in|parking|Av\.|15:00|Cochera/i);
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.override_type, "conversational_only");
+});
+
+test("english greeting is answered as small talk without evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("en"), {
+    guest_message: "hello good afternoon",
+  }, catalogFromSources([
+    propertyFact("address", "property.address", "123 Test Street"),
+    propertyFact("parking_instructions", "property.parking_instructions", "Garage spot 4"),
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.detected_intents[0].type, "greeting");
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.match(result.decision.message_body, /Good afternoon/i);
+  assert.doesNotMatch(result.decision.message_body, /address|parking|123 Test|Garage/i);
+});
+
+test("portuguese greeting is answered as small talk without evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("pt"), {
+    guest_message: "olá boa tarde",
+  }, catalogFromSources([
+    propertyFact("address", "property.address", "Rua Teste 123"),
+    propertyFact("check_in_time", "property.check_in_time", "15:00"),
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.detected_intents[0].type, "greeting");
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.match(result.decision.message_body, /Boa tarde/i);
+  assert.doesNotMatch(result.decision.message_body, /address|check_in|Rua Teste|15:00/i);
+});
+
+test("thanks are answered as small talk without evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "ok gracias",
+  }, catalogFromSource(propertyFact("address", "property.address", "Av. Siempre Viva 123")));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.detected_intents[0].type, "small_talk");
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.match(result.decision.message_body, /De nada|Perfecto/i);
+  assert.doesNotMatch(result.decision.message_body, /address|Av\./i);
+});
+
 test("structured fact evidence answers check-in without unknown escalation", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "a que hora es el check in?",
@@ -836,6 +897,17 @@ function sensitiveAccessCatalog(authorized: boolean) {
           sources: [],
         },
   }]);
+}
+
+function propertyFact(field: string, evidenceId: string, value: string) {
+  return {
+    source_type: "property_fact",
+    source_id: `property_fact:${field}`,
+    evidence_id: evidenceId,
+    field,
+    label: field,
+    value,
+  };
 }
 
 function source(data: Record<string, unknown>) {

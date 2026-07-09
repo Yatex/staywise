@@ -17,6 +17,7 @@ import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decisio
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 import { ensureSafeFallbackResponse, safeFallbackResponseFor } from "./safe-fallback-response.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
+import { classifyConversationalOnly } from "./conversational-classifier.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
@@ -96,10 +97,11 @@ const server = createServer(async (request, response) => {
     payload.tool_endpoint = resolveRailsToolEndpoint(payload?.tool_endpoint);
     mandatoryTrace = newToolMandatoryTrace(payload);
 
-    if (isConversationalClosure(payload?.guest_message)) {
-      mandatoryTrace.skip_reason = "conversational_closure";
+    const conversationalClassification = classifyConversationalOnly(payload?.guest_message);
+    if (conversationalClassification) {
+      mandatoryTrace.skip_reason = `conversational_only:${conversationalClassification.kind}`;
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
-      sendJson(response, 200, closureDecision(payload));
+      sendJson(response, 200, conversationalOnlyDecision(payload, conversationalClassification));
       return;
     }
 
@@ -593,20 +595,19 @@ function fallbackDecision(payload: any) {
   };
 }
 
-function closureDecision(payload: any) {
-  const guestText = payload?.guest_message || "";
-  const guestLanguage = fallbackGuestLanguage(guestText, payload?.guest_language_fallback);
+function conversationalOnlyDecision(payload: any, classification: NonNullable<ReturnType<typeof classifyConversationalOnly>>) {
+  const guestLanguage = classification.language || fallbackGuestLanguage(payload?.guest_message || "", payload?.guest_language_fallback);
 
   return {
-    outcome: "no_reply",
-    decision: "no_reply",
+    outcome: "reply",
+    decision: "reply",
     language: guestLanguage,
-    message_body: null,
+    message_body: classification.response,
     safe_fallback_response: safeFallbackResponseFor(guestLanguage),
-    intent_summary: "Conversational closure or acknowledgement",
+    intent_summary: `Conversational ${classification.kind}`,
     detected_intents: [
       {
-        type: "conversational_closure",
+        type: classification.kind === "greeting" ? "greeting" : "small_talk",
         status: "answered",
       },
     ],
@@ -625,6 +626,13 @@ function closureDecision(payload: any) {
     sensitive_info_used: false,
     missing_information: [],
     safety_flags: [],
+    audit: {
+      route: "conversational_only",
+      conversational_classification: {
+        kind: classification.kind,
+        language: guestLanguage,
+      },
+    },
   };
 }
 
@@ -703,47 +711,6 @@ function detectLanguage(text: string) {
 
 function normalizeLanguage(language?: string) {
   return language?.split(/[-_]/)[0] || undefined;
-}
-
-function isConversationalClosure(text?: string) {
-  const normalized = normalizeClosureText(text || "");
-  return [
-    "ok",
-    "okay",
-    "dale",
-    "gracias",
-    "muchas gracias",
-    "perfecto",
-    "bien",
-    "entendido",
-    "listo",
-    "genial",
-    "excelente",
-    "no gracias",
-    "asi esta bien",
-    "no gracias asi esta bien",
-    "esta bien",
-    "todo bien",
-    "ok gracias",
-    "dale gracias",
-    "perfecto gracias",
-    "listo gracias",
-    "thanks",
-    "thank you",
-    "no thanks",
-    "that is fine",
-    "thats fine",
-  ].includes(normalized);
-}
-
-function normalizeClosureText(text: string) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/[^\p{Letter}\p{Number}\s👍]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function ownerText(language: string, spanish: string, english: string) {
@@ -1075,14 +1042,14 @@ function traceToolResult(toolName: string, input: any, result: any, error?: any,
 }
 
 function newToolMandatoryTrace(payload: any): ToolMandatoryTrace {
-  const closure = isConversationalClosure(payload?.guest_message);
-  const realGuestMessage = Boolean(payload?.guest_message?.trim()) && !closure;
+  const conversationalOnly = Boolean(classifyConversationalOnly(payload?.guest_message));
+  const realGuestMessage = Boolean(payload?.guest_message?.trim()) && !conversationalOnly;
   const serviceToken = process.env.AI_SERVICE_TOKEN || "";
 
   return {
     message_received: payload?.guest_message || null,
     is_real_guest_message: realGuestMessage,
-    should_run_tools: !closure && process.env.AI_TOOLS_ENABLED !== "false",
+    should_run_tools: !conversationalOnly && process.env.AI_TOOLS_ENABLED !== "false",
     skip_reason: null,
     decision_context_id_present: Boolean(payload?.tool_endpoint?.decision_context_id),
     tool_endpoint_present: Boolean(payload?.tool_endpoint?.base_url),

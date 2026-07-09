@@ -1,4 +1,5 @@
 import type { EvidenceCatalogEntry } from "./evidence-catalog.js";
+import { classifyConversationalOnly } from "./conversational-classifier.js";
 
 export type GroundedDecisionBuild = {
   decision: any;
@@ -247,8 +248,9 @@ export function buildGroundedDecision(
   const previousOutcome = String(decision?.outcome || decision?.decision || "") || null;
   const guestMessage = payload?.guest_message || "";
   const thresholds = decisionThresholds(payload);
+  const conversationalClassification = classifyConversationalOnly(guestMessage);
   const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
-  const candidateAudit = rankedCandidateAudit(guestMessage, evidenceCatalog);
+  const candidateAudit = conversationalClassification ? [] : rankedCandidateAudit(guestMessage, evidenceCatalog);
   const clarificationIntent = inferredClarificationIntent(guestMessage);
   const attempts = clarificationAttempts(payload, clarificationIntent);
   const baseAudit = {
@@ -264,6 +266,17 @@ export function buildGroundedDecision(
     },
     score_thresholds: thresholds,
   };
+
+  if (conversationalClassification) {
+    return withGroundedAudit(
+      conversationalOnlyBuild(decision, conversationalClassification),
+      buildAudit(baseAudit, [], "conversational_only", null, {
+        strategy: "direct_reply",
+        inferredIntent: conversationalClassification.kind === "greeting" ? "greeting" : "small_talk",
+        scores: { answer_confidence: 100, evidence_relevance_score: 0, safety_score: 100 },
+      }),
+    );
+  }
 
   if (!repairDiagnostic.value) {
     return withGroundedAudit(
@@ -584,6 +597,49 @@ function replyDecision(
       missing_information: [],
       safety_flags: removeFallbackFlag(decision?.safety_flags),
       confidence: Math.max(Number(decision?.confidence || 0), 0.9),
+    },
+  };
+}
+
+function conversationalOnlyBuild(
+  decision: any,
+  classification: NonNullable<ReturnType<typeof classifyConversationalOnly>>,
+): GroundedDecisionBuild {
+  const intentType = classification.kind === "greeting" ? "greeting" : "small_talk";
+
+  return {
+    override: {
+      applied: true,
+      reason: "sufficient_evidence",
+      evidence_ids: [],
+      sufficiency: "sufficient",
+      previous_outcome: String(decision?.outcome || decision?.decision || "") || null,
+    },
+    decision: {
+      ...decision,
+      outcome: "reply",
+      decision: "reply",
+      language: classification.language,
+      message_body: classification.response,
+      response_text: classification.response,
+      safe_fallback_response: decision?.safe_fallback_response || classification.response,
+      intent_summary: `Conversational ${classification.kind}`,
+      detected_intents: [{ type: intentType, status: "answered" }],
+      evidence_ids: [],
+      used_source_ids: [],
+      required_capabilities: [],
+      proposed_action: null,
+      sensitive_info_used: false,
+      escalation: {
+        required: false,
+        reason_code: null,
+        summary_for_host: null,
+      },
+      escalation_required: false,
+      escalation_reason: null,
+      missing_information: [],
+      safety_flags: [],
+      confidence: 1,
     },
   };
 }
