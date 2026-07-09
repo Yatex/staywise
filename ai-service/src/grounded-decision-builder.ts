@@ -217,8 +217,8 @@ const INTENT_CATEGORIES = [
   {
     category: "recommendation",
     intent: "recommendation",
-    fields: ["recommendation", "recommendations", "place", "name", "address", "restaurant", "cafe"],
-    terms: ["recomendar", "recomendacion", "recommendation", "recommend", "cafe", "restaurant", "restaurante", "comer", "cenar"],
+    fields: ["recommendation", "recommendations", "place", "name", "address", "restaurant", "food", "cafe", "grocery", "supermarket", "pharmacy", "transport", "attraction"],
+    terms: ["recomendar", "recomendacion", "recommendation", "recommend", "cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "cerca", "nearby"],
   },
   {
     category: "rules",
@@ -949,6 +949,12 @@ function clarificationWithoutEvidenceMessage(category: string, language: string)
     if (language === "fr") return "Je n'ai pas d'instructions enregistrées pour cet appareil. Voulez-vous que je demande à l'hôte ?";
     return "I don't have instructions saved for that appliance. Would you like me to check with the host?";
   }
+  if (category === "recommendation") {
+    if (language === "es") return "No tengo recomendaciones guardadas para esa consulta todavía. ¿Querés que lo consulte con el anfitrión?";
+    if (language === "fr") return "Je n'ai pas encore de recommandations enregistrées pour cette demande. Voulez-vous que je demande à l'hôte ?";
+    if (language === "pt") return "Ainda não tenho recomendações salvas para essa consulta. Quer que eu consulte o anfitrião?";
+    return "I don't have saved recommendations for that request yet. Would you like me to check with the host?";
+  }
 
   if (language === "es") return "¿Me aclarás un poco más a qué te referís?";
   if (language === "fr") return "Pouvez-vous préciser un peu ce que vous voulez dire ?";
@@ -990,7 +996,7 @@ function canonicalIntentName(intent: string) {
   if (intent === "access_instructions" || intent === "access_code" || intent === "entry_code" || intent === "entrance" || intent === "entry" || intent === "lockbox" || intent === "key" || intent === "keys" || intent === "codigo" || intent === "llave") return "access";
   if (intent === "wifi_name" || intent === "wifi_password" || intent === "wi_fi" || intent === "internet" || intent === "network") return "wifi";
   if (intent === "appliances" || intent === "appliance" || intent === "washer" || intent === "coffee_machine" || intent === "air_conditioner" || intent === "tv" || intent === "oven" || intent === "microwave" || intent === "dishwasher" || intent === "dryer") return "appliance_instructions";
-  if (intent === "recommendations" || intent === "restaurant" || intent === "cafe" || intent === "place") return "recommendation";
+  if (["recommendations", "restaurant", "food", "cafe", "grocery", "supermarket", "pharmacy", "transport", "attraction", "place"].includes(intent)) return "recommendation";
   return intent;
 }
 
@@ -1057,6 +1063,7 @@ function clarificationCategory(message: string) {
   const categories = queryIntentCategories(message);
   if (categories.includes("issue")) return "issue";
   if (categories.includes("appliance")) return "appliance";
+  if (categories.includes("recommendation")) return "recommendation";
   return null;
 }
 
@@ -1085,8 +1092,23 @@ function expandTokens(tokens: string[]) {
   if (tokens.some((token) => ["visita", "visitas", "invitado", "invitados", "invitar", "gente", "visitor", "visitors", "guests", "friends"].includes(token))) {
     expanded.push("visitors", "permission");
   }
-  if (tokens.some((token) => ["cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "recomendar", "recommendation"].includes(token))) {
+  if (tokens.some((token) => ["cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "recomendar", "recommendation", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "nearby", "cerca"].includes(token))) {
     expanded.push("recommendation");
+  }
+  if (tokens.some((token) => ["supermarket", "supermercado", "grocery", "market", "mercado"].includes(token))) {
+    expanded.push("grocery", "supermarket");
+  }
+  if (tokens.some((token) => ["pharmacy", "farmacia", "drugstore"].includes(token))) {
+    expanded.push("pharmacy");
+  }
+  if (tokens.some((token) => ["restaurant", "restaurante", "comer", "cenar", "almorzar", "food"].includes(token))) {
+    expanded.push("food", "restaurant");
+  }
+  if (tokens.some((token) => ["transport", "transporte", "taxi", "bus", "uber"].includes(token))) {
+    expanded.push("transport");
+  }
+  if (tokens.some((token) => ["attraction", "atraccion", "visitar", "paseo", "turismo"].includes(token))) {
+    expanded.push("attraction");
   }
   if (tokens.some((token) => ["lavarropas", "lavadora", "washer", "laundry"].includes(token))) {
     expanded.push("appliance", "washer");

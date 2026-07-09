@@ -303,6 +303,27 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "recommendation.#{recommendation.id}", body.first["evidence_id"]
   end
 
+  test "property brain includes local property recommendations with evidence ids" do
+    recommendation = @property.recommendations.create!(
+      name: "Farmacia Central",
+      category: "pharmacy",
+      description: "Farmacia abierta hasta tarde.",
+      address: "Av. Principal 123"
+    )
+
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Hay alguna farmacia cerca?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    recommendation_ids = body.fetch("recommendations").map { |item| item["evidence_id"] }
+    matched_ids = body.fetch("matched_sources").map { |item| item["evidence_id"] }
+    assert_includes recommendation_ids, "recommendation.#{recommendation.id}"
+    assert_includes matched_ids, "recommendation.#{recommendation.id}"
+  end
+
   test "access instructions are returned only when authorized" do
     post "/internal/ai/tools/access_instructions", params: {
       decision_context_id: @decision_context_id

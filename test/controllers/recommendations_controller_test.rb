@@ -14,24 +14,51 @@ class RecommendationsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@user)
   end
 
-  test "recommendations page renders clean spanish copy by default" do
-    get recommendations_path
+  test "main sidebar does not expose recommendations as a top-level section" do
+    get dashboard_path
 
     assert_response :success
-    assert_includes response.body, "Todos los lugares aprobados por el anfitrión"
-    assert_includes response.body, "Abrí una propiedad"
-    assert_not_includes response.body, "host-approved"
-    assert_not_includes response.body, "Open a property"
+    assert_select "aside nav a", text: "Recomendaciones", count: 0
   end
 
-  test "recommendations page can switch to english" do
-    get recommendations_path(locale: "en")
+  test "owner manages recommendations from a property" do
+    property = @account.properties.create!(name: "Local Guide")
+
+    get property_path(property)
 
     assert_response :success
-    assert_includes response.body, "All host-approved places across your properties."
-    assert_includes response.body, "Open a property"
-    assert_not_includes response.body, "propiedades"
-    assert_select "a", text: "EN"
+    assert_includes response.body, "Recomendaciones locales"
+    assert_includes response.body, new_property_recommendation_path(property)
+
+    assert_difference -> { property.recommendations.count }, 1 do
+      post property_recommendations_path(property), params: {
+        recommendation: {
+          name: "Café del Sol",
+          category: "cafe",
+          description: "Buen café cerca.",
+          address: "Calle 123"
+        }
+      }
+    end
+
+    recommendation = property.recommendations.order(:created_at).last
+    assert_redirected_to property_path(property)
+
+    patch property_recommendation_path(property, recommendation), params: {
+      recommendation: {
+        name: "Café del Sol",
+        category: "cafe",
+        description: "Buen desayuno cerca.",
+        address: "Calle 123"
+      }
+    }
+    assert_redirected_to property_path(property)
+    assert_equal "Buen desayuno cerca.", recommendation.reload.description
+
+    assert_difference -> { property.recommendations.count }, -1 do
+      delete property_recommendation_path(property, recommendation)
+    end
+    assert_redirected_to property_path(property)
   end
 
   private

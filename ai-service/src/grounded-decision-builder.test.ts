@@ -704,6 +704,38 @@ test("approved recommendation evidence answers recommendation request", () => {
   assert.match(result.decision.message_body, /Café Roma/);
 });
 
+test("generic recommendation categories answer with approved evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Hay alguna farmacia cerca?",
+  }, catalogFromSource({
+    source_type: "recommendation",
+    source_id: "recommendation:8",
+    evidence_id: "recommendation.8",
+    label: "Farmacia Central",
+    field: "Farmacia Central",
+    value: "Abre hasta tarde.",
+    category: "pharmacy",
+    address: "Av. Principal 123",
+  }));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids, ["recommendation.8"]);
+  assert.match(result.decision.message_body, /Farmacia Central/);
+  assert.match(result.decision.message_body, /Av\. Principal 123/);
+});
+
+test("recommendation request without evidence does not invent places", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Dónde puedo comer cerca?",
+  }, []);
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.match(result.decision.message_body, /No tengo recomendaciones guardadas/);
+  assert.doesNotMatch(result.decision.message_body, /Café|Restaurante|Farmacia|Supermercado/);
+});
+
 test("partial evidence asks for clarification", () => {
   const result = buildGroundedDecision(unknownEscalation("en"), {
     guest_message: "What are the building hours?",

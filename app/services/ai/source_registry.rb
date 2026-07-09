@@ -72,6 +72,7 @@ module AI
         relevant_faqs: search_property_knowledge(query: query.presence || @guest_message&.body, topic: "faq", limit: 5).select { |source| source["source_type"] == "faq" },
         relevant_guides: search_property_knowledge(query: query.presence || @guest_message&.body, limit: 5).select { |source| source["source_type"] == "knowledge_block" },
         appliance_guides: appliance_sources(query: query.presence || @guest_message&.body, limit: 5),
+        local_recommendations: property_brain_recommendations(query: query.presence || @guest_message&.body, limit: 5),
         available_capabilities: {
           can_request_early_checkin: true,
           can_request_late_checkout: true,
@@ -630,6 +631,10 @@ module AI
       case category.to_s
       when "breakfast", "coffee"
         "cafe"
+      when "food", "dining"
+        "restaurant"
+      when "grocery", "market"
+        "supermarket"
       when "activities"
         "attraction"
       else
@@ -707,7 +712,7 @@ module AI
 
     def recommendation_intent?(tokens)
       (tokens & %w[
-        restaurant cafe supermarket pharmacy attraction transport recommendation recommendations
+        restaurant restaurants cafe cafes supermarket grocery market pharmacy attraction transport recommendation recommendations
         comer cenar almorzar desayuno supermercado farmacia transporte visitar lugar lugares
         exchange cambio dinero pesos western union
       ]).any?
@@ -741,6 +746,13 @@ module AI
       expanded << "checkin" if (tokens & %w[checkin entrada ingreso arrival arrive llegar]).any?
       expanded << "checkout" if (tokens & %w[checkout salida salir leave departure]).any?
       expanded.concat(%w[late late_checkout]) if tokens.include?("checkout") && (tokens & %w[tarde later late extender extenderla extension]).any?
+      expanded.concat(%w[recommendation restaurant food dining]) if (tokens & %w[restaurant restaurants restaurante restaurantes comer cenar almorzar desayuno food dining comida]).any?
+      expanded.concat(%w[recommendation cafe coffee]) if (tokens & %w[cafe cafes coffee cafetería cafeteria]).any?
+      expanded.concat(%w[recommendation supermarket grocery market]) if (tokens & %w[supermarket supermercado supermercados grocery groceries market mercado almacén almacen]).any?
+      expanded.concat(%w[recommendation pharmacy]) if (tokens & %w[pharmacy farmacia farmacias drugstore]).any?
+      expanded.concat(%w[recommendation transport transportation]) if (tokens & %w[transport transporte bus taxi uber colectivo metro]).any?
+      expanded.concat(%w[recommendation attraction activity visit]) if (tokens & %w[attraction atraccion atracciones actividad actividades visitar paseo pasear turismo]).any?
+      expanded << "recommendation" if (tokens & %w[recomendacion recomendaciones recomendar recommended recommend cerca nearby lugar lugares place places]).any?
 
       expanded
     end

@@ -37,7 +37,6 @@ Rails.application.routes.draw do
     resources :faqs, except: [:show]
   end
 
-  resources :recommendations, only: [:index]
   resources :conversations, only: [:index, :show] do
     post :reply, on: :member
     get :refresh, on: :member
