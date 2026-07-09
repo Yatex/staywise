@@ -1,0 +1,11 @@
+<div class="mt-4 space-y-3" data-conversation-refresh-target="alerts">
+  <% alerts.each do |alert| %>
+    <%= link_to alert_path(alert), class: "block rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50" do %>
+      <p class="text-sm font-medium text-slate-950"><%= alert_display_title(alert) %></p>
+      <p class="mt-1 text-xs text-slate-500"><%= enum_label(alert.priority) %> · <%= enum_label(alert.status) %></p>
+    <% end %>
+  <% end %>
+  <% if alerts.blank? %>
+    <p class="text-sm text-slate-500">No hay alertas para esta conversación.</p>
+  <% end %>
+</div>

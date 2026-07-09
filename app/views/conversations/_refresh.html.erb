@@ -1,0 +1,3 @@
+<span data-conversation-refresh-target="status" class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(conversation.status) %>"><%= enum_label(conversation.status) %></span>
+<%= render "messages", messages: messages %>
+<%= render "alerts", alerts: alerts %>

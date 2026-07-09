@@ -8,6 +8,7 @@ export default class extends Controller {
   }
 
   connect() {
+    this.refreshing = false
     requestAnimationFrame(() => this.scrollToLatestMessage())
     this.timer = setInterval(() => this.refresh(), this.intervalValue)
   }
@@ -18,22 +19,29 @@ export default class extends Controller {
 
   async refresh() {
     if (document.hidden) return
+    if (this.refreshing) return
 
-    const response = await fetch(this.urlValue || window.location.href, {
-      headers: { Accept: "text/html" },
-    })
-    if (!response.ok) return
+    this.refreshing = true
 
-    const html = await response.text()
-    const documentFragment = new DOMParser().parseFromString(html, "text/html")
-    const wasNearBottom = this.nearPageBottom()
+    try {
+      const response = await fetch(this.urlValue || window.location.href, {
+        headers: { Accept: "text/html" },
+      })
+      if (!response.ok) return
 
-    const messagesChanged = this.replaceTarget("messages", documentFragment)
-    this.replaceTarget("alerts", documentFragment)
-    this.replaceTarget("status", documentFragment)
+      const html = await response.text()
+      const documentFragment = new DOMParser().parseFromString(html, "text/html")
+      const wasNearBottom = this.nearPageBottom()
 
-    if (messagesChanged && wasNearBottom) {
-      this.scrollToLatestMessage()
+      const messagesChanged = this.replaceTarget("messages", documentFragment)
+      this.replaceTarget("alerts", documentFragment)
+      this.replaceTarget("status", documentFragment)
+
+      if (messagesChanged && wasNearBottom) {
+        this.scrollToLatestMessage()
+      }
+    } finally {
+      this.refreshing = false
     }
   }
 

@@ -1,9 +1,15 @@
 class AlertsController < ApplicationController
+  PER_PAGE = 30
+
   def index
-    @alerts = Alert.joins(:property)
+    scope = Alert.joins(:property)
       .where(properties: { account_id: current_account.id })
       .includes(:guest, :property, :conversation)
       .order(created_at: :desc)
+    @current_page = [params[:page].to_i, 1].max
+    @total_count = scope.count
+    @total_pages = (@total_count.to_f / PER_PAGE).ceil
+    @alerts = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE)
   end
 
   def show

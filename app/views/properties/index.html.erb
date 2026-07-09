@@ -49,15 +49,15 @@
         <% end %>
         <div class="mt-5 grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg bg-slate-50 p-3">
-            <p class="text-lg font-semibold text-slate-950"><%= property.knowledge_blocks.count %></p>
+            <p class="text-lg font-semibold text-slate-950"><%= @knowledge_block_counts[property.id].to_i %></p>
             <p class="text-xs text-slate-500"><%= t("ui.properties.guide_count") %></p>
           </div>
           <div class="rounded-lg bg-slate-50 p-3">
-            <p class="text-lg font-semibold text-slate-950"><%= property.recommendations.count %></p>
+            <p class="text-lg font-semibold text-slate-950"><%= @recommendation_counts[property.id].to_i %></p>
             <p class="text-xs text-slate-500"><%= t("ui.properties.places_count") %></p>
           </div>
           <div class="rounded-lg bg-slate-50 p-3">
-            <p class="text-lg font-semibold text-slate-950"><%= property.alerts.operational.open.count %></p>
+            <p class="text-lg font-semibold text-slate-950"><%= @open_alert_counts[property.id].to_i %></p>
             <p class="text-xs text-slate-500"><%= t("ui.nav.alerts") %></p>
           </div>
         </div>
@@ -80,6 +80,20 @@
       <h3 class="text-lg font-semibold text-slate-950"><%= t("ui.properties.empty_title") %></h3>
       <p class="mx-auto mt-2 max-w-md text-sm text-slate-500"><%= t("ui.properties.empty_body") %></p>
       <%= link_to t("ui.properties.create"), new_property_path, class: "#{primary_button_class} mt-5" %>
+    </div>
+  <% end %>
+
+  <% if @total_pages.to_i > 1 %>
+    <div class="flex items-center justify-between">
+      <p class="text-sm text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
+      <div class="flex gap-2">
+        <% if @current_page > 1 %>
+          <%= link_to "Anterior", properties_path(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
+        <% end %>
+        <% if @current_page < @total_pages %>
+          <%= link_to "Siguiente", properties_path(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
+        <% end %>
+      </div>
     </div>
   <% end %>
 </div>

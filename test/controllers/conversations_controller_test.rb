@@ -63,6 +63,16 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-conversation-refresh-target='status']"
   end
 
+  test "refresh endpoint renders only live conversation fragments" do
+    get refresh_conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "[data-conversation-refresh-target='messages']"
+    assert_select "[data-conversation-refresh-target='alerts']"
+    assert_select "[data-conversation-refresh-target='status']"
+    assert_not_includes @response.body, "Responder al huésped"
+  end
+
   test "show page uses phone number as chat title and property as tag" do
     get conversation_path(@conversation)
 

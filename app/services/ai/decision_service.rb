@@ -20,6 +20,7 @@ module AI
     def call
       payload = ContextBuilder.new(conversation: @conversation, guest_message: @guest_message).call
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      log_ai_payload_size(payload)
 
       if SafetyConfig.safe_router_enabled?
         routed = DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).call
@@ -340,9 +341,9 @@ module AI
         evidence_ids: payload[:evidence_ids],
         missing_information: decision.missing_information,
         safety_flags: decision.safety_flags,
-        ai_request_payload: AIDecisionLog.sanitize_trace(@ai_request_payload),
-        ai_response_payload: AIDecisionLog.sanitize_trace(@ai_response_payload),
-        tool_calls: AIDecisionLog.sanitize_trace(payload[:tool_calls] || []),
+        ai_request_payload: AIDecisionLog.sanitize_trace(compact_trace_payload(@ai_request_payload)),
+        ai_response_payload: AIDecisionLog.sanitize_trace(compact_trace_payload(@ai_response_payload)),
+        tool_calls: AIDecisionLog.sanitize_trace(compact_trace_payload(payload[:tool_calls] || [], 0, "tool_calls")),
         validation_results: AIDecisionLog.sanitize_trace(payload[:validation_results] || {}),
         fallback_reason: payload[:fallback_reason],
         final_outcome: payload[:final_outcome],
@@ -350,6 +351,65 @@ module AI
       )
     rescue StandardError => error
       Rails.logger.warn("[ai-audit] persist_failed #{error.class}: #{error.message}")
+    end
+
+    def log_ai_payload_size(payload)
+      counts = {
+        conversation_messages: Array(payload[:conversation_history]).size,
+        active_faqs: @property.faqs.active.count,
+        appliance_guides: @property.knowledge_blocks.active.where(category: "appliances").count,
+        knowledge_blocks: @property.knowledge_blocks.active.count,
+        recommendations: @property.recommendations.count
+      }
+
+      Rails.logger.info(
+        "[ai-payload] " \
+          "conversation_id=#{@conversation.id} " \
+          "message_id=#{@guest_message.id} " \
+          "bytes=#{payload.to_json.bytesize} " \
+          "counts=#{counts.to_json}"
+      )
+    rescue StandardError => error
+      Rails.logger.debug("[ai-payload] size_log_failed #{error.class}: #{error.message}")
+    end
+
+    def compact_trace_payload(value, depth = 0, parent_key = nil)
+      return "[TRUNCATED_DEPTH]" if depth > 8
+
+      case value
+      when Hash
+        value.to_h.each_with_object({}) do |(key, item), result|
+          result[key.to_s] = compact_trace_payload(item, depth + 1, key.to_s)
+        end
+      when Array
+        limit = trace_array_limit(parent_key)
+        compacted = value.first(limit).map { |item| compact_trace_payload(item, depth + 1, parent_key) }
+        return compacted if value.size <= limit
+
+        compacted + [{ "_truncated" => true, "omitted_count" => value.size - limit }]
+      when String
+        limit = trace_string_limit(parent_key)
+        value.length > limit ? "#{value.first(limit)}...[TRUNCATED #{value.length - limit} chars]" : value
+      else
+        value
+      end
+    end
+
+    def trace_array_limit(key)
+      case key.to_s
+      when "conversation_history" then 12
+      when "evidence_catalog" then 40
+      when "tool_calls" then 20
+      when "tool_results" then 20
+      else 50
+      end
+    end
+
+    def trace_string_limit(key)
+      case key.to_s
+      when "raw_text", "response_text", "message_body" then 6_000
+      else 4_000
+      end
     end
 
     def guest_safe_ack(text = @guest_message.body)

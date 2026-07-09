@@ -1,5 +1,7 @@
 module AI
   class ContextBuilder
+    CONVERSATION_HISTORY_LIMIT = 12
+
     def initialize(conversation:, guest_message:)
       @conversation = conversation
       @guest_message = guest_message
@@ -54,9 +56,15 @@ module AI
     end
 
     def conversation_history_payload
-      @conversation.messages.order(:created_at, :id).map do |message|
-        message.slice(:sender, :body, :channel, :created_at)
-      end
+      @conversation.messages
+        .select(:sender, :body, :channel, :created_at, :id)
+        .order(created_at: :desc, id: :desc)
+        .limit(CONVERSATION_HISTORY_LIMIT)
+        .to_a
+        .reverse
+        .map do |message|
+          message.slice(:sender, :body, :channel, :created_at)
+        end
     end
 
     def tool_endpoint_payload

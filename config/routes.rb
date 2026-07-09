@@ -40,6 +40,7 @@ Rails.application.routes.draw do
   resources :recommendations, only: [:index]
   resources :conversations, only: [:index, :show] do
     post :reply, on: :member
+    get :refresh, on: :member
   end
   resources :alerts, only: [:index, :show, :update] do
     post :answer_question, on: :member

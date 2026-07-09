@@ -73,7 +73,6 @@
 
     <div class="divide-y divide-slate-100">
       <% @traces.each do |trace| %>
-        <% payload = trace.payload.to_h %>
         <% tool_names = trace.tool_calls.map { |tool| tool["tool_name"] || tool["toolName"] }.compact.uniq %>
         <%= link_to admin_ai_trace_path(trace, query_params.except("page")), class: "block px-4 py-2.5 transition hover:bg-slate-50" do %>
           <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_230px] lg:items-center">
@@ -100,7 +99,7 @@
             <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 lg:justify-end lg:text-right">
               <span>Idioma <strong class="font-semibold text-slate-800"><%= trace.language.presence || "-" %></strong></span>
               <span>Evidence <strong class="font-semibold text-slate-800"><%= Array(trace.evidence_ids).size %></strong></span>
-              <span>WA <strong class="font-semibold text-slate-800"><%= payload.dig("whatsapp_delivery", "delivery_status") || trace.provider_delivery_status || "-" %></strong></span>
+              <span>WA <strong class="font-semibold text-slate-800"><%= trace.provider_delivery_status || "-" %></strong></span>
             </div>
           </div>
         <% end %>

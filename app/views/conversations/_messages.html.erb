@@ -1,0 +1,17 @@
+<div class="space-y-4 bg-slate-50 px-5 py-6" data-conversation-refresh-target="messages">
+  <% messages.each do |message| %>
+    <div id="message-<%= message.id %>" class="flex <%= message.sender == "guest" ? "justify-start" : "justify-end" %>">
+      <div class="<%= message.sender == "guest" ? "border-slate-200 bg-white text-slate-800" : "border-slate-900 bg-slate-900 text-white" %> max-w-[760px] rounded-xl border px-4 py-3 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= enum_label(message.sender) %></p>
+        <p class="mt-2 whitespace-pre-line text-sm leading-6"><%= message.body %></p>
+        <p class="mt-3 text-xs <%= message.sender == "guest" ? "text-slate-400" : "text-slate-300" %>"><%= local_datetime(message.created_at) %></p>
+        <% if message.sender != "guest" && (message.metadata["delivery_status"].present? || message.metadata["provider_status"].present?) %>
+          <p class="mt-1 text-xs <%= whatsapp_delivery_failed?(message) ? "font-semibold text-rose-200" : "text-slate-300" %>"><%= whatsapp_delivery_label(message) %></p>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+  <% if messages.blank? %>
+    <p class="text-sm text-slate-500">Todavía no hay mensajes.</p>
+  <% end %>
+</div>

@@ -1,12 +1,24 @@
 class ConversationsController < ApplicationController
+  PER_PAGE = 30
+
   def index
-    @conversations = scoped_conversations
+    @current_page = [params[:page].to_i, 1].max
+    scope = scoped_conversations
       .includes(:guest, :property)
       .recent
+    @total_count = scope.count
+    @total_pages = (@total_count.to_f / PER_PAGE).ceil
+    @conversations = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
+    @message_counts = Message.where(conversation_id: @conversations.map(&:id)).group(:conversation_id).count
   end
 
   def show
     set_conversation
+  end
+
+  def refresh
+    set_conversation
+    render partial: "refresh", locals: { conversation: @conversation, messages: @messages, alerts: @alerts }
   end
 
   def reply

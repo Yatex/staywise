@@ -45,4 +45,18 @@
       <% end %>
     </div>
   </div>
+
+  <% if @total_pages.to_i > 1 %>
+    <div class="flex items-center justify-between">
+      <p class="text-sm text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
+      <div class="flex gap-2">
+        <% if @current_page > 1 %>
+          <%= link_to "Anterior", alerts_path(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
+        <% end %>
+        <% if @current_page < @total_pages %>
+          <%= link_to "Siguiente", alerts_path(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
 </div>

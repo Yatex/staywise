@@ -2,13 +2,22 @@ class PropertiesController < ApplicationController
   INITIAL_FAQ_DEFAULT_ROWS = 3
   INITIAL_APPLIANCE_GUIDE_DEFAULT_ROWS = 1
   INITIAL_RECOMMENDATION_DEFAULT_ROWS = 1
+  PER_PAGE = 30
 
   before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr]
   before_action :ensure_property_limit!, only: [:new, :create]
 
   def index
     @available_tags = current_account.properties.pluck(:tags).flatten.compact_blank.uniq.sort
-    @properties = filtered_properties.includes(:knowledge_blocks, :recommendations, :alerts).order(:name)
+    @current_page = [params[:page].to_i, 1].max
+    scope = filtered_properties.order(:name)
+    @total_count = scope.count
+    @total_pages = (@total_count.to_f / PER_PAGE).ceil
+    @properties = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
+    property_ids = @properties.map(&:id)
+    @knowledge_block_counts = KnowledgeBlock.where(property_id: property_ids).group(:property_id).count
+    @recommendation_counts = Recommendation.where(property_id: property_ids).group(:property_id).count
+    @open_alert_counts = Alert.operational.open.where(property_id: property_ids).group(:property_id).count
   end
 
   def show
