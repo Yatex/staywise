@@ -423,15 +423,16 @@ function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry
       };
     })
     .filter((candidate) => candidate.score > 0 && evidenceUsableForGuest(candidate.evidence))
-    .sort((left, right) => right.score - left.score);
+    .sort(compareCandidates);
 }
 
 function sufficientEvidenceGroup(candidates: Candidate[], thresholds: DecisionThresholds): EvidenceGroup | null {
-  const topScore = candidates[0]?.score || 0;
   if (relevanceScore(candidates) < thresholds.high_score_threshold) return null;
 
   const groups = groupedCandidatesByIntent(candidates);
-  const topGroups = groups.filter((group) => group.top_score === topScore);
+  const topPriority = groups[0]?.source_priority || 9;
+  const topScore = groups[0]?.top_score || 0;
+  const topGroups = groups.filter((group) => group.source_priority === topPriority && group.top_score === topScore);
   if (topGroups.length !== 1) return null;
 
   return topGroups[0];
@@ -445,17 +446,37 @@ function groupedCandidatesByIntent(candidates: Candidate[]) {
   }
 
   return Array.from(groups.entries()).map(([intent, intentCandidates]) => {
-    const topScore = Math.max(...intentCandidates.map((candidate) => candidate.score));
-    const compatibleCandidates = intentCandidates
+    const sourcePriorityRank = Math.min(...intentCandidates.map((candidate) => sourcePriority(candidate.evidence)));
+    const preferredCandidates = intentCandidates.filter((candidate) => sourcePriority(candidate.evidence) === sourcePriorityRank);
+    const topScore = Math.max(...preferredCandidates.map((candidate) => candidate.score));
+    const compatibleCandidates = preferredCandidates
       .filter((candidate) => candidate.score >= Math.max(1, topScore - 2))
-      .sort((left, right) => right.score - left.score);
+      .sort(compareCandidates);
 
     return {
       intent,
       candidates: compatibleCandidates,
       top_score: topScore,
+      source_priority: sourcePriorityRank,
     };
-  }).sort((left, right) => right.top_score - left.top_score);
+  }).sort((left, right) => left.source_priority - right.source_priority || right.top_score - left.top_score);
+}
+
+function compareCandidates(left: Candidate, right: Candidate) {
+  return sourcePriority(left.evidence) - sourcePriority(right.evidence) ||
+    right.score - left.score;
+}
+
+function sourcePriority(evidence: EvidenceCatalogEntry) {
+  const sourceType = String(evidence.source_type || "");
+  const category = String(evidence.category || "");
+  if (sourceType === "property_fact" || sourceType === "reservation_fact" || sourceType === "policy") return 1;
+  if (evidence.sensitivity || evidence.authorization_required || evidence.tool_name === "sensitive_access_info") return 2;
+  if (sourceType === "knowledge_block" && category === "appliances") return 3;
+  if (sourceType === "faq") return 4;
+  if (sourceType === "knowledge_block") return 5;
+  if (sourceType === "recommendation") return 6;
+  return 9;
 }
 
 function scoreEvidence(queryTokens: string[], evidence: EvidenceCatalogEntry) {

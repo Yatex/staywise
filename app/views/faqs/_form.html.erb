@@ -20,9 +20,19 @@
           <%= form.label :category, class: label_class %>
           <%= form.text_field :category, class: field_class, placeholder: "Access, checkout, amenities..." %>
         </div>
+        <div>
+          <%= form.label :status, "Estado", class: label_class %>
+          <%= form.select :status, Faq::STATUSES.map { |status| [enum_label(status), status] }, {}, class: field_class %>
+        </div>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <%= form.label :source_type, "Origen", class: label_class %>
+          <%= form.select :source_type, Faq::SOURCE_TYPES.map { |source_type| [enum_label(source_type), source_type] }, {}, class: field_class %>
+        </div>
         <label class="mt-8 flex items-center gap-2 text-sm font-medium text-slate-700">
           <%= form.check_box :active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
-          Activa
+          Usar como fuente activa de IA
         </label>
       </div>
     </div>

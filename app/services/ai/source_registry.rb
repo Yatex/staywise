@@ -216,7 +216,7 @@ module AI
         reservation_fact(field).present?
       when "faq"
         id = record_id_from_reference(evidence_id, "faq")
-        @property.faqs.exists?(id: id)
+        @property.faqs.active.exists?(id: id)
       when "knowledge_block"
         if evidence_id.to_s.start_with?("appliance.")
           appliance_block_for_reference(evidence_id).present?

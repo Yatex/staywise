@@ -26,14 +26,23 @@ module Alerts
       return unless account.ai_escalates?(@decision.alert_type)
 
       description = alert_description
+      original_message = latest_guest_message_record
       alert = @conversation.alerts.create!(
         property: @conversation.property,
         guest: @conversation.guest,
+        original_message: original_message,
+        ai_decision_log: latest_ai_trace_for(original_message),
         alert_type: (@decision.alert_type.presence || "other").to_s,
         title: alert_title(description),
         description: description,
         priority: PRIORITY_BY_TYPE.fetch(@decision.alert_type.to_s, "medium"),
-        ai_suggested_action: @decision.suggested_owner_action
+        ai_suggested_action: @decision.suggested_owner_action,
+        metadata: {
+          "source" => "ai_escalation",
+          "decision" => @decision.outcome,
+          "evidence_ids" => @decision.evidence_ids,
+          "detected_intents" => @decision.detected_intents
+        }.compact
       )
 
       if alert.priority == "urgent" && account.email_alerts_enabled? && account.ai_automation_enabled?("send_urgent_emails")
@@ -52,7 +61,7 @@ module Alerts
     end
 
     def alert_description
-      latest_guest_message = clean_guest_question(@conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
+      latest_guest_message = clean_guest_question(latest_guest_message_record&.body)
       text = if @decision.alert_type.to_s == "unknown_question"
         latest_guest_message.presence || @decision.alert_description
       else
@@ -65,6 +74,17 @@ module Alerts
         target_language: AI::LanguageHelper.owner_language(account),
         context: "Owner-facing alert description for a short-term rental host."
       )
+    end
+
+    def latest_guest_message_record
+      @latest_guest_message_record ||= @conversation.messages.where(sender: "guest").order(created_at: :desc).first
+    end
+
+    def latest_ai_trace_for(message)
+      return if message.blank?
+
+      AIDecisionLog.where(conversation: @conversation, message: message).order(created_at: :desc).first ||
+        AIDecisionLog.where(conversation: @conversation, original_message: message).order(created_at: :desc).first
     end
 
     def alert_title(description)

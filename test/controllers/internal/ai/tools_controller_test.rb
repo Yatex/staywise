@@ -254,6 +254,37 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Late checkout depends on availability. Ask the host before confirming.", body.first["value"]
   end
 
+  test "search property knowledge only exposes approved active faq suggestions" do
+    suggestion = @property.faqs.create!(
+      question: "Puedo invitar amigos a la pileta?",
+      answer: "No se pueden invitar personas a la pileta.",
+      category: "amenities",
+      active: false,
+      status: "pending_review",
+      source_type: "owner_answer"
+    )
+
+    post "/internal/ai/tools/search_property_knowledge", params: {
+      decision_context_id: @decision_context_id,
+      query: "puedo invitar gente a la pileta?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_not_includes body.map { |source| source["evidence_id"] }, "faq.#{suggestion.id}"
+
+    suggestion.update!(active: true, status: "approved")
+
+    post "/internal/ai/tools/search_property_knowledge", params: {
+      decision_context_id: @decision_context_id,
+      query: "puedo invitar gente a la pileta?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_includes body.map { |source| source["evidence_id"] }, "faq.#{suggestion.id}"
+  end
+
   test "approved recommendations returns scoped recommendations" do
     recommendation = @property.recommendations.create!(
       name: "Cafe Tools",

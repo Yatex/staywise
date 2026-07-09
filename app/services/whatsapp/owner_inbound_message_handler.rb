@@ -105,10 +105,7 @@ module Whatsapp
 
       guest_language = conversation.guest.language.presence || AI::LanguageHelper.detect(conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
       guest_answer = translate_owner_answer(answer, conversation, guest_language)
-      delivery = @provider.send_message(to: conversation.guest.phone_number, body: guest_answer)
-      delivered = delivery_success?(delivery)
-
-      conversation.messages.create!(
+      owner_message = conversation.messages.create!(
         sender: "owner",
         channel: "whatsapp",
         body: guest_answer,
@@ -117,9 +114,14 @@ module Whatsapp
           owner_phone_number: @owner_whatsapp_number,
           alert_id: alert.id,
           original_owner_body: answer,
-          translated_to: guest_language
-        }.merge(delivery_metadata(delivery, delivered: delivered)).compact
+          translated_to: guest_language,
+          delivery_status: "pending",
+          delivery_status_updated_at: Time.current.iso8601
+        }.compact
       )
+      delivery = @provider.send_message(to: conversation.guest.phone_number, body: guest_answer)
+      delivered = delivery_success?(delivery)
+      owner_message.update!(metadata: owner_message.metadata.merge(delivery_metadata(delivery, delivered: delivered)).compact)
 
       unless delivered
         session.append_event!("owner_guest_reply_failed", error: delivery_error(delivery), alert_id: alert.id)
@@ -127,7 +129,7 @@ module Whatsapp
         return { owner_message: true, handled: true, session: session, replied: false }
       end
 
-      create_reusable_faq!(alert, answer)
+      KnowledgeSuggestions::OwnerAnswerFaqCreator.call(alert: alert, owner_answer: answer, owner_message: owner_message)
       alert.update!(status: "resolved")
       session.update!(state: "resolved", resolved_at: Time.current, last_owner_message_at: Time.current)
       session.append_event!("owner_guest_reply_sent", alert_id: alert.id, conversation_id: conversation.id)
@@ -223,19 +225,6 @@ module Whatsapp
       else
         "hace #{seconds / 86_400} d"
       end
-    end
-
-    def create_reusable_faq!(alert, answer)
-      question = alert.description.presence || last_guest_message(alert).to_s.strip
-      return if question.blank?
-      return if alert.property.faqs.where("lower(question) = ?", question.downcase).exists?
-
-      alert.property.faqs.create!(
-        question: question,
-        answer: answer,
-        category: alert.alert_type.presence || "owner_answer",
-        active: true
-      )
     end
 
     def translate_owner_answer(answer, conversation, guest_language)

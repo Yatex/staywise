@@ -104,6 +104,103 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Aceptado por Twilio"
   end
 
+  test "show page includes real guest inbound and ai outbound messages from whatsapp flow" do
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "La respuesta está en la FAQ de la propiedad.",
+        intent_summary: "faq",
+        detected_intents: [{ type: "faq", status: "answered" }],
+        evidence_ids: ["faq.123"],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false, reason_code: nil, summary_for_host: nil },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.93
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550003000",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Cómo bajo a la pileta?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    conversation = result.fetch(:conversation)
+
+    get conversation_path(conversation)
+
+    assert_response :success
+    assert_select "#message-#{result.fetch(:message).id}", count: 1
+    assert_select "#message-#{conversation.messages.where(sender: "ai").last.id}", count: 1
+    assert_includes @response.body, "¿Cómo bajo a la pileta?"
+    assert_includes @response.body, "La respuesta está en la FAQ de la propiedad."
+  end
+
+  test "show page includes guest escalation and owner manual reply from whatsapp flow" do
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      AI::DecisionResult.from_hash(
+        decision: "escalate",
+        language: "es",
+        message_body: "No tengo esa información confirmada. La consulto con el anfitrión y te aviso.",
+        intent_summary: "unknown",
+        detected_intents: [{ type: "unknown_question", status: "escalated" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: true, reason_code: "unknown_question", summary_for_host: "El huésped hizo una pregunta sin información disponible." },
+        missing_information: ["unknown_question"],
+        safety_flags: [],
+        confidence: 0.72
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550003001",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Puedo invitar visitas a la pileta?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    conversation = result.fetch(:conversation)
+    assert_equal "open", result.fetch(:alert).status
+
+    Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
+      post reply_conversation_path(conversation), params: {
+        reply: {
+          body: "No se pueden invitar visitas a la pileta."
+        }
+      }
+    end
+
+    get conversation_path(conversation)
+
+    assert_response :success
+    assert_select "#message-#{result.fetch(:message).id}", count: 1
+    assert_select "#message-#{conversation.messages.where(sender: "ai").last.id}", count: 1
+    assert_select "#message-#{conversation.messages.where(sender: "owner").last.id}", count: 1
+    assert_includes @response.body, "¿Puedo invitar visitas a la pileta?"
+    assert_includes @response.body, "No tengo esa información confirmada"
+    assert_includes @response.body, "No se pueden invitar visitas a la pileta."
+
+    suggestion = @property.faqs.last
+    assert_equal "pending_review", suggestion.status
+    assert_not suggestion.active?
+    assert_equal "owner_answer", suggestion.source_type
+    assert_equal result.fetch(:alert), suggestion.source_alert
+  end
+
   test "show page includes guest messages referenced by ai trace logs" do
     legacy_conversation = @guest.conversations.create!(property: @property, status: "active")
     traced_message = legacy_conversation.messages.create!(

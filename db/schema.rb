@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_08_161000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_09_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -101,9 +101,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_08_161000) do
     t.datetime "resolved_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "original_message_id"
+    t.bigint "ai_decision_log_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.index ["ai_decision_log_id"], name: "index_alerts_on_ai_decision_log_id"
     t.index ["alert_type", "priority"], name: "index_alerts_on_alert_type_and_priority"
     t.index ["conversation_id"], name: "index_alerts_on_conversation_id"
     t.index ["guest_id"], name: "index_alerts_on_guest_id"
+    t.index ["original_message_id"], name: "index_alerts_on_original_message_id"
     t.index ["property_id", "status"], name: "index_alerts_on_property_id_and_status"
     t.index ["property_id"], name: "index_alerts_on_property_id"
   end
@@ -142,8 +147,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_08_161000) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "status", default: "approved", null: false
+    t.string "source_type", default: "manual", null: false
+    t.bigint "source_alert_id"
+    t.bigint "source_message_id"
+    t.jsonb "metadata", default: {}, null: false
     t.index ["property_id", "active"], name: "index_faqs_on_property_id_and_active"
+    t.index ["property_id", "source_type"], name: "index_faqs_on_property_id_and_source_type"
+    t.index ["property_id", "status"], name: "index_faqs_on_property_id_and_status"
     t.index ["property_id"], name: "index_faqs_on_property_id"
+    t.index ["source_alert_id"], name: "index_faqs_on_source_alert_id"
+    t.index ["source_message_id"], name: "index_faqs_on_source_message_id"
   end
 
   create_table "guests", force: :cascade do |t|
@@ -310,12 +324,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_08_161000) do
   add_foreign_key "ai_decision_logs", "messages"
   add_foreign_key "ai_decision_logs", "messages", column: "original_message_id"
   add_foreign_key "ai_decision_logs", "properties"
+  add_foreign_key "alerts", "ai_decision_logs"
   add_foreign_key "alerts", "conversations"
   add_foreign_key "alerts", "guests"
+  add_foreign_key "alerts", "messages", column: "original_message_id"
   add_foreign_key "alerts", "properties"
   add_foreign_key "billing_events", "accounts"
   add_foreign_key "conversations", "guests"
   add_foreign_key "conversations", "properties"
+  add_foreign_key "faqs", "alerts", column: "source_alert_id"
+  add_foreign_key "faqs", "messages", column: "source_message_id"
   add_foreign_key "faqs", "properties"
   add_foreign_key "guests", "accounts"
   add_foreign_key "guests", "properties"

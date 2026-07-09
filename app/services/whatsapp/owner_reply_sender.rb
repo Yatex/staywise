@@ -19,9 +19,6 @@ module Whatsapp
       return failure("WhatsApp no está conectado. Configurá Twilio antes de responder desde Ayla.") if null_provider?
 
       guest_body = translated_body
-      delivery = @provider.send_message(to: guest_phone, body: guest_body)
-      delivered = delivery_success?(delivery)
-
       message = @conversation.messages.create!(
         sender: "owner",
         channel: "whatsapp",
@@ -31,18 +28,33 @@ module Whatsapp
           sent_by_user_name: @user.name,
           sent_via: "ayla_dashboard",
           original_owner_body: @body,
-          translated_to: guest_language
-        }.merge(
-          delivery_metadata(delivery, delivered: delivered)
-        ).compact
+          translated_to: guest_language,
+          delivery_status: "pending",
+          delivery_status_updated_at: Time.current.iso8601
+        }.compact
       )
+      delivery = @provider.send_message(to: guest_phone, body: guest_body)
+      delivered = delivery_success?(delivery)
+      message.update!(metadata: message.metadata.merge(delivery_metadata(delivery, delivered: delivered)).compact)
 
       return failure(delivery_error(delivery), message: message) unless delivered
 
+      create_pending_knowledge_suggestion(message)
       Result.new(success?: true, message: message, error: nil)
     end
 
     private
+
+    def create_pending_knowledge_suggestion(message)
+      alert = @conversation.alerts.open.order(created_at: :desc).first
+      return if alert.blank?
+
+      KnowledgeSuggestions::OwnerAnswerFaqCreator.call(
+        alert: alert,
+        owner_answer: @body,
+        owner_message: message
+      )
+    end
 
     def delivery_success?(delivery)
       delivery.respond_to?(:success?) ? delivery.success? : !!delivery

@@ -15,6 +15,8 @@ class Alert < ApplicationRecord
   belongs_to :property
   belongs_to :guest, optional: true
   belongs_to :conversation, optional: true
+  belongs_to :original_message, class_name: "Message", optional: true
+  belongs_to :ai_decision_log, optional: true
 
   validates :alert_type, inclusion: { in: TYPES }
   validates :status, inclusion: { in: STATUSES }

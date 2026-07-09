@@ -10,9 +10,9 @@ class FaqsController < ApplicationController
   def new
     source = source_faqs.find_by(id: params[:source_id])
     @faq = if source
-      @property.faqs.new(source.attributes.slice("question", "answer", "category", "active"))
+      @property.faqs.new(source.attributes.slice("question", "answer", "category", "active", "status", "source_type"))
     else
-      @property.faqs.new(active: true)
+      @property.faqs.new(active: true, status: "approved", source_type: "manual")
     end
   end
 
@@ -64,6 +64,6 @@ class FaqsController < ApplicationController
   end
 
   def faq_params
-    params.require(:faq).permit(:question, :answer, :category, :active)
+    params.require(:faq).permit(:question, :answer, :category, :active, :status, :source_type)
   end
 end

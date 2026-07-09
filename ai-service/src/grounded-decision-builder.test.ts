@@ -249,6 +249,35 @@ test("FAQ evidence answers simple reusable question", () => {
   assert.match(result.decision.message_body, /Andá al -1/);
 });
 
+test("structured facts take priority over contradictory FAQ evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "a que hora es el check in?",
+  }, catalogFromSources([
+    {
+      source_type: "faq",
+      source_id: "faq:9",
+      evidence_id: "faq.9",
+      label: "A qué hora es el check-in?",
+      field: "A qué hora es el check-in?",
+      value: "El check-in es a las 16:00.",
+      category: "arrival",
+    },
+    {
+      source_type: "property_fact",
+      source_id: "property_fact:check_in_time",
+      evidence_id: "property.check_in_time",
+      field: "check_in_time",
+      label: "check_in_time",
+      value: "15:00",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
+  assert.match(result.decision.message_body, /15:00/);
+  assert.doesNotMatch(result.decision.message_body, /16:00/);
+});
+
 test("guide or knowledge block evidence answers operational question", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "Dónde puedo tirar la basura?",

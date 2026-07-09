@@ -72,6 +72,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal 2, conversation.messages.count
     alert = conversation.alerts.first
     assert_equal "late_checkout_request", alert.alert_type
+    assert_equal conversation.messages.where(sender: "guest").last, alert.original_message
     assert_includes Alert.joins(:property).where(properties: { account_id: @account.id }).open.to_a, alert
   end
 
@@ -95,6 +96,45 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     failed_message = conversation.messages.where(sender: "ai").last
     assert_equal "failed", failed_message.metadata["delivery_status"]
     assert_equal "whatsapp_delivery_failed", failed_message.metadata["delivery_error"]
+  end
+
+  test "escalated alert links original message and ai trace when available" do
+    trace = nil
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      trace = AIDecisionLog.create!(
+        account: conversation.property.account,
+        property: conversation.property,
+        guest: conversation.guest,
+        conversation: conversation,
+        message: guest_message,
+        original_message: guest_message,
+        route: "remote_ai",
+        decision: "escalate",
+        final_outcome: "escalate",
+        language: "es",
+        detected_intents: [{ "type" => "unknown_question", "status" => "escalated" }],
+        payload: { "tools" => [], "evidence" => [] }
+      )
+      ai_unknown_decision
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000015",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Puedo invitar gente a la pileta?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    alert = result.fetch(:alert).reload
+
+    assert_equal result.fetch(:message), alert.original_message
+    assert_equal trace, alert.ai_decision_log
+    assert_equal "ai_escalation", alert.metadata["source"]
+    assert_includes alert.metadata["detected_intents"].map { |intent| intent["type"] || intent[:type] }, "unknown_question"
   end
 
   test "english emergency phrase creates urgent alert without ai service" do
@@ -542,7 +582,14 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "resolved", alert.reload.status
     assert_equal "resolved", session.reload.state
     assert_includes guest_result.fetch(:conversation).messages.where(sender: "owner").last.body, "No se pueden invitar"
-    assert_equal "No se pueden invitar personas a la pileta.", @property.faqs.last.answer
+    suggestion = @property.faqs.last
+    assert_equal "¿Puedo invitar gente a la pileta?", suggestion.question
+    assert_equal "No se pueden invitar personas a la pileta.", suggestion.answer
+    assert_equal "pending_review", suggestion.status
+    assert_not suggestion.active?
+    assert_equal "owner_answer", suggestion.source_type
+    assert_equal alert, suggestion.source_alert
+    assert_equal guest_result.fetch(:conversation).messages.where(sender: "owner").last, suggestion.source_message
   end
 
   test "owner whatsapp translates guest question to owner language and owner answer back to guest language" do
@@ -606,10 +653,69 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       owner_message = guest_result.fetch(:conversation).messages.where(sender: "owner").last
       assert_equal "Нельзя приглашать людей в бассейн.", owner_message.body
       assert_equal "No se pueden invitar personas a la pileta.", owner_message.metadata["original_owner_body"]
-      assert_equal "¿Puedo invitar gente a la pileta?", @property.faqs.last.question
-      assert_equal "No se pueden invitar personas a la pileta.", @property.faqs.last.answer
+      suggestion = @property.faqs.last
+      assert_equal "¿Puedo invitar gente a la pileta?", suggestion.question
+      assert_equal "No se pueden invitar personas a la pileta.", suggestion.answer
+      assert_equal "pending_review", suggestion.status
+      assert_not suggestion.active?
+      assert_equal "owner_answer", suggestion.source_type
       assert_equal "resolved", session.reload.state
     end
+  end
+
+  test "owner answer creates pending faq suggestion that becomes usable after approval" do
+    @account.update!(owner_whatsapp_number: "+15559990007", owner_whatsapp_escalations_enabled: true)
+    provider = RecordingProvider.new
+
+    guest_result = with_ai_decision(ai_unknown_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000014",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Puedo invitar gente a la pileta?"
+        },
+        provider: provider
+      ).call
+    end
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990007",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "ALERTAS"
+      },
+      provider: provider
+    ).call
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990007",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "1"
+      },
+      provider: provider
+    ).call
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15559990007",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "No se pueden invitar personas a la pileta."
+      },
+      provider: provider
+    ).call
+
+    suggestion = @property.faqs.last
+    assert_equal "pending_review", suggestion.status
+    assert_not suggestion.active?
+
+    registry = AI::SourceRegistry.new(conversation: guest_result.fetch(:conversation))
+    assert_empty registry.search_property_knowledge(query: "puedo invitar amigos a la pileta?").select { |source| source["evidence_id"] == "faq.#{suggestion.id}" }
+
+    suggestion.update!(status: "approved", active: true)
+    approved_sources = registry.search_property_knowledge(query: "puedo invitar amigos a la pileta?")
+
+    assert_includes approved_sources.map { |source| source["evidence_id"] }, "faq.#{suggestion.id}"
   end
 
   test "owner whatsapp lists multiple alerts and only answers the selected one" do

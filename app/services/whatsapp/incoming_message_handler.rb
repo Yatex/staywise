@@ -1,6 +1,5 @@
 module Whatsapp
   class IncomingMessageHandler
-    MISSING_PROPERTY_CONTEXT_REPLY = "I need the property details before I can answer safely. Please scan the property QR code again or open the property link and send your message from there.".freeze
     ROUTING_INIT_MESSAGE_TYPE = "routing_init".freeze
     ROUTING_GREETING_MESSAGE_TYPE = "routing_greeting".freeze
 
@@ -183,7 +182,7 @@ module Whatsapp
     end
 
     def missing_property_context(parsed)
-      delivery = @provider.send_message(to: parsed.from, body: MISSING_PROPERTY_CONTEXT_REPLY)
+      delivery = @provider.send_message(to: parsed.from, body: missing_property_context_reply(parsed))
       replied = delivery_success?(delivery)
       Rails.logger.info("[whatsapp-routing] missing_property_context from=#{parsed.from} replied=#{replied}")
       {
@@ -194,6 +193,15 @@ module Whatsapp
         replied: replied,
         error: "missing_property_context"
       }
+    end
+
+    def missing_property_context_reply(parsed)
+      case AI::LanguageHelper.detect(parsed.body, fallback: "es")
+      when "en"
+        "I need the property details before I can answer safely. Please scan the property QR code again or open the property link and send your message from there."
+      else
+        "Necesito los datos de la propiedad para responder con seguridad. Escaneá de nuevo el QR de la propiedad o abrí el link de la propiedad y enviá tu consulta desde ahí."
+      end
     end
 
     def report_missing_alert(conversation:, decision:)
@@ -217,6 +225,8 @@ module Whatsapp
     def finalize_ai_trace(guest_message:, decision:, alert:, replied:)
       log = AIDecisionLog.where(message: guest_message).order(created_at: :desc).first
       return unless log
+
+      alert.update!(ai_decision_log: log) if alert.present? && alert.ai_decision_log.blank?
 
       outbound_message = log.conversation&.messages&.where(sender: "ai")&.where("created_at >= ?", guest_message.created_at)&.order(created_at: :desc)&.first
       delivery_status = if outbound_message
