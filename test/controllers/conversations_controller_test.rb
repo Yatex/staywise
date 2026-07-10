@@ -266,7 +266,8 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "show page includes guest messages referenced by ai trace logs" do
-    legacy_conversation = @guest.conversations.create!(property: @property, status: "active")
+    legacy_guest = @account.guests.create!(phone_number: "+15550002001", property: @property)
+    legacy_conversation = legacy_guest.conversations.create!(property: @property, status: "active")
     traced_message = legacy_conversation.messages.create!(
       sender: "guest",
       channel: "whatsapp",
@@ -275,7 +276,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     AIDecisionLog.create!(
       account: @account,
       property: @property,
-      guest: @guest,
+      guest: legacy_guest,
       conversation: @conversation,
       message: traced_message,
       original_message: traced_message,

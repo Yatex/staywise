@@ -1,5 +1,6 @@
 class Conversation < ApplicationRecord
   STATUSES = %w[active escalated closed].freeze
+  CHANNELS = %w[whatsapp].freeze
 
   belongs_to :guest
   belongs_to :property
@@ -8,6 +9,8 @@ class Conversation < ApplicationRecord
   has_many :guest_requests, dependent: :destroy
 
   validates :status, inclusion: { in: STATUSES }
+  validates :channel, inclusion: { in: CHANNELS }
+  validates :guest_id, uniqueness: { scope: :channel }
 
   scope :recent, -> { order(last_message_at: :desc, updated_at: :desc) }
   scope :open, -> { where(status: %w[active escalated]) }

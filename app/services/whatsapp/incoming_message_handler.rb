@@ -2,6 +2,7 @@ module Whatsapp
   class IncomingMessageHandler
     ROUTING_INIT_MESSAGE_TYPE = "routing_init".freeze
     ROUTING_GREETING_MESSAGE_TYPE = "routing_greeting".freeze
+    WHATSAPP_CHANNEL = "whatsapp".freeze
 
     def initialize(params, provider: ProviderFactory.build)
       @params = params
@@ -71,11 +72,12 @@ module Whatsapp
     end
 
     def resolve_conversation(guest, property, parsed)
+      existing_conversation = guest.conversations.where(channel: WHATSAPP_CHANNEL).order(updated_at: :desc).first
+
       if parsed.property_token.present?
-        conversation = guest.conversations.open.order(updated_at: :desc).first
-        if conversation.present?
-          relink_conversation!(conversation, property, parsed)
-          return conversation
+        if existing_conversation.present?
+          relink_conversation!(existing_conversation, property, parsed)
+          return existing_conversation
         end
 
         @routing_audit = {
@@ -87,8 +89,21 @@ module Whatsapp
         Rails.logger.info("[whatsapp-property-routing] #{@routing_audit.to_json}")
       end
 
-      guest.conversations.where(property: property).open.order(updated_at: :desc).first ||
-        guest.conversations.create!(property: property, status: "active", ai_enabled: true)
+      return existing_conversation if existing_conversation.present?
+
+      create_conversation_for!(guest: guest, property: property)
+    end
+
+    def create_conversation_for!(guest:, property:)
+      guest.conversations.create!(property: property, channel: WHATSAPP_CHANNEL, status: "active", ai_enabled: true)
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+      recover_existing_conversation!(guest: guest, property: property)
+    end
+
+    def recover_existing_conversation!(guest:, property:)
+      conversation = guest.conversations.find_by!(channel: WHATSAPP_CHANNEL)
+      conversation.update!(property: property, ai_enabled: property.ai_enabled?) if conversation.property_id != property.id
+      conversation
     end
 
     def relink_conversation!(conversation, property, parsed)

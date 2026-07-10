@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_09_200000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -133,6 +133,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_09_200000) do
     t.boolean "ai_enabled", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "channel", default: "whatsapp", null: false
+    t.index ["guest_id", "channel"], name: "index_conversations_on_guest_id_and_channel_unique", unique: true
     t.index ["guest_id"], name: "index_conversations_on_guest_id"
     t.index ["last_message_at"], name: "index_conversations_on_last_message_at"
     t.index ["property_id", "status"], name: "index_conversations_on_property_id_and_status"
