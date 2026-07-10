@@ -1,0 +1,66 @@
+<% content_for :page_title, "Pedidos" %>
+
+<div class="space-y-6">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-950">Pedidos</h2>
+    <p class="mt-1 text-sm text-slate-500">Solicitudes de huéspedes detectadas por Ayla desde WhatsApp.</p>
+  </div>
+
+  <%= form_with url: guest_requests_path, method: :get, class: "#{card_class} grid gap-4 p-5 md:grid-cols-[1fr_1fr_auto]" do |form| %>
+    <div>
+      <%= form.label :property_id, "Propiedad", class: label_class %>
+      <%= form.select :property_id,
+        options_from_collection_for_select(@properties, :id, :display_name, params[:property_id]),
+        { include_blank: "Todas" },
+        class: field_class %>
+    </div>
+    <div>
+      <%= form.label :status, "Estado", class: label_class %>
+      <%= form.select :status,
+        GuestRequest::STATUSES.map { |status| [enum_label(status), status] },
+        { include_blank: "Todos" },
+        class: field_class %>
+    </div>
+    <div class="flex items-end gap-2">
+      <%= form.submit "Filtrar", class: primary_button_class %>
+      <%= link_to "Limpiar", guest_requests_path, class: secondary_button_class %>
+    </div>
+  <% end %>
+
+  <div class="<%= card_class %> overflow-hidden">
+    <div class="divide-y divide-slate-100">
+      <% @guest_requests.each do |guest_request| %>
+        <div class="px-5 py-4 transition hover:bg-slate-50">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <%= link_to guest_request_path(guest_request), class: "min-w-0 flex-1" do %>
+              <p class="font-medium text-slate-950"><%= guest_request.title %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= guest_request.property_name %> · <%= display_phone_number(guest_request.guest_phone) %></p>
+              <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= guest_request.description %></p>
+            <% end %>
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.priority) %>"><%= enum_label(guest_request.priority) %></span>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.status) %>"><%= enum_label(guest_request.status) %></span>
+            </div>
+          </div>
+        </div>
+      <% end %>
+      <% if @guest_requests.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay pedidos para mostrar.</p>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @total_pages.to_i > 1 %>
+    <div class="flex items-center justify-between">
+      <p class="text-sm text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
+      <div class="flex gap-2">
+        <% if @current_page > 1 %>
+          <%= link_to "Anterior", guest_requests_path(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
+        <% end %>
+        <% if @current_page < @total_pages %>
+          <%= link_to "Siguiente", guest_requests_path(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

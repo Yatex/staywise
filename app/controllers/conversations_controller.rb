@@ -18,7 +18,7 @@ class ConversationsController < ApplicationController
 
   def refresh
     set_conversation
-    render partial: "refresh", locals: { conversation: @conversation, messages: @messages, alerts: @alerts }
+    render partial: "refresh", locals: { conversation: @conversation, messages: @messages, alerts: @alerts, guest_requests: @guest_requests }
   end
 
   def reply
@@ -49,6 +49,8 @@ class ConversationsController < ApplicationController
       .find(params[:id])
     @messages = complete_message_history_for(@conversation)
     @alerts = @conversation.alerts.order(created_at: :desc)
+    @guest_requests = @conversation.guest_requests.order(created_at: :desc)
+    @guest_request_message_ids = @guest_requests.pluck(:message_id).compact
   end
 
   def reply_params

@@ -362,6 +362,13 @@ module AI
         report_issue
         access_request
         human_handoff
+        guest_request
+        request_extra_item
+        request_service
+        request_extra_bed
+        request_food_or_drink
+        request_transport
+        request_other
       ])
     end
 

@@ -60,6 +60,35 @@ test("AylaDecision accepts answered_with_inference intent status", () => {
   assert.equal(parsed.detected_intents[0].status, "answered_with_inference");
 });
 
+test("AylaDecision accepts guest request proposed actions", () => {
+  for (const actionType of [
+    "guest_request",
+    "request_extra_item",
+    "request_service",
+    "request_extra_bed",
+    "request_food_or_drink",
+    "request_transport",
+    "request_other",
+    "request_late_checkout",
+    "request_early_checkin",
+  ]) {
+    const parsed = DecisionSchema.parse({
+      ...checkInReply,
+      outcome: "propose_action",
+      message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.",
+      detected_intents: [{ type: "guest_request", status: "requires_host_approval" }],
+      proposed_action: { type: actionType, payload: { title: "Pedido del huésped" } },
+      escalation: { required: true, reason_code: "guest_request", summary_for_host: "El huésped hizo un pedido." },
+      escalation_required: true,
+      evidence_ids: [],
+      used_source_ids: [],
+    });
+
+    assert.equal(parsed.outcome, "propose_action");
+    assert.equal(parsed.proposed_action?.type, actionType);
+  }
+});
+
 test("AylaDecision can normalize response_text into message_body", () => {
   const parsed = DecisionSchema.parse({
     ...checkInReply,

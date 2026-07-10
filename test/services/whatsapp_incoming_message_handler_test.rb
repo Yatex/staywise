@@ -52,7 +52,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   teardown do
   end
 
-  test "creates guest conversation messages and alert from incoming whatsapp payload" do
+  test "creates late checkout pedido from incoming whatsapp payload without unknown alert" do
+    @property.update!(address: "Av. Test 123")
     result = with_ai_decision(ai_late_checkout_decision) do
       Whatsapp::IncomingMessageHandler.new(
         {
@@ -67,13 +68,19 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation = result.fetch(:conversation)
 
     assert result.fetch(:replied)
-    assert_equal "escalated", conversation.reload.status
+    assert_equal "active", conversation.reload.status
     assert_equal "+15550000002", conversation.guest.phone_number
     assert_equal 2, conversation.messages.count
-    alert = conversation.alerts.first
-    assert_equal "late_checkout_request", alert.alert_type
-    assert_equal conversation.messages.where(sender: "guest").last, alert.original_message
-    assert_includes Alert.joins(:property).where(properties: { account_id: @account.id }).open.to_a, alert
+    assert_nil result.fetch(:alert)
+    assert_equal 0, conversation.alerts.count
+
+    guest_request = result.fetch(:guest_request)
+    assert_equal "late_checkout", guest_request.category
+    assert_equal "pending", guest_request.status
+    assert_equal "+15550000002", guest_request.guest_phone
+    assert_equal "Av. Test 123", guest_request.property_address
+    assert_equal conversation.messages.where(sender: "guest").last, guest_request.message
+    assert_no_match(/approved|aprobado/i, conversation.messages.where(sender: "ai").last.body)
   end
 
   test "stores failed ai outbound message when whatsapp delivery fails" do
@@ -96,6 +103,87 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     failed_message = conversation.messages.where(sender: "ai").last
     assert_equal "failed", failed_message.metadata["delivery_status"]
     assert_equal "whatsapp_delivery_failed", failed_message.metadata["delivery_error"]
+  end
+
+  test "food or drink request creates pedido and sends confirmation" do
+    provider = RecordingProvider.new
+    @property.update!(address: "Calle Vino 456")
+
+    result = with_ai_decision(ai_guest_request_decision(action_type: "request_food_or_drink", intent_type: "request_food_or_drink", message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000023",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} quiero un vino"
+        },
+        provider: provider
+      ).call
+    end
+
+    guest_request = result.fetch(:guest_request)
+
+    assert result.fetch(:replied)
+    assert_nil result.fetch(:alert)
+    assert_equal 0, result.fetch(:conversation).alerts.count
+    assert_equal "food_or_drink", guest_request.category
+    assert_equal "pending", guest_request.status
+    assert_equal "+15550000023", guest_request.guest_phone
+    assert_equal "Calle Vino 456", guest_request.property_address
+    assert_includes guest_request.description, "quiero un vino"
+    assert_includes provider.sent_messages.last.fetch(:body), "le aviso al anfitrión"
+  end
+
+  test "extra bed request creates pedido" do
+    result = with_ai_decision(ai_guest_request_decision(action_type: "request_extra_bed", intent_type: "request_extra_bed", message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000024",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} necesito una cama extra"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    assert_nil result.fetch(:alert)
+    assert_equal "extra_bed", result.fetch(:guest_request).category
+    assert_equal "pending", result.fetch(:guest_request).status
+  end
+
+  test "pedido uses relinked property when guest sends a new stay token" do
+    new_property = @account.properties.create!(name: "Pedido Property B", address: "Nueva 999")
+    from = "whatsapp:+15550000025"
+    guest = @account.guests.create!(phone_number: "+15550000025", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+
+    Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => from,
+        "To" => "whatsapp:+15550009999",
+        "Body" => new_property.whatsapp_reference
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    result = with_ai_decision(ai_guest_request_decision(action_type: "request_food_or_drink", intent_type: "request_food_or_drink")) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "quiero pedir desayuno"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    guest_request = result.fetch(:guest_request)
+
+    assert_equal conversation, result.fetch(:conversation)
+    assert_equal new_property, guest_request.property
+    assert_equal new_property.display_name, guest_request.property_name
+    assert_equal "Nueva 999", guest_request.property_address
+    assert_equal new_property, conversation.reload.property
+    assert_not_equal @property, guest_request.property
   end
 
   test "escalated alert links original message and ai trace when available" do
@@ -626,7 +714,9 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert result.fetch(:replied)
     assert_equal @property, result.fetch(:conversation).property
-    assert_equal "late_checkout_request", result.fetch(:conversation).alerts.first.alert_type
+    assert_nil result.fetch(:alert)
+    assert_equal "late_checkout", result.fetch(:guest_request).category
+    assert_equal @property, result.fetch(:guest_request).property
   end
 
   test "new alert sends owner notification without opening an active reply session" do
@@ -1095,9 +1185,9 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     AI::DecisionResult.from_hash(
       decision: "propose_action",
       language: "en",
-      message_body: "Late checkout depends on availability and requires host confirmation. I have sent your request.",
+      message_body: "Late checkout depends on availability and requires host confirmation. I will share your request with the host.",
       intent_summary: "late checkout",
-      detected_intents: [{ type: "late_checkout", status: "requires_host_approval" }],
+      detected_intents: [{ type: "guest_request", status: "requires_host_approval" }, { type: "request_late_checkout", status: "requires_host_approval" }],
       evidence_ids: [],
       required_capabilities: [],
       proposed_action: { type: "request_late_checkout", payload: {} },
@@ -1105,6 +1195,23 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       missing_information: [],
       safety_flags: [],
       confidence: 0.9
+    )
+  end
+
+  def ai_guest_request_decision(action_type:, intent_type:, message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")
+    AI::DecisionResult.from_hash(
+      decision: "propose_action",
+      language: "es",
+      message_body: message_body,
+      intent_summary: "Pedido del huésped",
+      detected_intents: [{ type: "guest_request", status: "requires_host_approval" }, { type: intent_type, status: "requires_host_approval" }],
+      evidence_ids: [],
+      required_capabilities: ["owner_attention"],
+      proposed_action: { type: action_type, payload: { title: "Pedido del huésped" } },
+      escalation: { required: true, reason_code: "guest_request", summary_for_host: "El huésped hizo un pedido que requiere revisión del anfitrión." },
+      missing_information: [],
+      safety_flags: [],
+      confidence: 0.92
     )
   end
 

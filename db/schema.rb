@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_09_170100) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_09_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -158,6 +158,39 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_09_170100) do
     t.index ["property_id"], name: "index_faqs_on_property_id"
     t.index ["source_alert_id"], name: "index_faqs_on_source_alert_id"
     t.index ["source_message_id"], name: "index_faqs_on_source_message_id"
+  end
+
+  create_table "guest_requests", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "property_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "guest_id", null: false
+    t.bigint "message_id", null: false
+    t.bigint "ai_decision_log_id"
+    t.string "guest_phone", null: false
+    t.string "property_name", null: false
+    t.string "property_address"
+    t.string "category", null: false
+    t.string "title", null: false
+    t.text "description", null: false
+    t.text "ai_summary"
+    t.string "status", default: "pending", null: false
+    t.string "priority", default: "normal", null: false
+    t.string "source_channel", default: "whatsapp", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "resolved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "index_guest_requests_on_account_id_and_status"
+    t.index ["account_id"], name: "index_guest_requests_on_account_id"
+    t.index ["ai_decision_log_id"], name: "index_guest_requests_on_ai_decision_log_id"
+    t.index ["category", "created_at"], name: "index_guest_requests_on_category_and_created_at"
+    t.index ["conversation_id", "created_at"], name: "index_guest_requests_on_conversation_id_and_created_at"
+    t.index ["conversation_id"], name: "index_guest_requests_on_conversation_id"
+    t.index ["guest_id"], name: "index_guest_requests_on_guest_id"
+    t.index ["message_id"], name: "index_guest_requests_on_message_id"
+    t.index ["property_id", "status"], name: "index_guest_requests_on_property_id_and_status"
+    t.index ["property_id"], name: "index_guest_requests_on_property_id"
   end
 
   create_table "guests", force: :cascade do |t|
@@ -335,6 +368,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_09_170100) do
   add_foreign_key "faqs", "alerts", column: "source_alert_id"
   add_foreign_key "faqs", "messages", column: "source_message_id"
   add_foreign_key "faqs", "properties"
+  add_foreign_key "guest_requests", "accounts"
+  add_foreign_key "guest_requests", "ai_decision_logs"
+  add_foreign_key "guest_requests", "conversations"
+  add_foreign_key "guest_requests", "guests"
+  add_foreign_key "guest_requests", "messages"
+  add_foreign_key "guest_requests", "properties"
   add_foreign_key "guests", "accounts"
   add_foreign_key "guests", "properties"
   add_foreign_key "knowledge_blocks", "properties"

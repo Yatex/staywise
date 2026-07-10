@@ -84,6 +84,7 @@ es:
       dashboard: "Panel"
       properties: "Propiedades"
       conversations: "Conversaciones"
+      guest_requests: "Pedidos"
       alerts: "Alertas"
       recommendations: "Recomendaciones"
       guests: "Huéspedes"

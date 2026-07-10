@@ -8,5 +8,6 @@ class DashboardController < ApplicationController
       (conversation.last_message_at || conversation.updated_at).in_time_zone.today?
     end
     @alerts = alert_scope.includes(:guest, :property).open.order(created_at: :desc).limit(5)
+    @guest_requests = current_account.guest_requests.includes(:guest, :property, :conversation).open.pending_first.limit(5)
   end
 end

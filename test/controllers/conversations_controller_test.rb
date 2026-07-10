@@ -60,6 +60,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='conversation-refresh']"
     assert_select "[data-conversation-refresh-target='messages']"
     assert_select "[data-conversation-refresh-target='alerts']"
+    assert_select "[data-conversation-refresh-target='guestRequests']"
     assert_select "[data-conversation-refresh-target='status']"
   end
 
@@ -69,6 +70,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-conversation-refresh-target='messages']"
     assert_select "[data-conversation-refresh-target='alerts']"
+    assert_select "[data-conversation-refresh-target='guestRequests']"
     assert_select "[data-conversation-refresh-target='status']"
     assert_not_includes @response.body, "Responder al huésped"
   end
@@ -152,6 +154,58 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#message-#{conversation.messages.where(sender: "ai").last.id}", count: 1
     assert_includes @response.body, "¿Cómo bajo a la pileta?"
     assert_includes @response.body, "La respuesta está en la FAQ de la propiedad."
+  end
+
+  test "show page includes related guest requests in side panel and message marker" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "quiero un vino")
+    @conversation.guest_requests.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      message: message,
+      guest_phone: @guest.phone_number,
+      property_name: @property.display_name,
+      property_address: @property.address,
+      category: "food_or_drink",
+      title: "Pedido de comida o bebida",
+      description: "quiero un vino",
+      ai_summary: "El huésped pidió un vino.",
+      status: "pending",
+      priority: "normal",
+      source_channel: "whatsapp"
+    )
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "[data-conversation-refresh-target='guestRequests']"
+    assert_includes @response.body, "Pedidos de la conversación"
+    assert_includes @response.body, "Pedido de comida o bebida"
+    assert_includes @response.body, "Pedido creado"
+  end
+
+  test "refresh endpoint includes guest requests fragment" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "necesito una cama extra")
+    @conversation.guest_requests.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      message: message,
+      guest_phone: @guest.phone_number,
+      property_name: @property.display_name,
+      category: "extra_bed",
+      title: "Pedido de cama extra",
+      description: "necesito una cama extra",
+      status: "pending",
+      priority: "normal",
+      source_channel: "whatsapp"
+    )
+
+    get refresh_conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "[data-conversation-refresh-target='guestRequests']"
+    assert_includes @response.body, "Pedido de cama extra"
   end
 
   test "show page includes guest escalation and owner manual reply from whatsapp flow" do

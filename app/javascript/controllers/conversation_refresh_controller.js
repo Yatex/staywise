@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["messages", "alerts", "status"]
+  static targets = ["messages", "alerts", "guestRequests", "status"]
   static values = {
     interval: { type: Number, default: 5000 },
     url: String,
@@ -35,6 +35,7 @@ export default class extends Controller {
 
       const messagesChanged = this.replaceTarget("messages", documentFragment)
       this.replaceTarget("alerts", documentFragment)
+      this.replaceTarget("guestRequests", documentFragment)
       this.replaceTarget("status", documentFragment)
 
       if (messagesChanged && wasNearBottom) {

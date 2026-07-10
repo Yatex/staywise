@@ -68,13 +68,39 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "15550003000"
   end
 
+  test "shows pending guest requests" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "quiero un vino")
+    @conversation.guest_requests.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      message: message,
+      guest_phone: @guest.phone_number,
+      property_name: @property.display_name,
+      property_address: @property.address,
+      category: "food_or_drink",
+      title: "Pedido de comida o bebida",
+      description: "quiero un vino",
+      status: "pending",
+      priority: "normal",
+      source_channel: "whatsapp"
+    )
+
+    get dashboard_path
+
+    assert_response :success
+    assert_includes @response.body, "Pedidos pendientes"
+    assert_includes @response.body, "Pedido de comida o bebida"
+    assert_includes @response.body, "quiero un vino"
+  end
+
   test "shows alert created by ai escalation from whatsapp flow" do
     decision = AI::DecisionResult.from_hash(
       decision: "escalate",
       language: "es",
       message_body: "No tengo esa información confirmada todavía. Voy a pedir que el anfitrión la revise.",
       intent_summary: "unknown",
-      detected_intents: [{ type: "late_checkout", status: "escalated" }],
+      detected_intents: [{ type: "unknown_question", status: "escalated" }],
       evidence_ids: [],
       required_capabilities: [],
       proposed_action: nil,

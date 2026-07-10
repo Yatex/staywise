@@ -31,6 +31,7 @@ class Account < ApplicationRecord
   has_many :billing_events, dependent: :nullify
   has_many :operational_errors, dependent: :nullify
   has_many :owner_whatsapp_sessions, dependent: :destroy
+  has_many :guest_requests, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true

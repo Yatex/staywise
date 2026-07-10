@@ -40,13 +40,14 @@ module Whatsapp
       end
 
       decision = AI::DecisionService.call(conversation: conversation, guest_message: guest_message)
-      alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
-      report_missing_alert(conversation: conversation, decision: decision) if decision.escalation_required && alert.blank?
-      replied = maybe_reply(conversation, guest, decision, alert: alert)
+      guest_request = GuestRequests::Creator.call(conversation: conversation, decision: decision, guest_message: guest_message)
+      alert = guest_request.present? ? nil : Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
+      report_missing_alert(conversation: conversation, decision: decision) if decision.escalation_required && alert.blank? && guest_request.blank?
+      replied = maybe_reply(conversation, guest, decision, alert: alert, guest_request: guest_request)
       conversation.update!(status: "escalated") if alert.present?
-      finalize_ai_trace(guest_message: guest_message, decision: decision, alert: alert, replied: replied)
+      finalize_ai_trace(guest_message: guest_message, decision: decision, alert: alert, guest_request: guest_request, replied: replied)
 
-      { conversation: conversation, message: guest_message, decision: decision, alert: alert, replied: replied }
+      { conversation: conversation, message: guest_message, decision: decision, alert: alert, guest_request: guest_request, replied: replied }
     end
 
     private
@@ -162,13 +163,13 @@ module Whatsapp
       AI::LanguageHelper.multilingual_welcome
     end
 
-    def maybe_reply(conversation, guest, decision, alert:)
+    def maybe_reply(conversation, guest, decision, alert:, guest_request: nil)
       return false unless conversation.ai_enabled?
       return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
       return false unless decision.should_reply
       return false if decision.response_text.blank?
 
-      body = ai_response_body(conversation, decision, alert: alert)
+      body = ai_response_body(conversation, decision, alert: alert, guest_request: guest_request)
       return false if body.blank?
 
       message = conversation.messages.create!(
@@ -184,8 +185,8 @@ module Whatsapp
       deliver_persisted_message(message, to: guest.phone_number, body: body)
     end
 
-    def ai_response_body(conversation, decision, alert:)
-      response_text = safe_response_text_for(decision, alert: alert, conversation: conversation)
+    def ai_response_body(conversation, decision, alert:, guest_request: nil)
+      response_text = safe_response_text_for(decision, alert: alert, guest_request: guest_request)
       return response_text if owner_disclosure_already_sent?(conversation)
 
       AI::LanguageHelper.with_owner_disclosure(
@@ -201,7 +202,8 @@ module Whatsapp
       conversation.messages.any? { |message| ActiveModel::Type::Boolean.new.cast(message.metadata.to_h["owner_disclosure"]) }
     end
 
-    def safe_response_text_for(decision, alert:, conversation:)
+    def safe_response_text_for(decision, alert:, guest_request: nil)
+      return decision.response_text if guest_request.present?
       return decision.response_text unless decision.escalation_required && alert.blank?
 
       decision.safe_fallback_response
@@ -248,11 +250,12 @@ module Whatsapp
       )
     end
 
-    def finalize_ai_trace(guest_message:, decision:, alert:, replied:)
+    def finalize_ai_trace(guest_message:, decision:, alert:, replied:, guest_request: nil)
       log = AIDecisionLog.where(message: guest_message).order(created_at: :desc).first
       return unless log
 
       alert.update!(ai_decision_log: log) if alert.present? && alert.ai_decision_log.blank?
+      guest_request.update!(ai_decision_log: log) if guest_request.present? && guest_request.ai_decision_log.blank?
 
       outbound_message = log.conversation&.messages&.where(sender: "ai")&.where("created_at >= ?", guest_message.created_at)&.order(created_at: :desc)&.first
       delivery_status = if outbound_message
@@ -279,6 +282,18 @@ module Whatsapp
         }.compact
       end
 
+      guest_request_payload = if guest_request.present?
+        {
+          created: true,
+          id: guest_request.id,
+          category: guest_request.category,
+          status: guest_request.status,
+          visible_for_owner: guest_request.account_id == log.account_id
+        }
+      else
+        { created: false }
+      end
+
       whatsapp_payload = {
         sent: replied,
         delivery_status: delivery_status,
@@ -290,6 +305,7 @@ module Whatsapp
         provider_delivery_status: delivery_status,
         payload: log.payload.merge(
           "alert" => alert_payload,
+          "guest_request" => guest_request_payload,
           "whatsapp_delivery" => whatsapp_payload
         )
       )

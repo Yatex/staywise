@@ -3,6 +3,7 @@ class Guest < ApplicationRecord
   belongs_to :property, optional: true
   has_many :conversations, dependent: :destroy
   has_many :alerts, dependent: :nullify
+  has_many :guest_requests, dependent: :destroy
 
   validates :phone_number, presence: true, uniqueness: { scope: :account_id }
 

@@ -16,7 +16,7 @@
       </div>
     </div>
 
-    <%= render "messages", messages: @messages %>
+    <%= render "messages", messages: @messages, guest_request_message_ids: @guest_request_message_ids %>
 
     <div class="border-t border-slate-200 bg-white px-5 py-5">
       <h3 class="text-base font-semibold text-slate-950">Responder al huésped</h3>
@@ -57,6 +57,11 @@
     <div class="<%= card_class %> p-5">
       <h3 class="text-base font-semibold text-slate-950">Alertas de la conversación</h3>
       <%= render "alerts", alerts: @alerts %>
+    </div>
+
+    <div class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Pedidos de la conversación</h3>
+      <%= render "guest_requests", guest_requests: @guest_requests %>
     </div>
   </aside>
 </div>

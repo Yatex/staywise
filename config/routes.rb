@@ -41,6 +41,7 @@ Rails.application.routes.draw do
     post :reply, on: :member
     get :refresh, on: :member
   end
+  resources :guest_requests, path: "pedidos", only: [:index, :show, :update]
   resources :alerts, only: [:index, :show, :update] do
     post :answer_question, on: :member
   end

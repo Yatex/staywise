@@ -21,3 +21,11 @@ test("decision prompts require a localized neutral safe fallback", () => {
   assert.match(DECISION_SYSTEM_PROMPT, /must not claim that the host was contacted/i);
   assert.match(GROUNDED_REVIEW_SYSTEM_PROMPT, /Always provide safe_fallback_response in the latest guest message's language/i);
 });
+
+test("decision prompt classifies owner-managed requests as guest requests", () => {
+  assert.match(DECISION_SYSTEM_PROMPT, /item, service, delivery, food, drink, extra bed/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /classify it as a guest request/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /request_food_or_drink/);
+  assert.match(DECISION_SYSTEM_PROMPT, /request_extra_bed/);
+  assert.match(DECISION_SYSTEM_PROMPT, /confirm receipt only/i);
+});

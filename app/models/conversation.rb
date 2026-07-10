@@ -5,6 +5,7 @@ class Conversation < ApplicationRecord
   belongs_to :property
   has_many :messages, dependent: :destroy
   has_many :alerts, dependent: :nullify
+  has_many :guest_requests, dependent: :destroy
 
   validates :status, inclusion: { in: STATUSES }
 

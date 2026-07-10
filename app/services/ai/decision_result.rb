@@ -140,6 +140,8 @@ module AI
         "late_checkout_request"
       when "maintenance_request", "report_issue"
         "maintenance_issue"
+      when "guest_request", "request_extra_item", "request_service", "request_extra_bed", "request_food_or_drink", "request_transport", "request_other"
+        "owner_approval_required"
       when "early_checkin_request", "booking_change_request", "refund_request", "access_request", "request_early_checkin", "request_reservation_extension", "human_handoff"
         "owner_approval_required"
       else
