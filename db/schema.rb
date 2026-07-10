@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_10_190200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -185,6 +185,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
     t.datetime "resolved_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "requires_owner_approval", default: false, null: false
+    t.jsonb "structured_details", default: {}, null: false
     t.index ["account_id", "status"], name: "index_guest_requests_on_account_id_and_status"
     t.index ["account_id"], name: "index_guest_requests_on_account_id"
     t.index ["ai_decision_log_id"], name: "index_guest_requests_on_ai_decision_log_id"
@@ -193,6 +195,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
     t.index ["conversation_id"], name: "index_guest_requests_on_conversation_id"
     t.index ["guest_id"], name: "index_guest_requests_on_guest_id"
     t.index ["message_id"], name: "index_guest_requests_on_message_id"
+    t.index ["message_id"], name: "index_guest_requests_on_message_id_unique", unique: true
     t.index ["property_id", "status"], name: "index_guest_requests_on_property_id_and_status"
     t.index ["property_id"], name: "index_guest_requests_on_property_id"
   end
@@ -308,6 +311,22 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
     t.index ["tags"], name: "index_properties_on_tags", using: :gin
   end
 
+  create_table "property_sensitive_data", force: :cascade do |t|
+    t.bigint "property_id", null: false
+    t.string "kind", null: false
+    t.text "encrypted_value", null: false
+    t.boolean "active", default: true, null: false
+    t.bigint "created_by_id"
+    t.bigint "source_alert_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_property_sensitive_data_on_created_by_id"
+    t.index ["property_id", "kind", "active"], name: "index_property_sensitive_data_on_property_kind_active"
+    t.index ["property_id"], name: "index_property_sensitive_data_on_property_id"
+    t.index ["source_alert_id"], name: "index_property_sensitive_data_on_source_alert_id"
+  end
+
   create_table "recommendations", force: :cascade do |t|
     t.bigint "property_id", null: false
     t.string "name", null: false
@@ -321,6 +340,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
     t.string "distance_or_walking_time"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "active", default: true, null: false
+    t.index ["property_id", "active", "category"], name: "index_recommendations_on_property_id_and_active_and_category"
     t.index ["property_id", "category"], name: "index_recommendations_on_property_id_and_category"
     t.index ["property_id"], name: "index_recommendations_on_property_id"
   end
@@ -396,6 +417,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
   add_foreign_key "owner_whatsapp_sessions", "accounts"
   add_foreign_key "owner_whatsapp_sessions", "alerts"
   add_foreign_key "properties", "accounts"
+  add_foreign_key "property_sensitive_data", "alerts", column: "source_alert_id"
+  add_foreign_key "property_sensitive_data", "properties"
+  add_foreign_key "property_sensitive_data", "users", column: "created_by_id"
   add_foreign_key "recommendations", "properties"
   add_foreign_key "subscriptions", "accounts"
   add_foreign_key "users", "accounts"

@@ -46,6 +46,17 @@ test("sanitizeGuestVisibleText preserves normal guest-facing text", () => {
   );
 });
 
+test("sanitizeGuestVisibleText removes internal policy directives", () => {
+  assert.equal(
+    sanitizeGuestVisibleText("Late checkout: always_escalate."),
+    null,
+  );
+  assert.equal(
+    sanitizeGuestVisibleText("La solicitud requiere confirmación. policy: approval_required."),
+    "La solicitud requiere confirmación.",
+  );
+});
+
 test("sanitizeGuestVisibleText removes source claim phrases without removing the answer", () => {
   assert.equal(
     sanitizeGuestVisibleText("Según la información disponible, el check-in es a las 15:00."),

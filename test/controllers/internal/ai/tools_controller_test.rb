@@ -88,6 +88,21 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, body.dig("available_capabilities", "can_view_wifi")
   end
 
+  test "property policy exposes owner approval as structured control without leaking configured enum" do
+    post "/internal/ai/tools/property_policy", params: {
+      decision_context_id: @decision_context_id,
+      policy_type: "late_checkout"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "Requires owner approval.", body.fetch("value")
+    assert_equal "requires_owner_approval", body.fetch("policy_behavior")
+    assert_equal true, body.fetch("requires_owner_approval")
+    assert_equal true, body.fetch("control_only")
+    assert_not_includes response.body, "always_escalate"
+  end
+
   test "tools reject free conversation ids without signed context" do
     post "/internal/ai/tools/stay_facts", params: {
       conversation_id: @conversation.id,

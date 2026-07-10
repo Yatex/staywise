@@ -74,9 +74,11 @@ module GuestRequests
       action_type = @decision.proposed_action.to_h["type"].to_s
       return REQUEST_ACTION_TYPES[action_type] if REQUEST_ACTION_TYPES.key?(action_type)
 
-      detected_intents.filter_map do |intent|
+      categories = detected_intents.filter_map do |intent|
         INTENT_CATEGORIES[intent["type"].to_s]
-      end.first
+      end
+
+      categories.find { |category| category != "other" } || categories.first
     end
 
     def detected_intents
@@ -145,6 +147,8 @@ module GuestRequests
           "approval_required" => requires_owner_approval?(category)
         }.compact
       )
+    rescue ActiveRecord::RecordNotUnique
+      GuestRequest.find_by!(message: @guest_message)
     end
 
     def latest_ai_trace

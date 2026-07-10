@@ -74,10 +74,18 @@ const TOOL_NAMES = [
   "stay_facts",
 ];
 
+const INTERNAL_POLICY_DIRECTIVES = [
+  "always_escalate",
+  "approval_required",
+  "owner_approval_required",
+  "host_approval_required",
+];
+
 const metadataLabelPattern = METADATA_LABELS.join("|");
 const dotPrefixPattern = INTERNAL_DOT_PREFIXES.join("|");
 const colonPrefixPattern = INTERNAL_COLON_PREFIXES.join("|");
 const toolNamePattern = TOOL_NAMES.join("|");
+const internalPolicyDirectivePattern = INTERNAL_POLICY_DIRECTIVES.join("|");
 const internalReferencePattern = [
   `(?:${dotPrefixPattern})\\.[a-z0-9_./-]+`,
   `(?:${colonPrefixPattern}):[a-z0-9_.:/-]+`,
@@ -127,6 +135,10 @@ export function sanitizeGuestVisibleText(value: unknown) {
   );
   text = text.replace(
     new RegExp(`\\b(?:${toolNamePattern})\\b`, "gi"),
+    "",
+  );
+  text = text.replace(
+    new RegExp(`[^.!?\\n]*\\b(?:${internalPolicyDirectivePattern})\\b[^.!?\\n]*[.!?]?`, "gi"),
     "",
   );
   for (const pattern of SOURCE_CLAIM_PATTERNS) {

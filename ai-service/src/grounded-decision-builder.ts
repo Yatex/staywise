@@ -797,7 +797,18 @@ function approvalDecision(
   const primary = candidates.find((candidate) => approvalRequired(candidate.evidence))?.evidence || candidates[0].evidence;
   const evidenceIds = unique(candidates.map((candidate) => candidate.evidence.evidence_id));
   const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
-  const messageBody = approvalMessage(primary, language);
+  const proposedAction = guestRequestAction(decision?.proposed_action) || {
+    type: "guest_request",
+    payload: {
+      category: inferredIntent(primary),
+      evidence_ids: evidenceIds,
+      requires_approval: true,
+    },
+  };
+  const messageBody = guestRequestAction(decision?.proposed_action) && guestSafeDecisionText(decision?.message_body)
+    ? String(decision.message_body).trim()
+    : approvalMessage(primary, language);
+  const detectedIntents = guestRequestIntents(decision, primary);
 
   return {
     override: {
@@ -815,20 +826,11 @@ function approvalDecision(
       message_body: messageBody,
       response_text: messageBody,
       intent_summary: `Policy evidence requires human approval for ${primary.field || primary.label || "this request"}.`,
-      detected_intents: [{
-        type: inferredIntent(primary),
-        status: "requires_host_approval",
-      }],
+      detected_intents: detectedIntents,
       evidence_ids: evidenceIds,
       used_source_ids: [],
-      required_capabilities: ["owner_approval"],
-      proposed_action: {
-        type: "human_handoff",
-        payload: {
-          evidence_ids: evidenceIds,
-          policy: primary.field || primary.label || primary.evidence_id,
-        },
-      },
+      required_capabilities: unique(arrayOf(decision?.required_capabilities).concat(["owner_approval", "owner_attention"])),
+      proposed_action: proposedAction,
       escalation: {
         required: true,
         reason_code: "owner_approval_required",
@@ -1357,8 +1359,43 @@ function summaryForHost(payload: any, evidence: EvidenceCatalogEntry) {
 }
 
 function approvalRequired(evidence: EvidenceCatalogEntry) {
+  if (evidence.metadata.requires_owner_approval === true) return true;
+  if (evidence.metadata.policy_behavior === "requires_owner_approval") return true;
+
   const text = [evidence.value, evidence.text].join(" ");
   return APPROVAL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function guestRequestAction(value: any) {
+  if (!value || typeof value !== "object") return null;
+
+  const type = String(value.type || "");
+  if (type === "guest_request" || type.startsWith("request_")) return value;
+
+  return null;
+}
+
+function guestRequestIntents(decision: any, evidence: EvidenceCatalogEntry) {
+  const existing = arrayOf(decision?.detected_intents)
+    .filter((intent: any) => {
+      const type = String(intent?.type || "");
+      return type === "guest_request" || type.startsWith("request_");
+    })
+    .map((intent: any) => ({ ...intent, status: "requires_host_approval" }));
+
+  if (existing.length > 0) return existing;
+
+  return [
+    { type: "guest_request", status: "requires_host_approval" },
+    { type: inferredIntent(evidence), status: "requires_host_approval" },
+  ];
+}
+
+function guestSafeDecisionText(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+
+  return !/\b(always_escalate|approval_required|owner_approval_required|host_approval_required)\b/i.test(text);
 }
 
 function approvalRequest(message: string) {
@@ -1434,13 +1471,14 @@ function ambiguousSensitiveRequest(message: string) {
   if (!sensitiveSecretLanguage(messageTokens, text)) return false;
   if (/\b(acceso|entrada|entrar|ingresar|ingreso|access|entry)\b/.test(text)) return false;
 
-  const matches = sensitiveTypeMatches(messageTokens, text);
-  return matches.length !== 1;
+  return requestedSensitiveType(message) === null;
 }
 
 function sensitiveSecretLanguage(messageTokens: string[], normalizedText: string) {
-  return SENSITIVE_TYPE_DEFINITIONS.some((definition) => intersects(messageTokens, definition.secretTerms)) ||
-    /\b(codigo|code|clave|contrasena|contraseña|password|pin|donde esta|ubicacion)\b/.test(normalizedText);
+  if (/\b(codigo|code|clave|contrasena|contraseña|password|pin)\b/.test(normalizedText)) return true;
+
+  const asksForLocation = /\b(donde|where|ubicacion|location)\b/.test(normalizedText);
+  return asksForLocation && sensitiveTypeMatches(messageTokens, normalizedText).length > 0;
 }
 
 function sensitiveTypeMatches(messageTokens: string[], normalizedText: string) {
@@ -1448,6 +1486,12 @@ function sensitiveTypeMatches(messageTokens: string[], normalizedText: string) {
     .map((definition) => {
       const matchedTerms = definition.terms.filter((term) => messageTokens.includes(term));
       let score = matchedTerms.length;
+      if (
+        definition.type === "property.key_location" &&
+        !matchedTerms.some((term) => ["llave", "llaves", "key", "keys"].includes(term))
+      ) {
+        score = 0;
+      }
       if (definition.type === "property.safe_code" && /\bcaja fuerte\b|\bsafe\b/.test(normalizedText)) score += 3;
       if (definition.type === "property.lockbox_code" && /\bcaja de llaves\b|\blockbox\b|\bkeybox\b/.test(normalizedText)) score += 3;
       if (definition.type === "property.building_access_code" && /\bedificio\b|\bbuilding\b/.test(normalizedText)) score += 2;

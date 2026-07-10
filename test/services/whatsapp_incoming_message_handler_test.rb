@@ -52,7 +52,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   teardown do
   end
 
-  test "creates late checkout pedido from incoming whatsapp payload without unknown alert" do
+  test "creates late checkout pedido and its owner approval alert from incoming whatsapp payload" do
     @property.update!(address: "Av. Test 123")
     result = with_ai_decision(ai_late_checkout_decision) do
       Whatsapp::IncomingMessageHandler.new(
@@ -68,11 +68,11 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation = result.fetch(:conversation)
 
     assert result.fetch(:replied)
-    assert_equal "active", conversation.reload.status
+    assert_equal "escalated", conversation.reload.status
     assert_equal "+15550000002", conversation.guest.phone_number
     assert_equal 2, conversation.messages.count
-    assert_nil result.fetch(:alert)
-    assert_equal 0, conversation.alerts.count
+    assert_equal "late_checkout_request", result.fetch(:alert).alert_type
+    assert_equal 1, conversation.alerts.count
 
     guest_request = result.fetch(:guest_request)
     assert_equal "late_checkout", guest_request.category
@@ -123,8 +123,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     guest_request = result.fetch(:guest_request)
 
     assert result.fetch(:replied)
-    assert_nil result.fetch(:alert)
-    assert_equal 0, result.fetch(:conversation).alerts.count
+    assert_equal "owner_approval_required", result.fetch(:alert).alert_type
+    assert_equal 1, result.fetch(:conversation).alerts.count
     assert_equal "food_or_drink", guest_request.category
     assert_equal "pending", guest_request.status
     assert_equal "+15550000023", guest_request.guest_phone
@@ -211,9 +211,26 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       ).call
     end
 
-    assert_nil result.fetch(:alert)
+    assert_equal "owner_approval_required", result.fetch(:alert).alert_type
     assert_equal "extra_bed", result.fetch(:guest_request).category
     assert_equal "pending", result.fetch(:guest_request).status
+  end
+
+  test "reprocessing the same AI action does not duplicate pedido or alert" do
+    guest = @account.guests.create!(phone_number: "+15550000028", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+    message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Necesito un servicio")
+    decision = ai_guest_request_decision(action_type: "request_service", intent_type: "request_service")
+
+    first_request = GuestRequests::Creator.call(conversation: conversation, decision: decision, guest_message: message)
+    second_request = GuestRequests::Creator.call(conversation: conversation, decision: decision, guest_message: message)
+    first_alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: Whatsapp::Providers::NullProvider.new)
+    second_alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: Whatsapp::Providers::NullProvider.new)
+
+    assert_equal first_request.id, second_request.id
+    assert_equal first_alert.id, second_alert.id
+    assert_equal 1, conversation.guest_requests.count
+    assert_equal 1, conversation.alerts.count
   end
 
   test "pedido uses relinked property when guest sends a new stay token" do
@@ -991,7 +1008,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert result.fetch(:replied)
     assert_equal @property, result.fetch(:conversation).property
-    assert_nil result.fetch(:alert)
+    assert_equal "late_checkout_request", result.fetch(:alert).alert_type
     assert_equal "late_checkout", result.fetch(:guest_request).category
     assert_equal @property, result.fetch(:guest_request).property
   end
@@ -1561,16 +1578,21 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   def ai_guest_request_decision(action_type:, intent_type:, message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.", intent_status: "requires_host_approval")
+    requires_owner = intent_status == "requires_host_approval"
     AI::DecisionResult.from_hash(
-      decision: "propose_action",
+      decision: requires_owner ? "propose_action" : "ask_clarifying_question",
       language: "es",
       message_body: message_body,
       intent_summary: "Pedido del huésped",
       detected_intents: [{ type: "guest_request", status: intent_status }, { type: intent_type, status: intent_status }],
       evidence_ids: [],
-      required_capabilities: ["owner_attention"],
-      proposed_action: { type: action_type, payload: { title: "Pedido del huésped" } },
-      escalation: { required: true, reason_code: "guest_request", summary_for_host: "El huésped hizo un pedido que requiere revisión del anfitrión." },
+      required_capabilities: requires_owner ? ["owner_attention"] : [],
+      proposed_action: action_type == "none" ? nil : { type: action_type, payload: { title: "Pedido del huésped" } },
+      escalation: {
+        required: requires_owner,
+        reason_code: requires_owner ? "guest_request" : nil,
+        summary_for_host: requires_owner ? "El huésped hizo un pedido que requiere revisión del anfitrión." : nil
+      },
       missing_information: [],
       safety_flags: [],
       confidence: 0.92

@@ -28,6 +28,9 @@ module Alerts
 
       description = alert_description
       original_message = latest_guest_message_record
+      existing = existing_alert_for(original_message)
+      return existing if existing.present?
+
       alert = @conversation.alerts.create!(
         property: @conversation.property,
         guest: @conversation.guest,
@@ -58,6 +61,15 @@ module Alerts
       end
 
       alert
+    end
+
+    def existing_alert_for(original_message)
+      return if original_message.blank?
+
+      @conversation.alerts.find_by(
+        original_message: original_message,
+        alert_type: (@decision.alert_type.presence || "other").to_s
+      )
     end
 
     def account

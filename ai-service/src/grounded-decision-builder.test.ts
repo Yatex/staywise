@@ -107,6 +107,50 @@ test("structured fact evidence answers checkout", () => {
   assert.match(result.decision.message_body, /11:00/);
 });
 
+test("owner approval policy preserves the AI guest request action and never exposes control values", () => {
+  const modelDecision = {
+    outcome: "propose_action",
+    decision: "propose_action",
+    language: "es",
+    message_body: "Recibí tu pedido. El anfitrión debe confirmarlo y te avisaremos cuando responda.",
+    detected_intents: [
+      { type: "guest_request", status: "requires_host_approval" },
+      { type: "request_late_checkout", status: "requires_host_approval" },
+    ],
+    evidence_ids: ["policy.late_checkout"],
+    required_capabilities: ["owner_attention"],
+    proposed_action: { type: "request_late_checkout", payload: { requested_by_guest: true } },
+    escalation_required: true,
+    escalation: {
+      required: true,
+      reason_code: "guest_request",
+      summary_for_host: "El huésped pidió una excepción que requiere aprobación.",
+    },
+    confidence: 0.92,
+    safety_flags: [],
+  };
+  const result = buildGroundedDecision(modelDecision, {
+    guest_message: "Quiero hacer un late checkout",
+  }, catalogFromSource({
+    source_type: "policy",
+    source_id: "policy:late_checkout",
+    evidence_id: "policy.late_checkout",
+    field: "late_checkout",
+    label: "late_checkout",
+    value: "Requires owner approval.",
+    policy_behavior: "requires_owner_approval",
+    requires_owner_approval: true,
+    control_only: true,
+  }));
+
+  assert.equal(result.decision.outcome, "propose_action");
+  assert.equal(result.decision.escalation_required, true);
+  assert.equal(result.decision.proposed_action.type, "request_late_checkout");
+  assert.ok(result.decision.detected_intents.some((intent: any) => intent.type === "guest_request"));
+  assert.ok(result.decision.detected_intents.some((intent: any) => intent.type === "request_late_checkout"));
+  assert.doesNotMatch(result.decision.message_body, /always_escalate|approval_required/i);
+});
+
 test("arrival wording replies with inference from check-in evidence", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "a que hora puedo entrar al depto?",

@@ -44,6 +44,13 @@ module AI
       "device_password" => "Contraseña de dispositivo"
     }.freeze
 
+    OWNER_APPROVAL_POLICY_VALUES = %w[
+      always_escalate
+      approval_required
+      owner_approval_required
+      host_approval_required
+    ].freeze
+
     APPLIANCE_ALIASES = {
       "washer" => %w[lavarropas lavadora lavar lavado laundry washer washing machine washing_machine],
       "coffee_machine" => %w[cafetera cafe coffee coffee_machine coffee maker],
@@ -358,7 +365,7 @@ module AI
     end
 
     def property_policy(policy_type)
-      policies[policy_type.to_s] || source("policy", "policy:#{policy_type}", policy_type, "Escalate to the host for approval.", evidence_id: "policy.#{policy_type}")
+      policies[policy_type.to_s] || approval_policy_source(policy_type)
     end
 
     private
@@ -456,7 +463,10 @@ module AI
         "appliance_name",
         "aliases",
         "location",
-        "youtube_url"
+        "youtube_url",
+        "policy_behavior",
+        "requires_owner_approval",
+        "control_only"
       ).compact
     end
 
@@ -527,12 +537,33 @@ module AI
 
     def policies
       {
-        "early_checkin" => source("policy", "policy:early_checkin", "early_checkin", "approval_required", evidence_id: "policy.early_checkin"),
-        "late_checkout" => source("policy", "policy:late_checkout", "late_checkout", @property.account.late_checkout_policy, evidence_id: "policy.late_checkout"),
-        "visitors" => source("policy", "policy:visitors", "visitors", "approval_required", evidence_id: "policy.visitors"),
-        "pets" => source("policy", "policy:pets", "pets", "approval_required", evidence_id: "policy.pets"),
+        "early_checkin" => approval_policy_source("early_checkin"),
+        "late_checkout" => policy_source("late_checkout", @property.account.late_checkout_policy),
+        "visitors" => approval_policy_source("visitors"),
+        "pets" => approval_policy_source("pets"),
         "emergency" => source("policy", "policy:emergency", "emergency", @property.account.emergency_contact_behavior.presence || "Escalate emergencies to the host.", evidence_id: "policy.emergency")
       }
+    end
+
+    def approval_policy_source(policy_type)
+      policy_source(policy_type, "approval_required")
+    end
+
+    def policy_source(policy_type, configured_value)
+      requires_owner_approval = configured_value.to_s.downcase.strip.in?(OWNER_APPROVAL_POLICY_VALUES)
+      guest_safe_value = requires_owner_approval ? "Requires owner approval." : configured_value.to_s
+
+      source(
+        "policy",
+        "policy:#{policy_type}",
+        policy_type,
+        guest_safe_value,
+        evidence_id: "policy.#{policy_type}"
+      ).merge(
+        "policy_behavior" => requires_owner_approval ? "requires_owner_approval" : "informational",
+        "requires_owner_approval" => requires_owner_approval,
+        "control_only" => requires_owner_approval
+      )
     end
 
     def source(type, id, label, value, record: nil, evidence_id: nil)
