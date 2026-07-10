@@ -129,7 +129,8 @@ module Whatsapp
         return { owner_message: true, handled: true, session: session, replied: false }
       end
 
-      KnowledgeSuggestions::OwnerAnswerFaqCreator.call(alert: alert, owner_answer: answer, owner_message: owner_message)
+      saved_sensitive_datum = KnowledgeSuggestions::OwnerSensitiveDatumCreator.call(alert: alert, owner_answer: answer, owner_message: owner_message)
+      KnowledgeSuggestions::OwnerAnswerFaqCreator.call(alert: alert, owner_answer: answer, owner_message: owner_message) unless saved_sensitive_datum
       alert.update!(status: "resolved")
       session.update!(state: "resolved", resolved_at: Time.current, last_owner_message_at: Time.current)
       session.append_event!("owner_guest_reply_sent", alert_id: alert.id, conversation_id: conversation.id)

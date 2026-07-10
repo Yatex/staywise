@@ -12,6 +12,7 @@ class GuestRequest < ApplicationRecord
   ].freeze
   STATUSES = %w[pending in_progress resolved rejected cancelled].freeze
   PRIORITIES = %w[normal high].freeze
+  APPROVAL_CATEGORIES = %w[late_checkout early_checkin reservation_change].freeze
 
   belongs_to :account
   belongs_to :property
@@ -29,6 +30,10 @@ class GuestRequest < ApplicationRecord
   scope :open, -> { where(status: %w[pending in_progress]) }
 
   before_save :set_resolved_at
+
+  def requires_owner_approval?
+    self[:requires_owner_approval] || category.in?(APPROVAL_CATEGORIES)
+  end
 
   private
 

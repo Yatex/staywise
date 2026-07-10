@@ -5,4 +5,6 @@ class Recommendation < ApplicationRecord
 
   validates :name, presence: true
   validates :category, inclusion: { in: CATEGORIES }
+
+  scope :active, -> { where(active: true) }
 end

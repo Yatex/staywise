@@ -33,6 +33,17 @@ module AI
       "access_instructions" => "sensitive_access_instructions"
     }.freeze
 
+    STRUCTURED_SENSITIVE_LABELS = {
+      "safe_code" => "Código de caja fuerte",
+      "lockbox_code" => "Código de caja de llaves",
+      "door_code" => "Código de puerta",
+      "gate_code" => "Código de portón",
+      "alarm_code" => "Código de alarma",
+      "building_access_code" => "Código de acceso al edificio",
+      "key_location" => "Ubicación de llaves",
+      "device_password" => "Contraseña de dispositivo"
+    }.freeze
+
     APPLIANCE_ALIASES = {
       "washer" => %w[lavarropas lavadora lavar lavado laundry washer washing machine washing_machine],
       "coffee_machine" => %w[cafetera cafe coffee coffee_machine coffee maker],
@@ -190,6 +201,7 @@ module AI
 
     def recommendation_source(recommendation)
       return unless recommendation&.property_id == @property.id
+      return if recommendation.respond_to?(:active?) && !recommendation.active?
 
       note = [recommendation.description, recommendation.distance_or_walking_time, recommendation.owner_note].compact_blank.join(" ")
       source("recommendation", "recommendation:#{recommendation.id}", recommendation.name, note.presence || recommendation.category, record: recommendation, evidence_id: "recommendation.#{recommendation.id}").merge(
@@ -198,8 +210,42 @@ module AI
         "distance_or_walking_time" => recommendation.distance_or_walking_time,
         "google_maps_url" => recommendation.google_maps_url,
         "website_url" => recommendation.website_url,
-        "phone_number" => recommendation.phone_number
+        "phone_number" => recommendation.phone_number,
+        "property_id" => recommendation.property_id,
+        "active" => recommendation.active?
       ).compact
+    end
+
+    def structured_sensitive_sources
+      @property.sensitive_data.active.order(:kind, :id).filter_map do |datum|
+        value = datum.value.presence
+        next if value.blank?
+
+        kind = datum.kind.to_s
+        source(
+          "property_fact",
+          "property_fact:#{kind}",
+          kind,
+          value,
+          record: datum,
+          evidence_id: "property.#{kind}"
+        ).merge(
+          "id" => "sensitive_#{kind}",
+          "label" => STRUCTURED_SENSITIVE_LABELS.fetch(kind, kind.humanize),
+          "field" => kind,
+          "sensitivity" => "sensitive",
+          "authorization_required" => true,
+          "authorized" => true,
+          "sensitive_type" => "property.#{kind}"
+        )
+      end
+    end
+
+    def structured_sensitive_source_for(kind)
+      return unless @authorization.sensitive_access_authorized?
+      return unless PropertySensitiveDatum::KINDS.include?(kind.to_s)
+
+      structured_sensitive_sources.find { |source| source["field"] == kind.to_s }
     end
 
     def valid_evidence?(item)
@@ -211,7 +257,7 @@ module AI
       case source_type.presence || source_type_from_evidence_id(evidence_id)
       when "property_fact"
         field = property_field_from_reference(evidence_id)
-        property_fact(field).present?
+        property_fact(field).present? || structured_sensitive_source_for(field).present?
       when "reservation_fact"
         field = reservation_field_from_reference(evidence_id)
         reservation_fact(field).present?
@@ -227,7 +273,7 @@ module AI
         end
       when "recommendation"
         id = record_id_from_reference(evidence_id, "recommendation")
-        @property.recommendations.exists?(id: id)
+        active_recommendations.exists?(id: id)
       when "policy"
         policy_field_from_reference(evidence_id).present?
       else
@@ -274,7 +320,7 @@ module AI
         faqs: @property.faqs.active.order(:category, :question).map { |faq| faq_source(faq) },
         knowledge_blocks: @property.knowledge_blocks.active.order(:category, :title).map { |block| knowledge_source(block) },
         appliance_guides: @property.knowledge_blocks.active.where(category: "appliances").order(:title).map { |block| knowledge_source(block) },
-        recommendations: @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) },
+        recommendations: active_recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) },
         policies: policies
       }
     end
@@ -299,7 +345,7 @@ module AI
 
     def approved_recommendations(category:, limit: 5)
       normalized_category = normalize_recommendation_category(category)
-      scope = @property.recommendations.order(:category, :name)
+      scope = active_recommendations.order(:category, :name)
       scope = scope.where(category: normalized_category) if normalized_category.present?
 
       scope.limit(limit).map { |recommendation| recommendation_source(recommendation) }
@@ -316,6 +362,10 @@ module AI
     end
 
     private
+
+    def active_recommendations
+      @property.recommendations.active
+    end
 
     def property_brain_sources(query:, limit:)
       candidates = [
@@ -343,7 +393,7 @@ module AI
     def property_brain_recommendations(query:, limit:)
       return [] unless recommendation_intent?(search_tokens(query))
 
-      sources = @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
+      sources = active_recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
       if query.present?
         matched = search_sources(sources, query)
         sources = matched.presence || sources
@@ -354,7 +404,7 @@ module AI
     def recommendation_candidates_for_brain(query)
       return [] unless recommendation_intent?(search_tokens(query))
 
-      @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
+      active_recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
     end
 
     def appliance_sources(query:, limit: 5)
@@ -367,7 +417,7 @@ module AI
     end
 
     def sensitive_access_sources(query:)
-      sources = SENSITIVE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) }
+      sources = SENSITIVE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) } + structured_sensitive_sources
       return sources.map { |source| public_source(source) } if query.blank?
 
       matched = search_sources(sources, query)
@@ -397,6 +447,12 @@ module AI
         "google_maps_url",
         "website_url",
         "phone_number",
+        "property_id",
+        "active",
+        "sensitive_type",
+        "sensitivity",
+        "authorization_required",
+        "authorized",
         "appliance_name",
         "aliases",
         "location",
@@ -420,7 +476,8 @@ module AI
 
       case item["source_type"].presence || source_type_from_evidence_id(evidence_id)
       when "property_fact"
-        property_fact(property_field_from_reference(evidence_id))
+        field = property_field_from_reference(evidence_id)
+        property_fact(field) || structured_sensitive_source_for(field)
       when "reservation_fact"
         reservation_fact(reservation_field_from_reference(evidence_id))
       when "faq"
@@ -434,7 +491,7 @@ module AI
         end
         knowledge_source(block)
       when "recommendation"
-        recommendation = @property.recommendations.find_by(id: record_id_from_reference(evidence_id, "recommendation"))
+        recommendation = active_recommendations.find_by(id: record_id_from_reference(evidence_id, "recommendation"))
         recommendation_source(recommendation)
       when "policy"
         property_policy(policy_field_from_reference(evidence_id))

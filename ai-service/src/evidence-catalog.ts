@@ -157,6 +157,9 @@ function metadataSearchText(metadata: Record<string, unknown>) {
     metadata.appliance_name,
     metadata.aliases,
     metadata.location,
+    metadata.address,
+    metadata.distance_or_walking_time,
+    metadata.sensitive_type,
     metadata.youtube_url,
   ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ");
 }

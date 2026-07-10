@@ -8,9 +8,9 @@ export type GroundedDecisionBuild = {
 
 export type GroundedDecisionOverride = {
   applied: boolean;
-  reason: "sufficient_evidence" | "approval_required" | "partial_evidence";
+  reason: "sufficient_evidence" | "approval_required" | "partial_evidence" | "missing_sensitive_information";
   evidence_ids: string[];
-  sufficiency: "sufficient" | "partial";
+  sufficiency: "sufficient" | "partial" | "insufficient";
   previous_outcome: string | null;
 };
 
@@ -166,6 +166,13 @@ const STOPWORDS = new Set([
   "when",
   "where",
   "with",
+  "hay",
+  "tenes",
+  "tenés",
+  "tienes",
+  "alguna",
+  "algun",
+  "algún",
   "you",
 ]);
 
@@ -183,6 +190,69 @@ const HIGH_SCORE_THRESHOLD = 75;
 const MEDIUM_SCORE_THRESHOLD = 40;
 const SAFETY_SCORE_THRESHOLD = 75;
 const DEFAULT_MAX_CLARIFICATION_ATTEMPTS = 2;
+
+const SENSITIVE_TYPE_DEFINITIONS = [
+  {
+    type: "property.wifi_password",
+    terms: ["wifi", "wi-fi", "internet", "red", "network"],
+    secretTerms: ["clave", "contrasena", "contraseña", "password"],
+  },
+  {
+    type: "property.safe_code",
+    terms: ["caja", "fuerte", "safe", "safety", "seguridad"],
+    secretTerms: ["codigo", "code", "clave", "contrasena", "contraseña", "password"],
+  },
+  {
+    type: "property.lockbox_code",
+    terms: ["lockbox", "caja", "llaves", "llave", "keybox", "keys"],
+    secretTerms: ["codigo", "code", "clave", "pin"],
+  },
+  {
+    type: "property.door_code",
+    terms: ["puerta", "door", "cerradura", "entrada", "acceso"],
+    secretTerms: ["codigo", "code", "clave", "pin"],
+  },
+  {
+    type: "property.gate_code",
+    terms: ["porton", "portón", "gate", "garage", "cochera"],
+    secretTerms: ["codigo", "code", "clave", "pin"],
+  },
+  {
+    type: "property.alarm_code",
+    terms: ["alarma", "alarm"],
+    secretTerms: ["codigo", "code", "clave", "pin"],
+  },
+  {
+    type: "property.building_access_code",
+    terms: ["edificio", "building", "entrada", "acceso", "hall"],
+    secretTerms: ["codigo", "code", "clave", "pin"],
+  },
+  {
+    type: "property.key_location",
+    terms: ["llave", "llaves", "key", "keys", "ubicacion", "donde"],
+    secretTerms: ["ubicacion", "location", "donde", "where"],
+  },
+  {
+    type: "property.device_password",
+    terms: ["dispositivo", "device", "netflix", "tv", "alarma", "router"],
+    secretTerms: ["clave", "contrasena", "contraseña", "password"],
+  },
+] as const;
+
+const RECOMMENDATION_CATEGORY_ALIASES: Record<string, string[]> = {
+  restaurant: ["restaurant", "restaurants", "restaurante", "restaurantes", "comer", "cenar", "almorzar", "food", "dining", "comida"],
+  cafe: ["cafe", "cafes", "coffee", "cafeteria", "cafetería", "desayuno"],
+  supermarket: ["supermarket", "supermercado", "supermercados", "grocery", "groceries", "market", "mercado", "almacen", "almacén"],
+  pharmacy: ["pharmacy", "farmacia", "farmacias", "drugstore"],
+  transport: ["transport", "transporte", "taxi", "bus", "uber", "colectivo", "metro"],
+  attraction: ["attraction", "atraccion", "atracción", "atracciones", "actividad", "actividades", "visitar", "paseo", "turismo"],
+};
+
+const GENERIC_RECOMMENDATION_TERMS = new Set([
+  "recomendacion", "recomendaciones", "recomendar", "recomiendes", "recomendas", "recomendame", "recommendation", "recommend",
+  "lugar", "lugares", "place", "places", "nearby", "cerca", "opcion", "opciones", "cualquiera", "whatever", "anything",
+  ...Object.values(RECOMMENDATION_CATEGORY_ALIASES).flat(),
+]);
 
 const INTENT_CATEGORIES = [
   {
@@ -289,11 +359,53 @@ export function buildGroundedDecision(
     );
   }
 
+  if (ambiguousSensitiveRequest(guestMessage) && attempts < thresholds.max_clarification_attempts) {
+    const clarification = sensitiveClarificationDecision(decision, payload, previousOutcome);
+    return withGroundedAudit(
+      clarification,
+      buildAudit(baseAudit, [], "partial_evidence", null, {
+        strategy: "clarify_before_escalate",
+        inferredIntent: "sensitive_access",
+        clarificationQuestion: clarification.decision.message_body || null,
+        ambiguityCandidates: ["wifi", "door_code", "safe_code", "lockbox_code"],
+        scores: scoresForClarification([], thresholds, { safetyScore: 70 }),
+      }),
+    );
+  }
+
   let candidates = rankedCandidates(guestMessage, evidenceCatalog);
   if (candidates.length === 0 && neutralRecommendationPreference(guestMessage, payload)) {
     candidates = recommendationFallbackCandidates(evidenceCatalog);
   }
   if (candidates.length === 0) {
+    const requestedSensitive = requestedSensitiveType(guestMessage);
+    if (requestedSensitive) {
+      const missingSensitive = missingSensitiveInformationDecision(decision, payload, previousOutcome, requestedSensitive);
+      return withGroundedAudit(
+        missingSensitive,
+        buildAudit(baseAudit, [], null, "missing_requested_sensitive_information", {
+          strategy: "escalation_last_resort",
+          inferredIntent: "missing_sensitive_information",
+          inferenceReason: `missing_sensitive_type:${requestedSensitive}`,
+          scores: scoresForEscalation([], thresholds),
+        }),
+      );
+    }
+
+    if (ambiguousSensitiveRequest(guestMessage) && attempts < thresholds.max_clarification_attempts) {
+      const clarification = sensitiveClarificationDecision(decision, payload, previousOutcome);
+      return withGroundedAudit(
+        clarification,
+        buildAudit(baseAudit, [], "partial_evidence", null, {
+          strategy: "clarify_before_escalate",
+          inferredIntent: "sensitive_access",
+          clarificationQuestion: clarification.decision.message_body || null,
+          ambiguityCandidates: ["wifi", "door_code", "safe_code", "lockbox_code"],
+          scores: scoresForClarification([], thresholds, { safetyScore: 70 }),
+        }),
+      );
+    }
+
     const clarification = attempts < thresholds.max_clarification_attempts
       ? clarificationWithoutEvidence(guestMessage, decision, payload, previousOutcome)
       : null;
@@ -443,19 +555,25 @@ function shouldRepairDecisionDiagnostic(decision: any): RepairDecisionDiagnostic
 function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry[]) {
   const queryTokens = tokens(message);
   const queryCategories = queryIntentCategories(message);
+  const recommendationContext = recommendationRequestContext(message, null);
+  const requestedSensitive = requestedSensitiveType(message);
   if (queryTokens.length === 0 && queryCategories.length === 0) return [];
 
   return evidenceCatalog
     .map((evidence) => {
       const debug = scoreEvidenceWithDebug(queryTokens, evidence, queryCategories);
+      const compatibility = evidenceCompatibilityForRequest(evidence, {
+        requestedSensitive,
+        recommendationContext,
+      });
       return {
         evidence,
-        score: debug.score,
+        score: compatibility.compatible ? debug.score + compatibility.score_bonus : 0,
         matched_terms: debug.matched_terms,
-        semantic_matches: debug.semantic_matches,
+        semantic_matches: compatibility.semantic_match ? unique(debug.semantic_matches.concat(compatibility.semantic_match)) : debug.semantic_matches,
         strategy: debug.strategy,
-        inferred_intent: debug.inferred_intent,
-        inference_reason: debug.inference_reason,
+        inferred_intent: compatibility.inferred_intent || debug.inferred_intent,
+        inference_reason: compatibility.reason || debug.inference_reason,
       };
     })
     .filter((candidate) => candidate.score > 0 && evidenceUsableForGuest(candidate.evidence))
@@ -774,6 +892,100 @@ function clarificationDecision(
   };
 }
 
+function sensitiveClarificationDecision(
+  decision: any,
+  payload: any,
+  previousOutcome: string | null,
+): GroundedDecisionBuild {
+  const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
+  const messageBody = sensitiveClarificationMessage(language);
+
+  return {
+    override: {
+      applied: true,
+      reason: "partial_evidence",
+      evidence_ids: [],
+      sufficiency: "partial",
+      previous_outcome: previousOutcome,
+    },
+    decision: {
+      ...decision,
+      outcome: "ask_clarifying_question",
+      decision: "ask_clarifying_question",
+      language,
+      message_body: messageBody,
+      response_text: messageBody,
+      intent_summary: "The guest asked for a sensitive access detail but the exact type is ambiguous.",
+      detected_intents: [{
+        type: "sensitive_access",
+        status: "needs_clarification",
+      }],
+      evidence_ids: [],
+      used_source_ids: [],
+      required_capabilities: [],
+      proposed_action: null,
+      escalation: {
+        required: false,
+        reason_code: null,
+        summary_for_host: null,
+      },
+      escalation_required: false,
+      escalation_reason: null,
+      missing_information: ["sensitive_access_type"],
+      safety_flags: removeFallbackFlag(decision?.safety_flags),
+      confidence: Math.max(Number(decision?.confidence || 0), 0.65),
+    },
+  };
+}
+
+function missingSensitiveInformationDecision(
+  decision: any,
+  payload: any,
+  previousOutcome: string | null,
+  requestedSensitive: string,
+): GroundedDecisionBuild {
+  const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
+  const messageBody = missingSensitiveInformationMessage(language);
+
+  return {
+    override: {
+      applied: true,
+      reason: "missing_sensitive_information",
+      evidence_ids: [],
+      sufficiency: "insufficient",
+      previous_outcome: previousOutcome,
+    },
+    decision: {
+      ...decision,
+      outcome: "escalate",
+      decision: "escalate",
+      language,
+      message_body: messageBody,
+      response_text: messageBody,
+      safe_fallback_response: decision?.safe_fallback_response || messageBody,
+      intent_summary: `Missing sensitive information: ${requestedSensitive}.`,
+      detected_intents: [{
+        type: "missing_sensitive_information",
+        status: "escalated",
+      }],
+      evidence_ids: [],
+      used_source_ids: [],
+      required_capabilities: ["owner_attention"],
+      proposed_action: null,
+      escalation: {
+        required: true,
+        reason_code: "missing_sensitive_information",
+        summary_for_host: `Falta cargar ${requestedSensitive} para responder al huésped.`,
+      },
+      escalation_required: true,
+      escalation_reason: "missing_sensitive_information",
+      missing_information: [requestedSensitive],
+      safety_flags: removeFallbackFlag(decision?.safety_flags),
+      confidence: Math.max(Number(decision?.confidence || 0), 0.6),
+    },
+  };
+}
+
 function escalationLastResortDecision(
   decision: any,
   payload: any,
@@ -822,10 +1034,10 @@ function responseFromEvidenceGroup(candidates: Candidate[], language: string, gu
   const access = accessResponseFromGroup(entries, language, guestMessage);
   if (access) return access;
 
-  if (entries.length === 1) return responseFromEvidence(entries[0], language);
-
-  const recommendation = recommendationResponseFromGroup(entries);
+  const recommendation = recommendationResponseFromGroup(entries, language, guestMessage);
   if (recommendation) return sentence(recommendation);
+
+  if (entries.length === 1) return responseFromEvidence(entries[0], language);
 
   return sentence(entries.map((entry) => `${fieldDisplayLabel(entry, language)}: ${String(entry.value || "").trim()}`).filter((part) => !part.endsWith(":")).join(". "));
 }
@@ -902,10 +1114,18 @@ function fallbackLabeledResponse(label: string, value: string, language: string)
   return `${label}: ${value}.`;
 }
 
-function recommendationResponseFromGroup(entries: EvidenceCatalogEntry[]) {
+function recommendationResponseFromGroup(entries: EvidenceCatalogEntry[], language: string, guestMessage = "") {
   if (!entries.some((entry) => entry.source_type === "recommendation")) return null;
 
-  return entries.map((entry) => {
+  const recommendationEntries = entries.filter((entry) => entry.source_type === "recommendation");
+  const preference = requestedRecommendationPreference(guestMessage);
+  const missingPreference = preference && !recommendationEntries.some((entry) => {
+    const haystack = normalizeText([entry.label, entry.value, entry.category, entry.metadata.address].filter(Boolean).join(" "));
+    return looseTokens(preference).some((token) => haystack.includes(token));
+  });
+  const prefix = missingPreference ? noExactRecommendationPrefix(preference, language) : "";
+
+  const body = recommendationEntries.map((entry) => {
     const details = [
       humanLabel(entry),
       entry.value,
@@ -915,6 +1135,15 @@ function recommendationResponseFromGroup(entries: EvidenceCatalogEntry[]) {
     ].filter(Boolean).join(" - ");
     return details;
   }).filter(Boolean).join(". ");
+
+  return [prefix, body].filter(Boolean).join(" ");
+}
+
+function noExactRecommendationPrefix(preference: string, language: string) {
+  if (language === "es") return `No tengo una recomendación específica de ${preference} registrada. Opciones guardadas:`;
+  if (language === "fr") return `Je n'ai pas de recommandation spécifique pour ${preference}. Options enregistrées :`;
+  if (language === "pt") return `Não tenho uma recomendação específica de ${preference} registrada. Opções salvas:`;
+  return `I don't have a specific recommendation for ${preference} saved. Saved options:`;
 }
 
 function accessResponseFromGroup(entries: EvidenceCatalogEntry[], language: string, guestMessage = "") {
@@ -1031,6 +1260,20 @@ function clarificationMessage(evidence: EvidenceCatalogEntry[], language: string
   return `I found information related to ${labels.join(", ")}. Can you clarify which one you mean?`;
 }
 
+function sensitiveClarificationMessage(language: string) {
+  if (language === "es") return "¿Qué dato necesitás exactamente: WiFi, puerta, caja fuerte, caja de llaves u otro acceso?";
+  if (language === "fr") return "De quelle information avez-vous besoin exactement : WiFi, porte, coffre-fort, boîte à clés ou autre accès ?";
+  if (language === "pt") return "De qual dado você precisa exatamente: WiFi, porta, cofre, caixa de chaves ou outro acesso?";
+  return "Which detail do you need exactly: WiFi, door, safe, lockbox, or another access detail?";
+}
+
+function missingSensitiveInformationMessage(language: string) {
+  if (language === "es") return "No tengo esa información confirmada. Lo consulto con el anfitrión y te aviso.";
+  if (language === "fr") return "Je n'ai pas cette information confirmée. Je vérifie avec l'hôte et je vous tiens au courant.";
+  if (language === "pt") return "Não tenho essa informação confirmada. Vou consultar o anfitrião e te aviso.";
+  return "I don't have that confirmed information. I'll check with the host and get back to you.";
+}
+
 function isAmbiguousTime(intents: string[]) {
   return intents.includes("check_in_time") && intents.includes("check_out_time");
 }
@@ -1121,6 +1364,184 @@ function approvalRequired(evidence: EvidenceCatalogEntry) {
 function approvalRequest(message: string) {
   const text = normalizeText(message);
   return /\b(puedo|puede|podria|podrias|can|could|may|allowed|permitido|autoriz|aprobar|approval|antes|temprano|early|tarde|late|extender|extension|after|before|despues)\b/.test(text);
+}
+
+function evidenceCompatibilityForRequest(
+  evidence: EvidenceCatalogEntry,
+  context: {
+    requestedSensitive: string | null;
+    recommendationContext: ReturnType<typeof recommendationRequestContext>;
+  },
+) {
+  const sensitiveType = evidenceSensitiveType(evidence);
+  if (context.requestedSensitive && sensitiveEvidence(evidence)) {
+    if (sensitiveType !== context.requestedSensitive) {
+      return {
+        compatible: false,
+        score_bonus: 0,
+        semantic_match: null,
+        inferred_intent: null,
+        reason: `sensitive_type_mismatch:${context.requestedSensitive}:${sensitiveType || "unknown"}`,
+      };
+    }
+
+    return {
+      compatible: true,
+      score_bonus: 8,
+      semantic_match: "sensitive",
+      inferred_intent: canonicalIntentName(context.requestedSensitive.replace(/^property\./, "")),
+      reason: `sensitive_type_match:${context.requestedSensitive}`,
+    };
+  }
+
+  if (evidence.source_type === "recommendation" && context.recommendationContext.category) {
+    const category = normalizedRecommendationCategory(evidence.category);
+    if (!recommendationCategoryCompatible(context.recommendationContext.category, category)) {
+      return {
+        compatible: false,
+        score_bonus: 0,
+        semantic_match: null,
+        inferred_intent: null,
+        reason: `recommendation_category_mismatch:${context.recommendationContext.category}:${category || "unknown"}`,
+      };
+    }
+  }
+
+  return {
+    compatible: true,
+    score_bonus: evidence.source_type === "recommendation" && context.recommendationContext.category ? 4 : 0,
+    semantic_match: evidence.source_type === "recommendation" && context.recommendationContext.category ? "recommendation" : null,
+    inferred_intent: evidence.source_type === "recommendation" ? recommendationIntentForCategory(context.recommendationContext.category || evidence.category) : null,
+    reason: null,
+  };
+}
+
+function requestedSensitiveType(message: string) {
+  const text = normalizeText(message);
+  const messageTokens = looseTokens(message);
+  const hasSecretLanguage = sensitiveSecretLanguage(messageTokens, text);
+  if (!hasSecretLanguage) return null;
+
+  const matches = sensitiveTypeMatches(messageTokens, text);
+  if (matches.length === 1) return matches[0].definition.type;
+  if (matches.length > 1 && matches[0].score > matches[1].score) return matches[0].definition.type;
+  return null;
+}
+
+function ambiguousSensitiveRequest(message: string) {
+  const text = normalizeText(message);
+  const messageTokens = looseTokens(message);
+  if (!sensitiveSecretLanguage(messageTokens, text)) return false;
+  if (/\b(acceso|entrada|entrar|ingresar|ingreso|access|entry)\b/.test(text)) return false;
+
+  const matches = sensitiveTypeMatches(messageTokens, text);
+  return matches.length !== 1;
+}
+
+function sensitiveSecretLanguage(messageTokens: string[], normalizedText: string) {
+  return SENSITIVE_TYPE_DEFINITIONS.some((definition) => intersects(messageTokens, definition.secretTerms)) ||
+    /\b(codigo|code|clave|contrasena|contraseña|password|pin|donde esta|ubicacion)\b/.test(normalizedText);
+}
+
+function sensitiveTypeMatches(messageTokens: string[], normalizedText: string) {
+  return SENSITIVE_TYPE_DEFINITIONS
+    .map((definition) => {
+      const matchedTerms = definition.terms.filter((term) => messageTokens.includes(term));
+      let score = matchedTerms.length;
+      if (definition.type === "property.safe_code" && /\bcaja fuerte\b|\bsafe\b/.test(normalizedText)) score += 3;
+      if (definition.type === "property.lockbox_code" && /\bcaja de llaves\b|\blockbox\b|\bkeybox\b/.test(normalizedText)) score += 3;
+      if (definition.type === "property.building_access_code" && /\bedificio\b|\bbuilding\b/.test(normalizedText)) score += 2;
+      if (definition.type === "property.door_code" && /\bpuerta\b|\bdoor\b/.test(normalizedText)) score += 2;
+      if (definition.type === "property.gate_code" && /\bporton\b|\bportón\b|\bgate\b/.test(normalizedText)) score += 2;
+      return { definition, score };
+    })
+    .filter((match) => match.score > 0)
+    .sort((left, right) => right.score - left.score);
+}
+
+function evidenceSensitiveType(evidence: EvidenceCatalogEntry) {
+  const metadataType = typeof evidence.metadata?.sensitive_type === "string" ? evidence.metadata.sensitive_type : null;
+  if (metadataType) return canonicalSensitiveType(metadataType);
+
+  const field = evidenceField(evidence);
+  const evidenceId = String(evidence.evidence_id || "");
+  return canonicalSensitiveType(evidenceId) || canonicalSensitiveType(field);
+}
+
+function canonicalSensitiveType(value: unknown) {
+  const normalized = String(value || "")
+    .replace(/^property[._:-]/, "property.")
+    .replace(/^property_fact[:._-]/, "property.")
+    .replace(/^sensitive_/, "property.")
+    .replace(/_/g, "_");
+  if (normalized === "property.wifi_password") return normalized;
+  if (normalized === "property.wifi_name") return normalized;
+  const found = SENSITIVE_TYPE_DEFINITIONS.find((definition) => normalized === definition.type || normalized.endsWith(`.${definition.type.replace("property.", "")}`));
+  return found?.type || null;
+}
+
+function recommendationRequestContext(message: string, payload: any) {
+  const categoryFromMessage = requestedRecommendationCategory(message);
+  if (categoryFromMessage) {
+    return {
+      category: categoryFromMessage,
+      preference: requestedRecommendationPreference(message),
+    };
+  }
+
+  if (neutralRecommendationPreference(message, payload)) {
+    return {
+      category: requestedRecommendationCategory(conversationHistoryText(payload?.conversation_history)),
+      preference: null,
+    };
+  }
+
+  return {
+    category: null,
+    preference: null,
+  };
+}
+
+function requestedRecommendationCategory(message: string) {
+  const messageTokens = looseTokens(message);
+  for (const [category, aliases] of Object.entries(RECOMMENDATION_CATEGORY_ALIASES)) {
+    if (intersects(messageTokens, aliases)) return category;
+  }
+  return queryIntentCategories(message).includes("recommendation") ? "other" : null;
+}
+
+function requestedRecommendationPreference(message: string) {
+  const rawTokens = looseTokens(message);
+  const preferenceTokens = rawTokens.filter((token) => !STOPWORDS.has(token) && !GENERIC_RECOMMENDATION_TERMS.has(token));
+  return unique(preferenceTokens).slice(0, 3).join(" ").trim() || null;
+}
+
+function normalizedRecommendationCategory(category: unknown) {
+  const normalized = normalizeText(String(category || ""));
+  if (["food", "dining", "comida"].includes(normalized)) return "restaurant";
+  if (["grocery", "groceries", "market", "mercado", "almacen"].includes(normalized)) return "supermarket";
+  if (["coffee", "breakfast", "desayuno"].includes(normalized)) return "cafe";
+  if (["activities", "activity", "visit"].includes(normalized)) return "attraction";
+  return normalized || null;
+}
+
+function recommendationCategoryCompatible(requested: string | null, evidenceCategory: string | null) {
+  if (!requested || requested === "other") return true;
+  const requestedCategory = normalizedRecommendationCategory(requested);
+  const category = normalizedRecommendationCategory(evidenceCategory);
+  if (!requestedCategory || !category) return true;
+  return requestedCategory === category;
+}
+
+function recommendationIntentForCategory(category: unknown) {
+  const normalized = normalizedRecommendationCategory(category);
+  if (normalized === "restaurant") return "restaurant_recommendation";
+  if (normalized === "cafe") return "cafe_recommendation";
+  if (normalized === "supermarket") return "supermarket_recommendation";
+  if (normalized === "pharmacy") return "pharmacy_recommendation";
+  if (normalized === "transport") return "transport_recommendation";
+  if (normalized === "attraction") return "nearby_places";
+  return "local_recommendations";
 }
 
 function evidenceUsableForGuest(evidence: EvidenceCatalogEntry) {
@@ -1332,6 +1753,8 @@ function removeFallbackFlag(flags: unknown) {
 function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogEntry[]): CandidateAudit[] {
   const queryTokens = tokens(message);
   const queryCategories = queryIntentCategories(message);
+  const recommendationContext = recommendationRequestContext(message, null);
+  const requestedSensitive = requestedSensitiveType(message);
   return evidenceCatalog
     .map((evidence) => {
       const debug = queryTokens.length === 0 && queryCategories.length === 0
@@ -1344,6 +1767,14 @@ function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogE
             inference_reason: null,
           }
         : scoreEvidenceWithDebug(queryTokens, evidence, queryCategories);
+      const compatibility = evidenceCompatibilityForRequest(evidence, {
+        requestedSensitive,
+        recommendationContext,
+      });
+      const score = compatibility.compatible ? debug.score + compatibility.score_bonus : 0;
+      const reason = compatibility.compatible
+        ? (score > 0 ? "included_score_positive" : `excluded_${debug.reason}`)
+        : `excluded_${compatibility.reason}`;
 
       return {
         evidence_id: evidence.evidence_id,
@@ -1352,13 +1783,13 @@ function rankedCandidateAudit(message: string, evidenceCatalog: EvidenceCatalogE
         value: evidence.value ?? null,
         content: evidence.text || null,
         excerpt: String(evidence.metadata?.excerpt || evidence.text || "").slice(0, 500) || null,
-        score: debug.score,
+        score,
         matched_terms: debug.matched_terms,
-        semantic_matches: debug.semantic_matches,
+        semantic_matches: compatibility.semantic_match ? unique(debug.semantic_matches.concat(compatibility.semantic_match)) : debug.semantic_matches,
         source_type: evidence.source_type || null,
-        reason_included_or_excluded: debug.score > 0 ? "included_score_positive" : `excluded_${debug.reason}`,
-        inferred_intent: debug.inferred_intent,
-        inference_reason: debug.inference_reason,
+        reason_included_or_excluded: reason,
+        inferred_intent: compatibility.inferred_intent || debug.inferred_intent,
+        inference_reason: compatibility.reason || debug.inference_reason,
       };
     })
     .sort((left, right) => right.score - left.score);

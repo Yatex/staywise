@@ -133,6 +133,72 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes provider.sent_messages.last.fetch(:body), "le aviso al anfitrión"
   end
 
+  test "guest request is created even when ai still needs details" do
+    result = with_ai_decision(ai_guest_request_decision(
+      action_type: "none",
+      intent_type: "request_food_or_drink",
+      message_body: "Perfecto, registro tu pedido. ¿Me confirmás qué vino preferís?",
+      intent_status: "needs_clarification"
+    )) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000026",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} quiero un vino"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    guest_request = result.fetch(:guest_request)
+
+    assert_nil result.fetch(:alert)
+    assert_equal "food_or_drink", guest_request.category
+    assert_equal "pending", guest_request.status
+    assert_equal "15550000026 · Pedido", guest_request.title
+  end
+
+  test "later clarification updates existing open pedido without duplicate" do
+    from = "whatsapp:+15550000027"
+    first = with_ai_decision(ai_guest_request_decision(
+      action_type: "none",
+      intent_type: "request_food_or_drink",
+      message_body: "Perfecto, registro tu pedido. ¿Me confirmás qué vino preferís?",
+      intent_status: "needs_clarification"
+    )) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} quiero un vino"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    assert_no_difference -> { GuestRequest.count } do
+      with_ai_decision(ai_guest_request_decision(
+        action_type: "none",
+        intent_type: "request_food_or_drink",
+        message_body: "Perfecto, sumo ese detalle al pedido.",
+        intent_status: "needs_clarification"
+      )) do
+        Whatsapp::IncomingMessageHandler.new(
+          {
+            "From" => from,
+            "To" => "whatsapp:+15550009999",
+            "Body" => "tinto por favor"
+          },
+          provider: Whatsapp::Providers::NullProvider.new
+        ).call
+      end
+    end
+
+    guest_request = first.fetch(:guest_request).reload
+    assert_equal 1, guest_request.metadata.fetch("updates").length
+    assert_includes guest_request.metadata.fetch("updates").first.fetch("body"), "tinto"
+  end
+
   test "extra bed request creates pedido" do
     result = with_ai_decision(ai_guest_request_decision(action_type: "request_extra_bed", intent_type: "request_extra_bed", message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")) do
       Whatsapp::IncomingMessageHandler.new(
@@ -1029,6 +1095,50 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal guest_result.fetch(:conversation).messages.where(sender: "owner").last, suggestion.source_message
   end
 
+  test "owner answer to missing sensitive information stores encrypted datum instead of faq" do
+    owner_phone = "+15559990007"
+    @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
+    guest = @account.guests.create!(phone_number: "+15550000128", property: @property)
+    conversation = guest.conversations.create!(property: @property, status: "escalated")
+    original_message = conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "Cuál es la contraseña de la caja fuerte?"
+    )
+    alert = conversation.alerts.create!(
+      property: @property,
+      guest: guest,
+      original_message: original_message,
+      alert_type: "missing_sensitive_information",
+      title: "Falta información · Código de caja fuerte",
+      description: "Cuál es la contraseña de la caja fuerte?",
+      status: "in_progress",
+      metadata: {
+        "requested_sensitive_type" => "property.safe_code",
+        "missing_information" => ["property.safe_code"]
+      }
+    )
+    @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_answer")
+    provider = RecordingProvider.new
+
+    assert_no_difference -> { @property.faqs.count } do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:#{owner_phone}",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "SAFE-7788"
+        },
+        provider: provider
+      ).call
+    end
+
+    datum = @property.sensitive_data.find_by!(kind: "safe_code")
+    assert_equal "SAFE-7788", datum.value
+    assert_equal alert, datum.source_alert
+    assert_equal "resolved", alert.reload.status
+    assert_equal 1, conversation.messages.where(sender: "owner").count
+  end
+
   test "owner whatsapp translates guest question to owner language and owner answer back to guest language" do
     @account.update!(
       ai_preferred_language: "es",
@@ -1450,13 +1560,13 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     )
   end
 
-  def ai_guest_request_decision(action_type:, intent_type:, message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")
+  def ai_guest_request_decision(action_type:, intent_type:, message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.", intent_status: "requires_host_approval")
     AI::DecisionResult.from_hash(
       decision: "propose_action",
       language: "es",
       message_body: message_body,
       intent_summary: "Pedido del huésped",
-      detected_intents: [{ type: "guest_request", status: "requires_host_approval" }, { type: intent_type, status: "requires_host_approval" }],
+      detected_intents: [{ type: "guest_request", status: intent_status }, { type: intent_type, status: intent_status }],
       evidence_ids: [],
       required_capabilities: ["owner_attention"],
       proposed_action: { type: action_type, payload: { title: "Pedido del huésped" } },

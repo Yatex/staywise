@@ -61,7 +61,11 @@ module GuestRequests
       category = request_category
       return unless category
 
-      existing_request || create_request(category)
+      if (request = existing_request(category))
+        update_request!(request)
+      else
+        create_request(category)
+      end
     end
 
     private
@@ -71,8 +75,6 @@ module GuestRequests
       return REQUEST_ACTION_TYPES[action_type] if REQUEST_ACTION_TYPES.key?(action_type)
 
       detected_intents.filter_map do |intent|
-        next unless request_intent_status?(intent["status"])
-
         INTENT_CATEGORIES[intent["type"].to_s]
       end.first
     end
@@ -81,12 +83,38 @@ module GuestRequests
       @decision.detected_intents.map(&:to_h).map(&:stringify_keys)
     end
 
-    def request_intent_status?(status)
-      status.to_s.in?(%w[requires_host_approval escalated])
+    def existing_request(category)
+      GuestRequest.find_by(message: @guest_message) ||
+        @conversation.guest_requests.open.where(
+          account: @conversation.property.account,
+          property: @conversation.property,
+          guest: @conversation.guest,
+          category: category
+        ).where("created_at >= ?", 24.hours.ago).order(updated_at: :desc).first
     end
 
-    def existing_request
-      GuestRequest.find_by(message: @guest_message)
+    def update_request!(request)
+      return request if request.message_id == @guest_message.id
+
+      updates = Array(request.metadata["updates"])
+      updates << {
+        "message_id" => @guest_message.id,
+        "body" => request_text,
+        "received_at" => @guest_message.created_at.iso8601,
+        "changed_field" => inferred_update_field
+      }.compact
+
+      request.update!(
+        ai_decision_log: request.ai_decision_log || latest_ai_trace,
+        ai_summary: [request.ai_summary, ai_summary].compact_blank.uniq.join("\n"),
+        structured_details: request.structured_details.merge(structured_details),
+        metadata: request.metadata.merge(
+          "updates" => updates,
+          "last_update_message_id" => @guest_message.id,
+          "last_update_at" => Time.current.iso8601
+        )
+      )
+      request
     end
 
     def create_request(category)
@@ -105,13 +133,16 @@ module GuestRequests
         ai_summary: ai_summary,
         status: "pending",
         priority: priority_for(category),
+        requires_owner_approval: requires_owner_approval?(category),
+        structured_details: structured_details,
         source_channel: @guest_message.channel.presence || "whatsapp",
         metadata: {
           "source" => "ai_guest_request",
           "decision" => @decision.outcome,
           "proposed_action" => @decision.proposed_action,
           "detected_intents" => @decision.detected_intents,
-          "evidence_ids" => @decision.evidence_ids
+          "evidence_ids" => @decision.evidence_ids,
+          "approval_required" => requires_owner_approval?(category)
         }.compact
       )
     end
@@ -122,9 +153,7 @@ module GuestRequests
     end
 
     def request_title(category)
-      action_title.presence ||
-        @decision.alert_title.presence ||
-        TITLE_BY_CATEGORY.fetch(category, "Pedido del huésped")
+      "#{@conversation.guest.phone_number.to_s.delete_prefix("+")} · Pedido"
     end
 
     def action_title
@@ -150,6 +179,30 @@ module GuestRequests
 
     def priority_for(category)
       category.in?(%w[early_checkin late_checkout reservation_change]) ? "high" : "normal"
+    end
+
+    def requires_owner_approval?(category)
+      category.in?(GuestRequest::APPROVAL_CATEGORIES) ||
+        @decision.required_capabilities.include?("owner_approval") ||
+        @decision.required_capabilities.include?("owner_attention") ||
+        truthy?(@decision.proposed_action.to_h["requires_approval"]) ||
+        @decision.escalation_required
+    end
+
+    def structured_details
+      payload = @decision.proposed_action.to_h["payload"]
+      payload.is_a?(Hash) ? payload.stringify_keys : {}
+    end
+
+    def inferred_update_field
+      return "guest_clarification" if @decision.outcome == "ask_clarifying_question"
+      return "owner_approval" if requires_owner_approval?(request_category)
+
+      "details"
+    end
+
+    def truthy?(value)
+      value == true || value.to_s == "true"
     end
   end
 end

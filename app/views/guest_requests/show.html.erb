@@ -28,6 +28,10 @@
         <dd class="font-medium text-slate-900"><%= enum_label(@guest_request.source_channel) %></dd>
       </div>
       <div>
+        <dt class="text-slate-500">Aprobación</dt>
+        <dd class="font-medium text-slate-900"><%= @guest_request.requires_owner_approval? ? "Requiere aprobación del propietario" : "No marcada como requerida" %></dd>
+      </div>
+      <div>
         <dt class="text-slate-500">Creado</dt>
         <dd class="font-medium text-slate-900"><%= local_long_datetime(@guest_request.created_at) %></dd>
       </div>
@@ -42,6 +46,35 @@
       <p class="text-sm font-semibold text-slate-900">Resumen de Ayla</p>
       <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600"><%= @guest_request.ai_summary.presence || "Sin resumen." %></p>
     </div>
+
+    <% if @guest_request.structured_details.present? %>
+      <div class="mt-4 rounded-lg bg-slate-50 p-4">
+        <p class="text-sm font-semibold text-slate-900">Detalles estructurados</p>
+        <dl class="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+          <% @guest_request.structured_details.each do |key, value| %>
+            <div>
+              <dt class="text-slate-500"><%= key.to_s.humanize %></dt>
+              <dd class="font-medium text-slate-900"><%= value.presence || "Pendiente" %></dd>
+            </div>
+          <% end %>
+        </dl>
+      </div>
+    <% end %>
+
+    <% updates = Array(@guest_request.metadata["updates"]) %>
+    <% if updates.present? %>
+      <div class="mt-4 rounded-lg bg-slate-50 p-4">
+        <p class="text-sm font-semibold text-slate-900">Mensajes relacionados posteriores</p>
+        <div class="mt-3 space-y-3">
+          <% updates.each do |update| %>
+            <div class="rounded-md bg-white p-3 ring-1 ring-slate-200">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= update["changed_field"].presence || "Detalle" %> · <%= update["received_at"] %></p>
+              <p class="mt-1 whitespace-pre-line text-sm text-slate-700"><%= update["body"] %></p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   </section>
 
   <section class="<%= card_class %> p-5">

@@ -21,6 +21,7 @@ class Property < ApplicationRecord
   belongs_to :account
   has_many :knowledge_blocks, dependent: :destroy
   has_many :recommendations, dependent: :destroy
+  has_many :sensitive_data, class_name: "PropertySensitiveDatum", dependent: :destroy
   has_many :faqs, dependent: :destroy
   has_many :guests, dependent: :nullify
   has_many :conversations, dependent: :destroy

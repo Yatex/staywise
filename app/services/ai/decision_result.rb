@@ -154,6 +154,8 @@ module AI
           "complaint"
         when "booking_change", "refund", "access"
           "owner_approval_required"
+        when "missing_sensitive_information"
+          "missing_sensitive_information"
         else
           escalation_required ? "unknown_question" : nil
         end
@@ -167,6 +169,7 @@ module AI
         "complaint" => "Queja",
         "late_checkout_request" => "Solicitud de late checkout",
         "owner_approval_required" => "Requiere aprobación del propietario",
+        "missing_sensitive_information" => missing_sensitive_alert_title,
         "unknown_question" => "Pregunta sin configurar"
       }.fetch(alert_type.to_s, "El huésped necesita atención del propietario")
     end
@@ -180,8 +183,26 @@ module AI
         "complaint" => "Revisá el problema, acusá recibo de la queja y definí los próximos pasos.",
         "late_checkout_request" => "Confirmá disponibilidad y si aplica un costo antes de aprobar.",
         "owner_approval_required" => "Revisá la solicitud antes de confirmar algo al huésped.",
+        "missing_sensitive_information" => "Respondé con el dato correcto para guardarlo de forma segura y enviarlo al huésped.",
         "unknown_question" => "Agregá la respuesta a la guía o FAQ de la propiedad y respondé al huésped."
       }.fetch(alert_type.to_s, "Revisá y respondé desde la conversación.")
+    end
+
+    def missing_sensitive_alert_title
+      labels = {
+        "property.safe_code" => "Código de caja fuerte",
+        "property.lockbox_code" => "Código de caja de llaves",
+        "property.door_code" => "Código de puerta",
+        "property.gate_code" => "Código de portón",
+        "property.alarm_code" => "Código de alarma",
+        "property.building_access_code" => "Código de acceso al edificio",
+        "property.key_location" => "Ubicación de llaves",
+        "property.device_password" => "Contraseña de dispositivo"
+      }
+      missing = missing_information.find { |item| labels.key?(item.to_s) }
+
+      ["Falta información", labels.fetch(missing.to_s, nil)].compact.join(" · ").presence ||
+        "Falta información sensible"
     end
   end
 end

@@ -6,6 +6,7 @@ class Alert < ApplicationRecord
     emergency
     complaint
     owner_approval_required
+    missing_sensitive_information
     unknown_question
     other
   ].freeze

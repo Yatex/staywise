@@ -291,6 +291,12 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
       category: "cafe",
       description: "Good breakfast nearby."
     )
+    inactive = @property.recommendations.create!(
+      name: "Cafe Cerrado",
+      category: "cafe",
+      description: "No usar.",
+      active: false
+    )
 
     post "/internal/ai/tools/approved_recommendations", params: {
       decision_context_id: @decision_context_id,
@@ -301,6 +307,7 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_equal "recommendation:#{recommendation.id}", body.first["source_id"]
     assert_equal "recommendation.#{recommendation.id}", body.first["evidence_id"]
+    assert_not_includes body.map { |item| item["evidence_id"] }, "recommendation.#{inactive.id}"
   end
 
   test "property brain includes local property recommendations with evidence ids" do
@@ -402,5 +409,24 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, denied["authorized"]
     assert_equal "guest_not_authorized", denied["reason"]
     assert_empty denied["sources"]
+  end
+
+  test "sensitive access info includes structured sensitive data with canonical type" do
+    @property.sensitive_data.create!(kind: "safe_code", value: "SAFE-1234")
+
+    post "/internal/ai/tools/sensitive_access_info", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Cuál es la clave de la caja fuerte?"
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    source = body.fetch("sources").find { |item| item["id"] == "sensitive_safe_code" }
+    assert source
+    assert_equal "property.safe_code", source["evidence_id"]
+    assert_equal "safe_code", source["field"]
+    assert_equal "property.safe_code", source["sensitive_type"]
+    assert_equal true, source["authorized"]
+    assert_equal "SAFE-1234", source["content"]
   end
 end

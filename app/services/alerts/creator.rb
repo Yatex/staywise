@@ -7,6 +7,7 @@ module Alerts
       "late_checkout_request" => "medium",
       "missing_item" => "medium",
       "owner_approval_required" => "medium",
+      "missing_sensitive_information" => "medium",
       "unknown_question" => "medium"
     }.freeze
 
@@ -40,8 +41,11 @@ module Alerts
         metadata: {
           "source" => "ai_escalation",
           "decision" => @decision.outcome,
+          "reason_code" => @decision.escalation&.fetch("reason_code", nil),
           "evidence_ids" => @decision.evidence_ids,
-          "detected_intents" => @decision.detected_intents
+          "detected_intents" => @decision.detected_intents,
+          "missing_information" => @decision.missing_information,
+          "requested_sensitive_type" => requested_sensitive_type
         }.compact
       )
 
@@ -93,6 +97,12 @@ module Alerts
       end
 
       @decision.alert_title.presence || "El huésped necesita atención del propietario"
+    end
+
+    def requested_sensitive_type
+      return unless @decision.alert_type.to_s == "missing_sensitive_information"
+
+      @decision.missing_information.find { |item| item.to_s.start_with?("property.") }
     end
 
     def clean_guest_question(text)

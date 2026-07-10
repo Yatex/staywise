@@ -15,6 +15,7 @@ class Account < ApplicationRecord
     "emergency" => true,
     "complaint" => true,
     "owner_approval_required" => true,
+    "missing_sensitive_information" => true,
     "unknown_question" => true
   }.freeze
   DEFAULT_AUTOMATION_SETTINGS = {

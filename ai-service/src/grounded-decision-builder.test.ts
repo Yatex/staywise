@@ -414,6 +414,32 @@ test("authorized sensitive access info answers wifi password question", () => {
   assert.equal(result.decision.message_body, "Contraseña de WiFi: Pippa123.");
 });
 
+test("safe password request does not use wifi password evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cuál es la contraseña de la caja fuerte?",
+  }, sensitiveAccessCatalog(true));
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.escalation.reason_code, "missing_sensitive_information");
+  assert.deepEqual(result.decision.missing_information, ["property.safe_code"]);
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.doesNotMatch(result.decision.message_body, /Pippa123/);
+  const ranked = result.decision.audit.grounded_decision_builder.ranked_candidates;
+  assert.ok(ranked.some((candidate: any) => String(candidate.reason_included_or_excluded).includes("sensitive_type_mismatch")));
+});
+
+test("ambiguous code request asks which sensitive access detail is needed", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "cuál es el código?",
+  }, sensitiveAccessCatalog(true));
+
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.match(result.decision.message_body, /Qué dato necesitás/);
+  assert.doesNotMatch(result.decision.message_body, /Pippa123/);
+});
+
 test("unauthorized sensitive access info does not reveal WiFi details", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "me pasás la clave del wifi?",
@@ -859,6 +885,52 @@ test("restaurant request with saved recommendations replies without clarificatio
   assert.match(result.decision.message_body, /Pasta Centro/);
   assert.doesNotMatch(result.decision.message_body, /prefer|aclar/i);
   assert.equal(result.decision.audit.grounded_decision_builder.clarification_attempts.count, 0);
+});
+
+test("restaurant request does not use supermarket recommendation as restaurant evidence", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Restaurantes para comer",
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:41",
+      evidence_id: "recommendation.41",
+      label: "Mercado Verde",
+      field: "Mercado Verde",
+      value: "Supermercado para compras rápidas.",
+      category: "supermarket",
+      address: "Mercado 41",
+    },
+  ]));
+
+  assert.notEqual(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.doesNotMatch(result.decision.message_body, /Mercado Verde/);
+  assert.ok(result.decision.audit.grounded_decision_builder.ranked_candidates.some((candidate: any) =>
+    String(candidate.reason_included_or_excluded).includes("recommendation_category_mismatch"),
+  ));
+});
+
+test("italian restaurant request offers saved restaurants without inventing italian match", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Tenés un restaurante italiano?",
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:51",
+      evidence_id: "recommendation.51",
+      label: "La Barra",
+      field: "La Barra",
+      value: "Parrilla a tres cuadras.",
+      category: "restaurant",
+      address: "Calle Falsa 123",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids, ["recommendation.51"]);
+  assert.match(result.decision.message_body, /No tengo una recomendación específica de italiano registrada/);
+  assert.match(result.decision.message_body, /La Barra/);
 });
 
 test("neutral preference after recommendation question chooses saved recommendations instead of asking again", () => {
