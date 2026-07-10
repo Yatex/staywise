@@ -33,6 +33,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, "Guía del huésped"
     assert_select "section#alerts", count: 0
     assert_select "section#conversations", count: 0
+    assert_includes @response.body, "Eliminar propiedad"
 
     get edit_property_path(@property)
     assert_response :success
@@ -45,6 +46,56 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     get new_property_knowledge_block_path(@property)
     assert_response :success
     assert_includes @response.body, "Link de YouTube opcional"
+  end
+
+  test "deleting property hides it from listings without removing the row" do
+    conversation = @account.guests.create!(phone_number: "+15550202020", property: @property)
+      .conversations
+      .create!(property: @property, status: "active")
+
+    assert_no_difference -> { Property.with_deleted.count } do
+      delete property_path(@property)
+    end
+
+    assert_redirected_to properties_path
+    assert_equal "Propiedad eliminada.", flash[:notice]
+    assert Property.with_deleted.find(@property.id).deleted?
+    assert_nil Property.find_by(id: @property.id)
+    assert_equal conversation, Conversation.find(conversation.id)
+
+    follow_redirect!
+    assert_response :success
+    assert_not_includes @response.body, "Step Apartment"
+  end
+
+  test "deleting an already deleted property is idempotent" do
+    @property.soft_delete!
+
+    assert_no_difference -> { Property.with_deleted.count } do
+      delete property_path(@property)
+    end
+
+    assert_redirected_to properties_path
+    assert_equal "Propiedad eliminada.", flash[:notice]
+  end
+
+  test "deleted property cannot be selected as copy source" do
+    deleted_source = @account.properties.create!(name: "Deleted Source", wifi_name: "Deleted WiFi")
+    deleted_source.soft_delete!
+
+    get new_property_path
+
+    assert_response :success
+    assert_not_includes @response.body, "Deleted Source"
+
+    post copy_content_property_path(@property), params: {
+      source_property_id: deleted_source.id,
+      content_types: ["settings"]
+    }
+
+    assert_redirected_to property_path(@property)
+    assert_equal "Elegí una propiedad desde donde copiar.", flash[:alert]
+    assert_nil @property.reload.wifi_name
   end
 
   test "new appliance guide preselects appliance category" do

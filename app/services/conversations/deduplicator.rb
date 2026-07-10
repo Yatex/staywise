@@ -2,7 +2,8 @@ require "set"
 
 module Conversations
   class Deduplicator
-    INDEX_NAME = "index_conversations_on_guest_id_and_channel_unique".freeze
+    LEGACY_INDEX_NAME = "index_conversations_on_guest_id_and_channel_unique".freeze
+    INDEX_NAME = "index_conversations_on_channel_and_channel_participant".freeze
     DEFAULT_CHANNEL = "whatsapp".freeze
 
     Result = Struct.new(:dry_run, :groups, :merged_groups, :moved_counts, :possible_duplicate_messages, :deleted_conversation_ids, keyword_init: true) do
@@ -45,24 +46,29 @@ module Conversations
       rows = Conversation
         .joins(:guest)
         .select(
-          "guests.account_id AS account_id",
-          "conversations.guest_id AS guest_id",
+          "COALESCE(NULLIF(conversations.channel_participant, ''), NULLIF(guests.phone_number, ''), 'guest:' || conversations.guest_id::text) AS normalized_participant",
           "COALESCE(NULLIF(conversations.channel, ''), '#{DEFAULT_CHANNEL}') AS normalized_channel",
           "COUNT(*) AS conversations_count"
         )
-        .group("guests.account_id", "conversations.guest_id", "COALESCE(NULLIF(conversations.channel, ''), '#{DEFAULT_CHANNEL}')")
+        .group(
+          "COALESCE(NULLIF(conversations.channel_participant, ''), NULLIF(guests.phone_number, ''), 'guest:' || conversations.guest_id::text)",
+          "COALESCE(NULLIF(conversations.channel, ''), '#{DEFAULT_CHANNEL}')"
+        )
         .having("COUNT(*) > 1")
 
       rows.map do |row|
         conversations = Conversation
-          .where(guest_id: row.guest_id)
-          .where("COALESCE(NULLIF(channel, ''), ?) = ?", DEFAULT_CHANNEL, row.normalized_channel)
-          .includes(:messages, :property)
+          .joins(:guest)
+          .where(
+            "COALESCE(NULLIF(conversations.channel_participant, ''), NULLIF(guests.phone_number, ''), 'guest:' || conversations.guest_id::text) = ?",
+            row.normalized_participant
+          )
+          .where("COALESCE(NULLIF(conversations.channel, ''), ?) = ?", DEFAULT_CHANNEL, row.normalized_channel)
+          .includes(:messages, :property, :guest)
           .to_a
 
         {
-          account_id: row.account_id,
-          guest_id: row.guest_id,
+          channel_participant: row.normalized_participant,
           channel: row.normalized_channel,
           conversation_ids: conversations.map(&:id),
           conversations: conversations
@@ -79,11 +85,11 @@ module Conversations
       latest = conversations.max_by { |conversation| [conversation.updated_at || Time.at(0), conversation.id] }
 
       summary = {
-        account_id: group.fetch(:account_id),
-        guest_id: group.fetch(:guest_id),
+        channel_participant: group.fetch(:channel_participant),
         channel: group.fetch(:channel),
         canonical_id: canonical.id,
         duplicate_ids: duplicates.map(&:id),
+        current_guest_id: latest.guest_id,
         current_property_id: latest.property_id
       }
 
@@ -91,7 +97,13 @@ module Conversations
       return summary.merge(dry_run: true) if @dry_run
 
       Conversation.transaction do
-        canonical.update_columns(property_id: latest.property_id, channel: group.fetch(:channel), updated_at: Time.current)
+        canonical.update_columns(
+          guest_id: latest.guest_id,
+          property_id: latest.property_id,
+          channel: group.fetch(:channel),
+          channel_participant: group.fetch(:channel_participant),
+          updated_at: Time.current
+        )
         duplicates.each { |duplicate| merge_duplicate!(canonical, duplicate) }
         canonical.update_columns(last_message_at: canonical.messages.maximum(:created_at), updated_at: Time.current)
       end

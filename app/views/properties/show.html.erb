@@ -22,6 +22,11 @@
           <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
         <% end %>
         <%= link_to "Editar propiedad", edit_property_path(@property), class: secondary_button_class %>
+        <%= button_to "Eliminar propiedad",
+          property_path(@property),
+          method: :delete,
+          class: "rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50",
+          form: { data: { turbo_confirm: "¿Seguro que querés eliminar esta propiedad?" } } %>
         <%= link_to "Agregar electrodoméstico", new_property_knowledge_block_path(@property, category: "appliances"), class: primary_button_class %>
       </div>
     </div>

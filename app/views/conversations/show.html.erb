@@ -8,7 +8,7 @@
         <div>
           <h2 class="text-xl font-semibold text-slate-950"><%= conversation_display_title(@conversation) %></h2>
           <div class="mt-2 flex flex-wrap items-center gap-2">
-            <span class="<%= property_tag_class %>"><%= @conversation.property.display_name %></span>
+            <span class="<%= property_tag_class %>"><%= (@display_property || @conversation.property).display_name %></span>
             <span class="text-sm text-slate-500">WhatsApp</span>
           </div>
         </div>

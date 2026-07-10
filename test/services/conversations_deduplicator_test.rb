@@ -2,6 +2,7 @@ require "test_helper"
 
 class ConversationsDeduplicatorTest < ActiveSupport::TestCase
   INDEX_NAME = Conversations::Deduplicator::INDEX_NAME
+  LEGACY_INDEX_NAME = Conversations::Deduplicator::LEGACY_INDEX_NAME
 
   setup do
     @connection = ActiveRecord::Base.connection
@@ -14,13 +15,15 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
     guest.conversations.create!(property: property, channel: "whatsapp")
 
     assert_raises ActiveRecord::RecordNotUnique do
-      Conversation.insert_all!([
-        conversation_attributes(guest: guest, property: property, channel: "whatsapp")
-      ])
+      Conversation.transaction(requires_new: true) do
+        Conversation.insert_all!([
+          conversation_attributes(guest: guest, property: property, channel: "whatsapp")
+        ])
+      end
     end
   end
 
-  test "same phone in different accounts can have separate conversations" do
+  test "same phone in different accounts cannot create duplicate whatsapp conversations" do
     account_one = Account.create!(name: "Account One")
     account_two = Account.create!(name: "Account Two")
     property_one = account_one.properties.create!(name: "Apartment One")
@@ -29,9 +32,16 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
     guest_two = account_two.guests.create!(phone_number: "+15556660002", property: property_two)
 
     conversation_one = guest_one.conversations.create!(property: property_one, channel: "whatsapp")
-    conversation_two = guest_two.conversations.create!(property: property_two, channel: "whatsapp")
 
-    assert_not_equal conversation_one.id, conversation_two.id
+    assert_raises ActiveRecord::RecordNotUnique do
+      Conversation.transaction(requires_new: true) do
+        Conversation.insert_all!([
+          conversation_attributes(guest: guest_two, property: property_two, channel: "whatsapp")
+        ])
+      end
+    end
+
+    assert_equal conversation_one, Conversation.find_by(channel: "whatsapp", channel_participant: guest_one.phone_number)
   end
 
   test "deduplicate merges duplicate conversations and is idempotent" do
@@ -78,13 +88,13 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
       dry_run = Conversations::Deduplicator.new(dry_run: true, logger: nil).call
 
       assert_equal 1, dry_run.duplicate_group_count
-      assert_equal 2, Conversation.where(guest: guest, channel: "whatsapp").count
+      assert_equal 2, Conversation.where(channel: "whatsapp", channel_participant: guest.phone_number).count
 
       result = Conversations::Deduplicator.new(dry_run: false, logger: nil).call
       canonical = Conversation.find(first.id)
 
       assert_equal 1, result.duplicate_group_count
-      assert_equal 1, Conversation.where(guest: guest, channel: "whatsapp").count
+      assert_equal 1, Conversation.where(channel: "whatsapp", channel_participant: guest.phone_number).count
       assert_equal current_property, canonical.reload.property
       assert_equal ["mensaje uno", "respuesta uno", "mensaje dos"], canonical.messages.order(:created_at, :id).pluck(:body)
       assert_equal canonical, alert.reload.conversation
@@ -95,7 +105,7 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
       second_run = Conversations::Deduplicator.new(dry_run: false, logger: nil).call
 
       assert_equal 0, second_run.duplicate_group_count
-      assert_equal 1, Conversation.where(guest: guest, channel: "whatsapp").count
+      assert_equal 1, Conversation.where(channel: "whatsapp", channel_participant: guest.phone_number).count
     end
   end
 
@@ -116,7 +126,7 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
       result = Conversations::Deduplicator.new(dry_run: false, logger: nil).call
 
       assert_equal 1, result.moved_counts[:duplicate_messages_removed]
-      assert_equal 1, Conversation.where(guest: guest, channel: "whatsapp").count
+      assert_equal 1, Conversation.where(channel: "whatsapp", channel_participant: guest.phone_number).count
       assert_equal 1, Message.where(metadata: { "MessageSid" => "SM_DUP" }).count
       assert_equal canonical_message, alert.reload.original_message
     end
@@ -147,16 +157,25 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
 
   def remove_unique_index
     @connection.execute("DROP INDEX IF EXISTS #{@connection.quote_table_name(INDEX_NAME)}")
+    @connection.execute("DROP INDEX IF EXISTS #{@connection.quote_table_name(LEGACY_INDEX_NAME)}")
   end
 
   def add_unique_index
-    return if conversation_unique_index_exists?
+    unless conversation_unique_index_exists?
+      @connection.add_index(:conversations, [:channel, :channel_participant], unique: true, name: INDEX_NAME)
+    end
 
-    @connection.add_index(:conversations, [:guest_id, :channel], unique: true, name: INDEX_NAME)
+    unless legacy_conversation_unique_index_exists?
+      @connection.add_index(:conversations, [:guest_id, :channel], unique: true, name: LEGACY_INDEX_NAME)
+    end
   end
 
   def conversation_unique_index_exists?
     @connection.indexes(:conversations).any? { |index| index.name == INDEX_NAME }
+  end
+
+  def legacy_conversation_unique_index_exists?
+    @connection.indexes(:conversations).any? { |index| index.name == LEGACY_INDEX_NAME }
   end
 
   def insert_conversation!(guest:, property:, created_at:, updated_at:)
@@ -170,6 +189,7 @@ class ConversationsDeduplicatorTest < ActiveSupport::TestCase
       guest_id: guest.id,
       property_id: property.id,
       channel: channel,
+      channel_participant: guest.phone_number,
       status: "active",
       ai_enabled: true,
       created_at: created_at,

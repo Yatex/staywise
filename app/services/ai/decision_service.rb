@@ -11,7 +11,7 @@ module AI
       @conversation = conversation
       @guest_message = guest_message
       @property = conversation.property
-      @fallback_language = LanguageHelper.detect(guest_message.body, fallback: conversation.guest.language)
+      @fallback_language = LanguageHelper.normalize_code(conversation.guest.language).presence || LanguageHelper.owner_language(@property.account)
       @ai_request_payload = {}
       @ai_response_payload = {}
       @tool_calls = []
@@ -22,16 +22,8 @@ module AI
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       log_ai_payload_size(payload)
 
-      if SafetyConfig.safe_router_enabled?
-        routed = DeterministicRouter.new(conversation: @conversation, guest_message: @guest_message).call
-        if routed
-          audit("deterministic", routed, started_at, validation_results: { status: "skipped", reason: "deterministic_router" })
-          return routed
-        end
-      end
-
       unless SafetyConfig.tool_first_flow_enabled?(account: @property.account, property: @property)
-        fallback = safe_escalation("AI tool-first flow is disabled.")
+        fallback = safe_no_reply("AI tool-first flow is disabled.", flag: "tool_first_disabled")
         audit("tool_first_disabled", fallback, started_at, fallback_reason: "tool_first_disabled", validation_results: { status: "skipped" })
         return fallback
       end
@@ -93,7 +85,7 @@ module AI
         return fallback
       end
 
-      fallback = safe_escalation("AI service unavailable.")
+      fallback = safe_no_reply("AI service unavailable.", flag: "ai_service_unavailable")
       audit("local_fallback", fallback, started_at, fallback_reason: @fallback_reason || "ai_service_unavailable", validation_results: { status: "skipped" })
       fallback
     end
@@ -137,36 +129,6 @@ module AI
       @ai_response_payload = { error_class: error.class.name, error_message: error.message }
       ErrorReporter.report(error, source: "ai_service", severity: "warning", account: @property.account, property: @property, context: ai_context)
       nil
-    end
-
-    def safe_escalation(description)
-      DecisionResult.from_hash(
-        decision: "escalate",
-        language: @fallback_language,
-        message_body: guest_safe_ack,
-        intent_summary: description,
-        detected_intents: [{ type: "unknown", status: "escalated" }],
-        evidence_ids: [],
-        required_capabilities: [],
-        missing_information: [@guest_message.body],
-        safety_flags: ["fallback"],
-        should_reply: true,
-        confidence: 1.0,
-        evidence: [],
-        escalation: {
-          required: true,
-          category: "unknown",
-          urgency: "medium",
-          reason_code: "unknown_question",
-          summary: description,
-          summary_for_host: description
-        },
-        proposed_action: nil,
-        alert_type: "unknown_question",
-        alert_title: "La pregunta necesita respuesta del anfitrión",
-        alert_description: @guest_message.body,
-        suggested_owner_action: "Revisá la consulta antes de responder. Si es información reusable, agregala como FAQ o bloque de guía."
-      )
     end
 
     def safe_no_reply(description, flag: "contract_validation_failed")
@@ -410,10 +372,6 @@ module AI
       when "raw_text", "response_text", "message_body" then 6_000
       else 4_000
       end
-    end
-
-    def guest_safe_ack(text = @guest_message.body)
-      LanguageHelper.safe_ack_for(text, fallback_language: @fallback_language)
     end
 
     def persist_decision_language(decision)

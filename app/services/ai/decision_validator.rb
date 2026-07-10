@@ -431,7 +431,7 @@ module AI
         @decision.evidence_ids.blank? &&
         @decision.used_source_ids.blank? &&
         @decision.detected_intents.any? do |intent|
-          intent.to_h["type"].to_s.in?(%w[greeting small_talk conversational_closure acknowledgement thanks goodbye])
+          intent.to_h["type"].to_s.in?(%w[routing_init greeting small_talk conversational_closure acknowledgement thanks goodbye])
         end
     end
 

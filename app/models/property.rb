@@ -37,6 +37,10 @@ class Property < ApplicationRecord
 
   before_validation :normalize_tags
 
+  default_scope { where(deleted_at: nil) }
+
+  scope :with_deleted, -> { unscope(where: :deleted_at) }
+  scope :deleted, -> { with_deleted.where.not(deleted_at: nil) }
   scope :active, -> { where(status: "active") }
   scope :tagged_with, ->(tag) { where("? = ANY(tags)", tag.to_s.downcase) }
 
@@ -58,6 +62,36 @@ class Property < ApplicationRecord
 
   def whatsapp_reference
     "Ayla stay #{public_token}"
+  end
+
+  def deleted?
+    deleted_at.present?
+  end
+
+  def soft_delete
+    soft_delete!
+    self
+  rescue ActiveRecord::RecordInvalid
+    false
+  end
+
+  def soft_delete!
+    return true if deleted?
+
+    update!(deleted_at: Time.current)
+  end
+
+  def destroy
+    soft_delete
+  end
+
+  def destroy!
+    soft_delete!
+    self
+  end
+
+  def delete
+    soft_delete
   end
 
   private

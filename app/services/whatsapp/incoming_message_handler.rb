@@ -1,7 +1,6 @@
 module Whatsapp
   class IncomingMessageHandler
     ROUTING_INIT_MESSAGE_TYPE = "routing_init".freeze
-    ROUTING_GREETING_MESSAGE_TYPE = "routing_greeting".freeze
     WHATSAPP_CHANNEL = "whatsapp".freeze
 
     def initialize(params, provider: ProviderFactory.build)
@@ -31,8 +30,12 @@ module Whatsapp
       )
 
       if routing_init_message?(parsed, property)
-        replied = maybe_reply_to_routing_init(conversation, guest, parsed)
-        return { conversation: conversation, message: guest_message, decision: nil, alert: nil, replied: replied, routing_init: true }
+        guest_message.metadata = guest_message.metadata.merge(
+          "message_type" => ROUTING_INIT_MESSAGE_TYPE,
+          "routing_init" => true,
+          "handled_by" => "whatsapp_routing"
+        )
+        guest_message.save!
       end
 
       unless account.ai_active? && property.ai_enabled?
@@ -57,9 +60,17 @@ module Whatsapp
       if parsed.property_token.present?
         property = Property.includes(:account).find_by(public_token: parsed.property_token)
         return property if property.present?
+
+        @routing_audit = {
+          "token_detected" => true,
+          "relinked" => false,
+          "property_token_valid" => false
+        }
+        Rails.logger.info("[whatsapp-property-routing] #{@routing_audit.to_json}")
+        return nil
       end
 
-      Guest.includes(:property).find_by(phone_number: parsed.from)&.property
+      existing_conversation_for(parsed)&.property
     end
 
     def resolve_guest(account, property, parsed)
@@ -72,11 +83,11 @@ module Whatsapp
     end
 
     def resolve_conversation(guest, property, parsed)
-      existing_conversation = guest.conversations.where(channel: WHATSAPP_CHANNEL).order(updated_at: :desc).first
+      existing_conversation = existing_conversation_for(parsed)
 
       if parsed.property_token.present?
         if existing_conversation.present?
-          relink_conversation!(existing_conversation, property, parsed)
+          relink_conversation!(existing_conversation, guest, property, parsed)
           return existing_conversation
         end
 
@@ -94,30 +105,46 @@ module Whatsapp
       create_conversation_for!(guest: guest, property: property)
     end
 
+    def existing_conversation_for(parsed)
+      Conversation.where(channel: WHATSAPP_CHANNEL, channel_participant: parsed.from).order(updated_at: :desc).first
+    end
+
     def create_conversation_for!(guest:, property:)
-      guest.conversations.create!(property: property, channel: WHATSAPP_CHANNEL, status: "active", ai_enabled: true)
+      guest.conversations.create!(
+        property: property,
+        channel: WHATSAPP_CHANNEL,
+        channel_participant: guest.phone_number,
+        status: "active",
+        ai_enabled: true
+      )
     rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
       recover_existing_conversation!(guest: guest, property: property)
     end
 
     def recover_existing_conversation!(guest:, property:)
-      conversation = guest.conversations.find_by!(channel: WHATSAPP_CHANNEL)
-      conversation.update!(property: property, ai_enabled: property.ai_enabled?) if conversation.property_id != property.id
+      conversation = Conversation.find_by!(channel: WHATSAPP_CHANNEL, channel_participant: guest.phone_number)
+      if conversation.property_id != property.id || conversation.guest_id != guest.id
+        conversation.update!(guest: guest, property: property, ai_enabled: property.ai_enabled?)
+      end
       conversation
     end
 
-    def relink_conversation!(conversation, property, parsed)
+    def relink_conversation!(conversation, guest, property, parsed)
       previous_property_id = conversation.property_id
-      relinked = previous_property_id != property.id
+      previous_guest_id = conversation.guest_id
+      relinked = previous_property_id != property.id || previous_guest_id != guest.id
       if relinked
-        conversation.update!(property: property, ai_enabled: property.ai_enabled?)
+        conversation.update!(guest: guest, property: property, ai_enabled: property.ai_enabled?)
+        conversation.association(:guest).reset
         conversation.association(:property).reset
       end
       @routing_audit = {
         "token_detected" => parsed.property_token.present?,
         "relinked" => relinked,
         "previous_property_id" => previous_property_id,
-        "new_property_id" => property.id
+        "new_property_id" => property.id,
+        "previous_guest_id" => previous_guest_id,
+        "new_guest_id" => guest.id
       }
 
       Rails.logger.info("[whatsapp-property-routing] #{@routing_audit.to_json}")
@@ -155,29 +182,6 @@ module Whatsapp
       normalized.blank?
     end
 
-    def maybe_reply_to_routing_init(conversation, guest, parsed)
-      return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
-
-      body = routing_greeting_for(conversation.property, parsed.body)
-      message = conversation.messages.create!(
-        sender: "system",
-        channel: "whatsapp",
-        body: body,
-        metadata: {
-          "message_type" => ROUTING_GREETING_MESSAGE_TYPE,
-          "handled_by" => "rails",
-          "delivery_status" => "pending",
-          "delivery_status_updated_at" => Time.current.iso8601
-        }
-      )
-
-      deliver_persisted_message(message, to: guest.phone_number, body: body)
-    end
-
-    def routing_greeting_for(property, text)
-      AI::LanguageHelper.multilingual_welcome
-    end
-
     def maybe_reply(conversation, guest, decision, alert:, guest_request: nil)
       return false unless conversation.ai_enabled?
       return false unless conversation.property.account.ai_automation_enabled?("send_whatsapp_replies")
@@ -201,20 +205,7 @@ module Whatsapp
     end
 
     def ai_response_body(conversation, decision, alert:, guest_request: nil)
-      response_text = safe_response_text_for(decision, alert: alert, guest_request: guest_request)
-      return response_text if owner_disclosure_already_sent?(conversation)
-
-      AI::LanguageHelper.with_owner_disclosure(
-        response_text,
-        text: conversation.messages.where(sender: "guest").order(created_at: :desc).pick(:body),
-        fallback_language: conversation.guest.language
-      )
-    end
-
-    def owner_disclosure_already_sent?(conversation)
-      return true if conversation.messages.where(sender: "ai").exists?
-
-      conversation.messages.any? { |message| ActiveModel::Type::Boolean.new.cast(message.metadata.to_h["owner_disclosure"]) }
+      safe_response_text_for(decision, alert: alert, guest_request: guest_request)
     end
 
     def safe_response_text_for(decision, alert:, guest_request: nil)
@@ -225,26 +216,15 @@ module Whatsapp
     end
 
     def missing_property_context(parsed)
-      delivery = @provider.send_message(to: parsed.from, body: missing_property_context_reply(parsed))
-      replied = delivery_success?(delivery)
-      Rails.logger.info("[whatsapp-routing] missing_property_context from=#{parsed.from} replied=#{replied}")
+      Rails.logger.info("[whatsapp-routing] missing_property_context from=#{parsed.from} replied=false")
       {
         conversation: nil,
         message: nil,
         decision: nil,
         alert: nil,
-        replied: replied,
+        replied: false,
         error: "missing_property_context"
       }
-    end
-
-    def missing_property_context_reply(parsed)
-      case AI::LanguageHelper.detect(parsed.body, fallback: "es")
-      when "en"
-        "I need the property details before I can answer safely. Please scan the property QR code again or open the property link and send your message from there."
-      else
-        "Necesito los datos de la propiedad para responder con seguridad. Escaneá de nuevo el QR de la propiedad o abrí el link de la propiedad y enviá tu consulta desde ahí."
-      end
     end
 
     def report_missing_alert(conversation:, decision:)

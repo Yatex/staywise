@@ -225,19 +225,19 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes alert.metadata["detected_intents"].map { |intent| intent["type"] || intent[:type] }, "unknown_question"
   end
 
-  test "english emergency phrase creates urgent alert without ai service" do
-    previous_ai_service_url = ENV["AI_SERVICE_URL"]
-    ENV["AI_SERVICE_URL"] = "http://127.0.0.1:1"
+  test "english emergency phrase creates urgent alert from ai decision" do
     @property.update!(emergency_information: "Call 911 first, then contact the host.")
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000004",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference} There is smoke in the apartment, emergency"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_emergency_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000004",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} There is smoke in the apartment, emergency"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     alert = result.fetch(:conversation).alerts.first
 
@@ -245,32 +245,50 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "emergency", alert.alert_type
     assert_equal "urgent", alert.priority
     assert_includes result.fetch(:conversation).messages.where(sender: "ai").last.body, "911"
-  ensure
-    ENV["AI_SERVICE_URL"] = previous_ai_service_url
   end
 
   test "spanish emergency phrase creates urgent alert" do
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000005",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference} Hay una fuga de gas"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    result = with_ai_decision(ai_emergency_decision(message_body: "Si alguien está en peligro, llamá a emergencias. También aviso al anfitrión.")) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000005",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} Hay una fuga de gas"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
     alert = result.fetch(:conversation).alerts.first
 
+    assert result.fetch(:replied)
     assert_equal "emergency", alert.alert_type
     assert_equal "urgent", alert.priority
   end
 
-  test "default qr intro is handled as routing without calling ai decision service" do
+  test "default qr intro is routed through ai decision service" do
     provider = RecordingProvider.new
-    ai_called = false
+    ai_calls = 0
     result = nil
 
-    AI::DecisionService.stub(:call, ->(**_args) { ai_called = true; raise "AI should not process routing init messages" }) do
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_equal "routing_init", guest_message.metadata["message_type"]
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "👋 Hola, soy Ayla, tu asistente.\n\n🇪🇸 Escribí en español.\n🇬🇧 Write in English.\n🇧🇷 Escreva em português.",
+        intent_summary: "routing welcome",
+        detected_intents: [{ type: "routing_init", status: "answered" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
       result = Whatsapp::IncomingMessageHandler.new(
         {
           "From" => "whatsapp:+15550000008",
@@ -283,16 +301,14 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     conversation = result.fetch(:conversation)
 
-    assert_not ai_called
-    assert result.fetch(:routing_init)
+    assert_equal 1, ai_calls
+    assert_not result.key?(:routing_init)
     assert result.fetch(:replied)
-    assert_nil result.fetch(:decision)
+    assert_equal "reply", result.fetch(:decision).outcome
     assert_nil result.fetch(:alert)
     assert_equal 0, conversation.alerts.count
-    assert_equal 0, conversation.messages.where(sender: "ai").count
+    assert_equal 1, conversation.messages.where(sender: "ai").count
     assert_equal "routing_init", conversation.messages.where(sender: "guest").first.metadata["message_type"]
-    assert_equal 1, conversation.messages.where(sender: "system").count
-    assert_equal "routing_greeting", conversation.messages.where(sender: "system").last.metadata["message_type"]
     assert_includes provider.sent_messages.last.fetch(:body), "Hola, soy Ayla"
     assert_includes provider.sent_messages.last.fetch(:body), "Write in English"
     assert_includes provider.sent_messages.last.fetch(:body), "Escreva em português"
@@ -300,23 +316,28 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_not_includes provider.sent_messages.last.fetch(:body), "dueño de la propiedad"
   end
 
-  test "routing greeting is persisted before whatsapp delivery is attempted" do
-    provider = PersistedBeforeSendProvider.new(expected_sender: "system")
+  test "spanish greeting reaches ai service and replies in spanish" do
+    assert_greeting_routes_to_ai(
+      body: "#{@property.whatsapp_reference} Buenas",
+      expected_reply: "Buenas, ¿en qué puedo ayudarte?",
+      expected_language: "es"
+    )
+  end
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000017",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference}"
-      },
-      provider: provider
-    ).call
+  test "english greeting reaches ai service and replies in english" do
+    assert_greeting_routes_to_ai(
+      body: "#{@property.whatsapp_reference} Hi",
+      expected_reply: "Hi, how can I help?",
+      expected_language: "en"
+    )
+  end
 
-    message = result.fetch(:conversation).messages.where(sender: "system").last
-
-    assert result.fetch(:replied)
-    assert_equal "queued", message.metadata["delivery_status"]
-    assert_equal "SM_persisted_first", message.metadata["provider_message_id"]
+  test "portuguese greeting reaches ai service and replies in portuguese" do
+    assert_greeting_routes_to_ai(
+      body: "#{@property.whatsapp_reference} Oi",
+      expected_reply: "Oi, como posso ajudar?",
+      expected_language: "pt"
+    )
   end
 
   test "guest follow up after qr intro stays in same conversation and answers check in" do
@@ -324,14 +345,32 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     from = "whatsapp:+15550000018"
     ai_calls = 0
 
-    intro_result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => from,
-        "To" => "whatsapp:+15550009999",
-        "Body" => "#{@property.whatsapp_reference}"
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    intro_result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "Hola, soy Ayla.",
+        intent_summary: "routing welcome",
+        detected_intents: [{ type: "routing_init", status: "answered" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      intro_result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference}"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
     conversation = intro_result.fetch(:conversation)
 
     follow_up_result = nil
@@ -387,16 +426,32 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
     conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "wifi?")
 
-    relink_result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => from,
-        "To" => "whatsapp:+15550009999",
-        "Body" => new_property.whatsapp_reference
-      },
-      provider: Whatsapp::Providers::NullProvider.new
-    ).call
+    relink_result = with_ai_decision(AI::DecisionResult.from_hash(
+      decision: "no_reply",
+      language: "es",
+      message_body: nil,
+      intent_summary: "routing",
+      detected_intents: [{ type: "routing_init", status: "handled" }],
+      evidence_ids: [],
+      required_capabilities: [],
+      proposed_action: nil,
+      escalation: { required: false },
+      missing_information: [],
+      safety_flags: [],
+      should_reply: false,
+      confidence: 0.9
+    )) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => new_property.whatsapp_reference
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
 
-    assert relink_result.fetch(:routing_init)
+    assert_equal "no_reply", relink_result.fetch(:decision).outcome
     assert_equal conversation, relink_result.fetch(:conversation)
     assert_equal new_property, conversation.reload.property
     assert_equal new_property, guest.reload.property
@@ -479,6 +534,118 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal conversation.id, trace.conversation_id
   end
 
+  test "new token from another account reuses the whatsapp thread and segments messages by tenant" do
+    other_account = Account.create!(name: "Other Webhook Stays")
+    other_account.update!(email_alerts_enabled: false)
+    other_account.subscriptions.create!(plan: "growth", status: "trialing")
+    other_property = other_account.properties.create!(name: "Other Account Property", wifi_name: "Other WiFi", wifi_password: "OtherSecret")
+    from = "whatsapp:+15550000045"
+    old_guest = @account.guests.create!(phone_number: "+15550000045", property: @property)
+    conversation = old_guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+    old_message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "old property question")
+
+    relink_result = with_ai_decision(AI::DecisionResult.from_hash(
+      decision: "no_reply",
+      language: "es",
+      message_body: nil,
+      intent_summary: "routing",
+      detected_intents: [{ type: "routing_init", status: "handled" }],
+      evidence_ids: [],
+      required_capabilities: [],
+      proposed_action: nil,
+      escalation: { required: false },
+      missing_information: [],
+      safety_flags: [],
+      should_reply: false,
+      confidence: 0.9
+    )) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => other_property.whatsapp_reference
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    conversation.reload
+    new_guest = other_account.guests.find_by!(phone_number: "+15550000045")
+
+    assert_equal conversation, relink_result.fetch(:conversation)
+    assert_equal other_property, conversation.property
+    assert_equal new_guest, conversation.guest
+    assert_equal @account, old_message.reload.account
+    assert_equal @property, old_message.property
+
+    follow_up_result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      assert_equal other_property, conversation.property
+      assert_equal other_account, guest_message.account
+      assert_equal other_property, guest_message.property
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "La red de WiFi es Other WiFi.",
+        intent_summary: "wifi",
+        detected_intents: [{ type: "wifi", status: "answered" }],
+        evidence_ids: ["property.wifi_name"],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      follow_up_result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "wifi?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    new_guest_message = follow_up_result.fetch(:message)
+
+    assert_equal conversation, follow_up_result.fetch(:conversation)
+    assert_equal other_account, new_guest_message.account
+    assert_equal other_property, new_guest_message.property
+    assert_equal 1, Conversation.where(channel: "whatsapp", channel_participant: "+15550000045").count
+    assert_equal [@account.id, other_account.id], conversation.messages.order(:id).pluck(:account_id).uniq
+  end
+
+  test "deleted property token is not reused and does not fall back to an existing conversation" do
+    deleted_property = @account.properties.create!(name: "Deleted Stay", wifi_name: "Deleted WiFi", wifi_password: "DeletedSecret")
+    active_property = @account.properties.create!(name: "Active Stay", wifi_name: "Active WiFi", wifi_password: "ActiveSecret")
+    deleted_reference = deleted_property.whatsapp_reference
+    deleted_property.soft_delete!
+    from = "whatsapp:+15550000044"
+    guest = @account.guests.create!(phone_number: "+15550000044", property: active_property)
+    conversation = guest.conversations.create!(property: active_property, status: "active", ai_enabled: true)
+    conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "wifi?")
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => from,
+        "To" => "whatsapp:+15550009999",
+        "Body" => deleted_reference
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    assert_not result.fetch(:replied)
+    assert_equal "missing_property_context", result.fetch(:error)
+    assert_nil result.fetch(:conversation)
+    assert_equal active_property, conversation.reload.property
+    assert_equal 1, conversation.messages.count
+    assert_equal active_property, guest.reload.property
+    assert_equal deleted_property, Property.with_deleted.find(deleted_property.id)
+    assert_nil Property.find_by(id: deleted_property.id)
+  end
+
   test "ai reply is persisted before whatsapp delivery is attempted" do
     provider = PersistedBeforeSendProvider.new(expected_sender: "ai")
     result = nil
@@ -559,7 +726,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_includes ai_message.body, "equipaje"
   end
 
-  test "guest closure after ai offer replies naturally without creating alert" do
+  test "guest closure after ai offer reaches ai and replies naturally without creating alert" do
     provider = RecordingProvider.new
     guest = @account.guests.create!(phone_number: "+15550000020", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
@@ -569,40 +736,84 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       body: "El checkout es a las 11:00. Si necesitás salir más tarde, puedo consultarlo con el anfitrión."
     )
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000020",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "No gracias, así está bien."
-      },
-      provider: provider
-    ).call
+    ai_calls = 0
+    result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_equal "No gracias, así está bien.", guest_message.body
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "Perfecto, cualquier cosa escribime.",
+        intent_summary: "closure",
+        detected_intents: [{ type: "conversational_closure", status: "answered" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000020",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "No gracias, así está bien."
+        },
+        provider: provider
+      ).call
+    end
 
     assert_equal conversation, result.fetch(:conversation)
+    assert_equal 1, ai_calls
     assert result.fetch(:replied)
     assert_nil result.fetch(:alert)
     assert_equal "active", conversation.reload.status
     assert_equal 0, conversation.alerts.count
     assert_equal ["ai", "guest", "ai"], conversation.messages.order(:id).pluck(:sender)
     assert_equal 1, provider.sent_messages.size
-    assert_match(/De nada|Perfecto/, provider.sent_messages.last.fetch(:body))
+    assert_equal "Perfecto, cualquier cosa escribime.", provider.sent_messages.last.fetch(:body)
   end
 
-  test "guest greeting replies naturally without creating alert" do
+  test "guest greeting reaches ai and replies naturally without creating alert" do
     provider = RecordingProvider.new
     guest = @account.guests.create!(phone_number: "+15550000021", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
 
-    result = Whatsapp::IncomingMessageHandler.new(
-      {
-        "From" => "whatsapp:+15550000021",
-        "To" => "whatsapp:+15550009999",
-        "Body" => "hola buenas tardes"
-      },
-      provider: provider
-    ).call
+    ai_calls = 0
+    result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_equal "hola buenas tardes", guest_message.body
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "Hola, buenas tardes. ¿En qué puedo ayudarte?",
+        intent_summary: "greeting",
+        detected_intents: [{ type: "greeting", status: "answered" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000021",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "hola buenas tardes"
+        },
+        provider: provider
+      ).call
+    end
 
     assert_equal conversation, result.fetch(:conversation)
+    assert_equal 1, ai_calls
     assert result.fetch(:replied)
     assert_nil result.fetch(:alert)
     assert_equal 0, conversation.alerts.count
@@ -612,7 +823,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_no_match(/address|check_in|parking|property\./i, provider.sent_messages.last.fetch(:body))
   end
 
-  test "first concrete ai answer also discloses that chat is shared with owner" do
+  test "rails does not append owner disclosure to ai answer" do
     @property.update!(checkout_time: "11:00")
 
     result = with_ai_decision(ai_checkout_decision) do
@@ -630,10 +841,10 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert result.fetch(:replied)
     assert_includes body, "El checkout es a las 11:00"
-    assert_includes body, "este chat está compartido con el dueño de la propiedad"
+    assert_not_includes body, "este chat está compartido con el dueño de la propiedad"
   end
 
-  test "owner disclosure is still added to first ai response after routing welcome" do
+  test "rails does not append owner disclosure after routing welcome" do
     @property.update!(checkout_time: "11:00")
     phone_number = "whatsapp:+15550000010"
 
@@ -660,7 +871,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     body = result.fetch(:conversation).messages.where(sender: "ai").last.body
 
     assert_includes body, "El checkout es a las 11:00"
-    assert_includes body, "este chat está compartido con el dueño de la propiedad"
+    assert_not_includes body, "este chat está compartido con el dueño de la propiedad"
   end
 
   test "asks unknown guests to scan property qr instead of using a default property" do
@@ -673,7 +884,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       provider: Whatsapp::Providers::NullProvider.new
     ).call
 
-    assert result.fetch(:replied)
+    assert_not result.fetch(:replied)
     assert_equal "missing_property_context", result.fetch(:error)
     assert_nil result.fetch(:conversation)
     assert_equal 0, Conversation.count
@@ -690,7 +901,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       provider: Whatsapp::Providers::NullProvider.new
     ).call
 
-    assert result.fetch(:replied)
+    assert_not result.fetch(:replied)
     assert_equal "missing_property_context", result.fetch(:error)
     assert_nil result.fetch(:conversation)
     assert_equal 0, Conversation.count
@@ -1160,6 +1371,47 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
   private
 
+  def assert_greeting_routes_to_ai(body:, expected_reply:, expected_language:)
+    provider = RecordingProvider.new
+    ai_calls = 0
+    result = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_includes guest_message.body, body.split.last
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: expected_language,
+        message_body: expected_reply,
+        intent_summary: "greeting",
+        detected_intents: [{ type: "greeting", status: "answered" }],
+        evidence_ids: [],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+1555000#{rand(1000..9999)}",
+          "To" => "whatsapp:+15550009999",
+          "Body" => body
+        },
+        provider: provider
+      ).call
+    end
+
+    assert_equal 1, ai_calls
+    assert result.fetch(:replied)
+    assert_equal expected_reply, result.fetch(:conversation).messages.where(sender: "ai").last.body
+    assert_equal expected_reply, provider.sent_messages.last.fetch(:body)
+    assert_equal expected_language, result.fetch(:decision).language
+    assert_equal 0, result.fetch(:conversation).alerts.count
+  end
+
   def with_ai_decision(decision)
     AI::DecisionService.stub(:call, decision) { yield }
   end
@@ -1229,6 +1481,27 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       missing_information: ["visitor_pool_policy"],
       safety_flags: [],
       confidence: 0.9
+    )
+  end
+
+  def ai_emergency_decision(message_body: "Call 911 first, then contact the host.")
+    AI::DecisionResult.from_hash(
+      decision: "escalate",
+      language: "en",
+      message_body: message_body,
+      intent_summary: "emergency",
+      detected_intents: [{ type: "emergency", status: "escalated" }],
+      evidence_ids: ["property.emergency_information"],
+      required_capabilities: ["owner_attention"],
+      proposed_action: nil,
+      escalation: { required: true, category: "emergency", urgency: "urgent", reason_code: "emergency", summary_for_host: "Guest reported an emergency." },
+      missing_information: [],
+      safety_flags: [],
+      confidence: 0.98,
+      alert_type: "emergency",
+      alert_title: "Emergencia reportada por huésped",
+      alert_description: "El huésped reportó una emergencia.",
+      suggested_owner_action: "Contactá al huésped de inmediato."
     )
   end
 end

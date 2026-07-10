@@ -142,8 +142,6 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
     message = @conversation.messages.create!(sender: "guest", body: "Merci, but when is check-in?", channel: "whatsapp")
 
-    assert_equal "fr", AI::LanguageHelper.detect(message.body, fallback: @guest.language)
-
     decision = run_with_remote_decision(message, ai_reply(
       language: "en",
       message_body: "Check-in is at 3:00 PM.",
@@ -827,7 +825,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
   test "unknown property question can become reusable faq knowledge" do
     unknown_message = @conversation.messages.create!(sender: "guest", body: "What color is the front door?", channel: "whatsapp")
 
-    unknown_decision = AI::DecisionService.call(conversation: @conversation, guest_message: unknown_message)
+    unknown_decision = run_with_remote_decision(unknown_message, ai_escalation(
+      language: "en",
+      message_body: "I do not have that confirmed information. I will check with the host and get back to you.",
+      reason_code: "unknown_question",
+      detected_intents: [{ type: "unknown_question", status: "escalated" }],
+      alert_description: "What color is the front door?"
+    ))
 
     assert unknown_decision.escalation_required
     assert_equal "unknown_question", unknown_decision.alert_type
@@ -1005,7 +1009,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     )
     message = @conversation.messages.create!(sender: "guest", body: "Quiero saber si puedo invitar gente a la pileta del edificio", channel: "whatsapp")
 
-    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    decision = run_with_remote_decision(message, ai_escalation(
+      language: "es",
+      message_body: "No tengo esa información confirmada. Lo consulto con el anfitrión y te aviso.",
+      reason_code: "unknown_question",
+      detected_intents: [{ type: "visitor_policy", status: "escalated" }]
+    ))
 
     assert decision.escalation_required
     assert_equal "unknown_question", decision.alert_type
@@ -1019,9 +1028,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       channel: "whatsapp"
     )
 
-    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    decision = run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: "👋 Hola, soy Ayla, tu asistente.\n\n🇪🇸 Escribí en español.\n🇬🇧 Write in English.\n🇧🇷 Escreva em português.",
+      evidence_ids: [],
+      detected_intents: [{ type: "routing_init", status: "answered" }]
+    ))
 
-    assert_equal "ask_clarifying_question", decision.outcome
+    assert_equal "reply", decision.outcome
     assert_not decision.escalation_required
     assert_nil decision.alert_type
     assert_includes decision.response_text, "Hola, soy Ayla"
@@ -1032,7 +1046,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
   test "guest fallback reply uses guest language while owner alert stays spanish" do
     message = @conversation.messages.create!(sender: "guest", body: "游泳池在哪里？", channel: "whatsapp")
 
-    decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    decision = run_with_remote_decision(message, ai_escalation(
+      language: "zh",
+      message_body: "我没有这项确认信息。我会向房东确认后再回复你。",
+      reason_code: "unknown_question",
+      detected_intents: [{ type: "unknown_question", status: "escalated" }],
+      alert_title: "La pregunta necesita respuesta del anfitrión",
+      suggested_owner_action: "Revisá la consulta antes de responder. Si es información reusable, agregala como FAQ o bloque de guía."
+    ))
 
     assert decision.escalation_required
     assert_equal "unknown_question", decision.alert_type
@@ -1042,7 +1063,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "zh", @guest.reload.language
   end
 
-  test "conversation closure messages do not escalate or call remote ai" do
+  test "conversation closure and greeting messages are sent to remote ai" do
     examples = [
       "gracias",
       "no gracias",
@@ -1056,12 +1077,31 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       "olá boa tarde"
     ]
     service_class = Class.new(AI::DecisionService) do
-      define_method(:remote_decision) { |_payload| raise "conversational messages should not reach remote AI" }
+      attr_reader :remote_payloads
+
+      define_method(:remote_decision) do |payload|
+        (@remote_payloads ||= []) << payload
+        AI::DecisionResult.from_hash(
+          decision: "reply",
+          language: "es",
+          message_body: "Respuesta conversacional desde AI.",
+          intent_summary: "small talk",
+          detected_intents: [{ type: "small_talk", status: "answered" }],
+          evidence_ids: [],
+          required_capabilities: [],
+          proposed_action: nil,
+          escalation: { required: false },
+          missing_information: [],
+          safety_flags: [],
+          confidence: 0.95
+        )
+      end
     end
 
     examples.each do |body|
       message = @conversation.messages.create!(sender: "guest", body: body, channel: "whatsapp")
-      decision = service_class.new(conversation: @conversation, guest_message: message).call
+      service = service_class.new(conversation: @conversation, guest_message: message)
+      decision = service.call
       audit = AIDecisionLog.where(message: message).last
 
       assert_equal "reply", decision.outcome, body
@@ -1070,8 +1110,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       assert_not decision.escalation_required, body
       assert_nil decision.alert_type, body
       assert_empty decision.evidence_ids, body
-      assert_equal "deterministic", audit.route, body
-      assert_equal "deterministic_conversational_only", decision.audit["route"], body
+      assert_equal "remote_ai", audit.route, body
+      assert_equal 1, service.remote_payloads.size, body
     end
   end
 
@@ -1393,7 +1433,16 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     }
   end
 
-  def ai_escalation(language:, message_body:, reason_code:, detected_intents:, audit: default_tool_audit)
+  def ai_escalation(
+    language:,
+    message_body:,
+    reason_code:,
+    detected_intents:,
+    audit: default_tool_audit,
+    alert_title: nil,
+    alert_description: nil,
+    suggested_owner_action: nil
+  )
     {
       decision: "escalate",
       language: language,
@@ -1407,6 +1456,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       missing_information: [],
       safety_flags: [],
       confidence: 0.9,
+      alert_title: alert_title,
+      alert_description: alert_description,
+      suggested_owner_action: suggested_owner_action,
       audit: audit
     }
   end

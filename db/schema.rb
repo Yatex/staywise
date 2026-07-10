@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_10_183000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -134,6 +134,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "channel", default: "whatsapp", null: false
+    t.string "channel_participant", null: false
+    t.index ["channel", "channel_participant"], name: "index_conversations_on_channel_and_channel_participant", unique: true
     t.index ["guest_id", "channel"], name: "index_conversations_on_guest_id_and_channel_unique", unique: true
     t.index ["guest_id"], name: "index_conversations_on_guest_id"
     t.index ["last_message_at"], name: "index_conversations_on_last_message_at"
@@ -233,8 +235,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "account_id"
+    t.bigint "property_id"
+    t.index ["account_id", "conversation_id", "created_at"], name: "index_messages_on_account_id_conversation_id_created_at"
+    t.index ["account_id"], name: "index_messages_on_account_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
+    t.index ["property_id"], name: "index_messages_on_property_id"
     t.index ["sender"], name: "index_messages_on_sender"
   end
 
@@ -293,8 +300,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
     t.boolean "ai_enabled", default: true, null: false
     t.string "public_token", null: false
     t.text "checkout_instructions"
+    t.datetime "deleted_at"
     t.index ["account_id", "name"], name: "index_properties_on_account_id_and_name"
     t.index ["account_id"], name: "index_properties_on_account_id"
+    t.index ["deleted_at"], name: "index_properties_on_deleted_at"
     t.index ["public_token"], name: "index_properties_on_public_token", unique: true
     t.index ["tags"], name: "index_properties_on_tags", using: :gin
   end
@@ -379,7 +388,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_145630) do
   add_foreign_key "guests", "accounts"
   add_foreign_key "guests", "properties"
   add_foreign_key "knowledge_blocks", "properties"
+  add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
+  add_foreign_key "messages", "properties"
   add_foreign_key "operational_errors", "accounts"
   add_foreign_key "operational_errors", "properties"
   add_foreign_key "owner_whatsapp_sessions", "accounts"

@@ -103,7 +103,7 @@ module Whatsapp
         return { owner_message: true, handled: true, session: session, replied: false }
       end
 
-      guest_language = conversation.guest.language.presence || AI::LanguageHelper.detect(conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
+      guest_language = conversation.guest.language.presence || AI::LanguageHelper.owner_language(conversation.property.account)
       guest_answer = translate_owner_answer(answer, conversation, guest_language)
       owner_message = conversation.messages.create!(
         sender: "owner",

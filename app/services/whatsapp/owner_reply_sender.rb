@@ -109,7 +109,7 @@ module Whatsapp
 
     def guest_language
       @guest_language ||= @conversation.guest.language.presence ||
-        AI::LanguageHelper.detect(@conversation.messages.where(sender: "guest").order(created_at: :desc).first&.body)
+        AI::LanguageHelper.owner_language(@conversation.property.account)
     end
 
     def failure(error, message: nil)

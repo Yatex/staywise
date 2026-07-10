@@ -3,14 +3,24 @@ class Message < ApplicationRecord
   CHANNELS = %w[whatsapp dashboard].freeze
 
   belongs_to :conversation
+  belongs_to :account, optional: true
+  belongs_to :property, optional: true
 
   validates :sender, inclusion: { in: SENDERS }
   validates :channel, inclusion: { in: CHANNELS }
   validates :body, presence: true
 
+  before_validation :set_tenant_from_conversation
   after_create_commit :update_conversation_timestamp
 
   private
+
+  def set_tenant_from_conversation
+    return if conversation.blank?
+
+    self.property_id ||= conversation.property_id
+    self.account_id ||= conversation.property&.account_id
+  end
 
   def update_conversation_timestamp
     conversation.mark_message_received!

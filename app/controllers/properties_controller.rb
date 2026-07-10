@@ -93,8 +93,8 @@ class PropertiesController < ApplicationController
   end
 
   def destroy
-    @property.update(status: "archived")
-    redirect_to properties_path, notice: "Propiedad archivada."
+    @property.soft_delete!
+    redirect_to properties_path, notice: "Propiedad eliminada."
   end
 
   def copy_content
@@ -144,7 +144,8 @@ class PropertiesController < ApplicationController
   end
 
   def set_property
-    @property = current_account.properties.find(params[:id])
+    scope = action_name == "destroy" ? current_account.properties.with_deleted : current_account.properties
+    @property = scope.find(params[:id])
   end
 
   def apply_property_template

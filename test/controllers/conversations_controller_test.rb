@@ -89,7 +89,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     system_message = @conversation.messages.create!(
       sender: "system",
       channel: "whatsapp",
-      body: AI::LanguageHelper.multilingual_welcome,
+      body: "👋 Hola, soy Ayla, tu asistente.\n\n🇪🇸 Escribí en español.\n🇬🇧 Write in English.\n🇧🇷 Escreva em português.",
       metadata: { delivery_status: "sent" }
     )
     ai_message = @conversation.messages.create!(
@@ -293,6 +293,45 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#message-#{traced_message.id}", count: 1
     assert_includes @response.body, "a que hora es el check in?"
+  end
+
+  test "owners only see messages for their tenant after conversation is relinked to another property" do
+    other_account = Account.create!(name: "Other Owner Stays")
+    other_account.subscriptions.create!(plan: "growth", status: "trialing")
+    other_user = other_account.users.create!(
+      name: "Other Owner",
+      email: "other-owner@staywise.test",
+      email_verified_at: Time.current,
+      password: "password123",
+      password_confirmation: "password123"
+    )
+    other_property = other_account.properties.create!(name: "Other Property")
+
+    shared_phone = "+15550009901"
+    old_guest = @account.guests.create!(phone_number: shared_phone, property: @property)
+    old_conversation = old_guest.conversations.create!(property: @property, channel: "whatsapp", status: "active")
+    old_message = old_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Mensaje del owner anterior")
+
+    other_guest = other_account.guests.create!(phone_number: shared_phone, property: other_property)
+    old_conversation.update!(guest: other_guest, property: other_property)
+    new_message = old_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Mensaje del nuevo owner")
+
+    get conversation_path(old_conversation)
+    assert_response :success
+    assert_select "#message-#{old_message.id}", count: 1
+    assert_select "#message-#{new_message.id}", count: 0
+    assert_includes @response.body, "Conversation Apartment"
+    assert_not_includes @response.body, "Other Property"
+
+    delete logout_path
+    sign_in_as(other_user)
+
+    get conversation_path(old_conversation)
+    assert_response :success
+    assert_select "#message-#{old_message.id}", count: 0
+    assert_select "#message-#{new_message.id}", count: 1
+    assert_includes @response.body, "Other Property"
+    assert_not_includes @response.body, "Mensaje del owner anterior"
   end
 
   test "ai trace panel is not rendered on conversation show and remains available in admin" do
