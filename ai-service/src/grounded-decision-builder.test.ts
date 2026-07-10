@@ -806,6 +806,41 @@ test("recommendation request without evidence does not invent places", () => {
   assert.doesNotMatch(result.decision.message_body, /Café|Restaurante|Farmacia|Supermercado/);
 });
 
+test("restaurant request with saved recommendations replies without clarification", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "Restaurantes",
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:10",
+      evidence_id: "recommendation.10",
+      label: "La Barra",
+      field: "La Barra",
+      value: "Parrilla a tres cuadras.",
+      category: "food",
+      address: "Calle Falsa 123",
+    },
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:11",
+      evidence_id: "recommendation.11",
+      label: "Pasta Centro",
+      field: "Pasta Centro",
+      value: "Pastas caseras cerca del edificio.",
+      category: "restaurant",
+      address: "Av. Centro 456",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids.sort(), ["recommendation.10", "recommendation.11"].sort());
+  assert.match(result.decision.message_body, /La Barra/);
+  assert.match(result.decision.message_body, /Pasta Centro/);
+  assert.doesNotMatch(result.decision.message_body, /prefer|aclar/i);
+  assert.equal(result.decision.audit.grounded_decision_builder.clarification_attempts.count, 0);
+});
+
 test("neutral preference after recommendation question chooses saved recommendations instead of asking again", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "me da igual, lo que recomiendes",
@@ -853,6 +888,89 @@ test("neutral preference after recommendation question chooses saved recommendat
   assert.match(result.decision.message_body, /Mercado Verde/);
   assert.match(result.decision.message_body, /La Esquina/);
   assert.doesNotMatch(result.decision.message_body, /prefer/i);
+});
+
+test("cualquiera after restaurant clarification chooses saved recommendations", () => {
+  const result = buildGroundedDecision(aiClarification("es"), {
+    guest_message: "Cualquiera",
+    conversation_history: [
+      { sender: "guest", body: "Lugares para comer cerca?" },
+      { sender: "ai", body: "¿Preferís restaurante, café, supermercado, farmacia u otro lugar?" },
+    ],
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:21",
+      evidence_id: "recommendation.21",
+      label: "Comedor Norte",
+      field: "Comedor Norte",
+      value: "Restaurante simple para almorzar.",
+      category: "food",
+      address: "Norte 21",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["recommendation.21"]);
+  assert.match(result.decision.message_body, /Comedor Norte/);
+  assert.doesNotMatch(result.decision.message_body, /prefer|tipo|aclar/i);
+  assert.equal(result.decision.audit.grounded_decision_builder.clarification_attempts.count, 1);
+});
+
+test("after two recommendation clarifications uses best available recommendations instead of asking again", () => {
+  const result = buildGroundedDecision(aiClarification("es"), {
+    guest_message: "me da igual",
+    conversation_history: [
+      { sender: "guest", body: "Restaurantes?" },
+      { sender: "ai", body: "¿Preferís restaurante, café, supermercado, farmacia u otro lugar?" },
+      { sender: "guest", body: "No sé" },
+      { sender: "ai", body: "¿Buscás algo para comer, tomar café o hacer compras?" },
+    ],
+    decision_settings: {
+      max_clarification_attempts: 2,
+    },
+  }, catalogFromSources([
+    {
+      source_type: "recommendation",
+      source_id: "recommendation:31",
+      evidence_id: "recommendation.31",
+      label: "Bistró Sur",
+      field: "Bistró Sur",
+      value: "Buen lugar para cenar.",
+      category: "restaurant",
+      address: "Sur 31",
+    },
+  ]));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["recommendation.31"]);
+  assert.match(result.decision.message_body, /Bistró Sur/);
+  assert.doesNotMatch(result.decision.message_body, /\?/);
+  assert.equal(result.decision.audit.grounded_decision_builder.clarification_attempts.count, 2);
+});
+
+test("after two recommendation clarifications without evidence escalates instead of asking a third time", () => {
+  const result = buildGroundedDecision(aiClarification("es"), {
+    guest_message: "cualquiera",
+    conversation_history: [
+      { sender: "guest", body: "Restaurantes?" },
+      { sender: "ai", body: "¿Preferís restaurante, café, supermercado, farmacia u otro lugar?" },
+      { sender: "guest", body: "No sé" },
+      { sender: "ai", body: "¿Buscás algo para comer, tomar café o hacer compras?" },
+    ],
+    decision_settings: {
+      max_clarification_attempts: 2,
+    },
+  }, []);
+
+  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.escalation_required, true);
+  assert.deepEqual(result.decision.evidence_ids, []);
+  assert.equal(result.decision.escalation.reason_code, "clarification_limit_reached");
+  assert.equal(result.decision.audit.grounded_decision_builder.clarification_attempts.count, 2);
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.reason_if_null, "clarification_attempts_exhausted");
 });
 
 test("partial evidence asks for clarification", () => {
@@ -943,7 +1061,7 @@ test("custom high threshold can move medium evidence to clarification", () => {
   assert.equal(audit.grounded_decision_result.override_type, "partial_evidence");
 });
 
-test("custom max clarification attempts controls when ambiguous cases escalate", () => {
+test("custom max clarification attempts uses best available evidence when possible", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "a que hora puedo ir?",
     decision_settings: {
@@ -977,9 +1095,11 @@ test("custom max clarification attempts controls when ambiguous cases escalate",
   ]));
 
   const audit = result.decision.audit.grounded_decision_builder;
-  assert.equal(result.decision.outcome, "escalate");
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.notDeepEqual(result.decision.evidence_ids, []);
   assert.equal(audit.clarification_attempts.max, 1);
-  assert.equal(audit.grounded_decision_result.reason_if_null, "clarification_attempts_exhausted");
+  assert.equal(audit.grounded_decision_result.override_type, "sufficient_evidence");
 });
 
 function unknownEscalation(language: string) {
@@ -998,6 +1118,25 @@ function unknownEscalation(language: string) {
     },
     confidence: 0.3,
     safety_flags: ["fallback"],
+  };
+}
+
+function aiClarification(language: string) {
+  return {
+    outcome: "ask_clarifying_question",
+    decision: "ask_clarifying_question",
+    language,
+    message_body: "¿Preferís restaurante, café, supermercado, farmacia u otro lugar?",
+    detected_intents: [{ type: "recommendation", status: "needs_clarification" }],
+    evidence_ids: [],
+    escalation_required: false,
+    escalation: {
+      required: false,
+      reason_code: null,
+      summary_for_host: null,
+    },
+    confidence: 0.55,
+    safety_flags: [],
   };
 }
 

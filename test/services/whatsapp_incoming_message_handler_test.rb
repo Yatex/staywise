@@ -282,6 +282,115 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_nil follow_up_result.fetch(:alert)
   end
 
+  test "new ayla stay token relinks existing whatsapp conversation to the new property" do
+    @property.update!(wifi_name: "Old WiFi", wifi_password: "OldSecret")
+    new_property = @account.properties.create!(
+      name: "New Stay",
+      wifi_name: "New WiFi",
+      wifi_password: "NewSecret"
+    )
+    from = "whatsapp:+15550000022"
+    guest = @account.guests.create!(
+      phone_number: "+15550000022",
+      property: @property,
+      check_in_date: Date.current,
+      checkout_date: Date.current + 2.days
+    )
+    conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
+    conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "wifi?")
+
+    relink_result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => from,
+        "To" => "whatsapp:+15550009999",
+        "Body" => new_property.whatsapp_reference
+      },
+      provider: Whatsapp::Providers::NullProvider.new
+    ).call
+
+    assert relink_result.fetch(:routing_init)
+    assert_equal conversation, relink_result.fetch(:conversation)
+    assert_equal new_property, conversation.reload.property
+    assert_equal new_property, guest.reload.property
+    assert_equal 1, guest.conversations.count
+    routing_message = conversation.messages.where(sender: "guest").order(:id).last
+    assert_equal true, routing_message.metadata["token_detected"]
+    assert_equal true, routing_message.metadata["relinked"]
+    assert_equal @property.id, routing_message.metadata["previous_property_id"]
+    assert_equal new_property.id, routing_message.metadata["new_property_id"]
+
+    registry = AI::SourceRegistry.new(conversation: conversation.reload)
+    access_info = registry.sensitive_access_info(guest_message: "wifi?")
+    values = access_info.fetch(:sources).map { |source| source["value"] || source["content"] }
+    assert_includes values, "New WiFi"
+    assert_includes values, "NewSecret"
+    assert_not_includes values, "Old WiFi"
+    assert_not_includes values, "OldSecret"
+
+    ai_calls = 0
+    follow_up_result = nil
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      ai_calls += 1
+      assert_equal new_property, conversation.property
+      AIDecisionLog.create!(
+        account: conversation.property.account,
+        property: conversation.property,
+        guest: conversation.guest,
+        conversation: conversation,
+        message: guest_message,
+        original_message: guest_message,
+        route: "remote_ai",
+        decision: "reply",
+        final_outcome: "reply",
+        language: "es",
+        detected_intents: [{ "type" => "wifi", "status" => "answered" }],
+        evidence_ids: ["property.wifi_name", "property.wifi_password"],
+        payload: {
+          "tools" => ["sensitive_access_info"],
+          "evidence" => [
+            { "evidence_id" => "property.wifi_name", "value" => "New WiFi" },
+            { "evidence_id" => "property.wifi_password", "value" => "NewSecret" }
+          ]
+        }
+      )
+      AI::DecisionResult.from_hash(
+        decision: "reply",
+        language: "es",
+        message_body: "La red de WiFi es New WiFi y la contraseña es NewSecret.",
+        intent_summary: "wifi",
+        detected_intents: [{ type: "wifi", status: "answered" }],
+        evidence_ids: ["property.wifi_name", "property.wifi_password"],
+        required_capabilities: [],
+        proposed_action: nil,
+        escalation: { required: false, reason_code: nil, summary_for_host: nil },
+        missing_information: [],
+        safety_flags: [],
+        confidence: 0.95
+      )
+    }) do
+      follow_up_result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => from,
+          "To" => "whatsapp:+15550009999",
+          "Body" => "wifi?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    assert_equal conversation, follow_up_result.fetch(:conversation)
+    assert_equal 1, ai_calls
+    assert_nil follow_up_result.fetch(:alert)
+    ai_message = conversation.messages.where(sender: "ai").last
+    assert_includes ai_message.body, "New WiFi"
+    assert_includes ai_message.body, "NewSecret"
+    assert_not_includes ai_message.body, "Old WiFi"
+    trace = AIDecisionLog.order(:id).last
+    assert_equal new_property, trace.property
+    assert_not_includes trace.payload.to_json, "Old WiFi"
+    assert_equal conversation.id, trace.conversation_id
+  end
+
   test "ai reply is persisted before whatsapp delivery is attempted" do
     provider = PersistedBeforeSendProvider.new(expected_sender: "ai")
     result = nil

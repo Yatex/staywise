@@ -324,6 +324,36 @@ class InternalAiToolsControllerTest < ActionDispatch::IntegrationTest
     assert_includes matched_ids, "recommendation.#{recommendation.id}"
   end
 
+  test "property brain returns local recommendations for neutral preference after recommendation context" do
+    restaurant = @property.recommendations.create!(
+      name: "La Barra",
+      category: "restaurant",
+      description: "Parrilla cercana.",
+      address: "Calle Falsa 123"
+    )
+    cafe = @property.recommendations.create!(
+      name: "Cafe Tools",
+      category: "cafe",
+      description: "Buen desayuno cerca.",
+      address: "Av. Cafe 456"
+    )
+
+    post "/internal/ai/tools/property_brain", params: {
+      decision_context_id: @decision_context_id,
+      guest_message: "Cualquiera",
+      conversation_summary: "El huésped pidió restaurantes o lugares para comer y Ayla preguntó preferencia."
+    }
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    recommendation_ids = body.fetch("recommendations").map { |item| item["evidence_id"] }
+    matched_ids = body.fetch("matched_sources").map { |item| item["evidence_id"] }
+    assert_includes recommendation_ids, "recommendation.#{restaurant.id}"
+    assert_includes recommendation_ids, "recommendation.#{cafe.id}"
+    assert_includes matched_ids, "recommendation.#{restaurant.id}"
+    assert_includes matched_ids, "recommendation.#{cafe.id}"
+  end
+
   test "access instructions are returned only when authorized" do
     post "/internal/ai/tools/access_instructions", params: {
       decision_context_id: @decision_context_id

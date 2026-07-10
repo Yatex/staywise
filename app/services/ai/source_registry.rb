@@ -344,7 +344,10 @@ module AI
       return [] unless recommendation_intent?(search_tokens(query))
 
       sources = @property.recommendations.order(:category, :name).map { |recommendation| recommendation_source(recommendation) }
-      sources = search_sources(sources, query) if query.present?
+      if query.present?
+        matched = search_sources(sources, query)
+        sources = matched.presence || sources
+      end
       sources.first(limit).map { |source| public_source(source) }
     end
 
@@ -712,8 +715,8 @@ module AI
 
     def recommendation_intent?(tokens)
       (tokens & %w[
-        restaurant restaurants cafe cafes supermarket grocery market pharmacy attraction transport recommendation recommendations
-        comer cenar almorzar desayuno supermercado farmacia transporte visitar lugar lugares
+        restaurant restaurants restaurante restaurantes cafe cafes supermarket grocery market pharmacy attraction transport recommendation recommendations
+        comer cenar almorzar desayuno supermercado farmacia transporte visitar lugar lugares cualquiera recomiendes recomendas
         exchange cambio dinero pesos western union
       ]).any?
     end
@@ -747,12 +750,12 @@ module AI
       expanded << "checkout" if (tokens & %w[checkout salida salir leave departure]).any?
       expanded.concat(%w[late late_checkout]) if tokens.include?("checkout") && (tokens & %w[tarde later late extender extenderla extension]).any?
       expanded.concat(%w[recommendation restaurant food dining]) if (tokens & %w[restaurant restaurants restaurante restaurantes comer cenar almorzar desayuno food dining comida]).any?
-      expanded.concat(%w[recommendation cafe coffee]) if (tokens & %w[cafe cafes coffee cafetería cafeteria]).any?
+      expanded.concat(%w[recommendation cafe coffee]) if (tokens & %w[cafe cafes coffee cafetería cafeteria cafeterias]).any?
       expanded.concat(%w[recommendation supermarket grocery market]) if (tokens & %w[supermarket supermercado supermercados grocery groceries market mercado almacén almacen]).any?
       expanded.concat(%w[recommendation pharmacy]) if (tokens & %w[pharmacy farmacia farmacias drugstore]).any?
       expanded.concat(%w[recommendation transport transportation]) if (tokens & %w[transport transporte bus taxi uber colectivo metro]).any?
       expanded.concat(%w[recommendation attraction activity visit]) if (tokens & %w[attraction atraccion atracciones actividad actividades visitar paseo pasear turismo]).any?
-      expanded << "recommendation" if (tokens & %w[recomendacion recomendaciones recomendar recommended recommend cerca nearby lugar lugares place places]).any?
+      expanded << "recommendation" if (tokens & %w[recomendacion recomendaciones recomendar recomiendes recomendas recommended recommend cerca nearby lugar lugares place places cualquiera]).any?
 
       expanded
     end

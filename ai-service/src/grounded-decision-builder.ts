@@ -218,7 +218,7 @@ const INTENT_CATEGORIES = [
     category: "recommendation",
     intent: "recommendation",
     fields: ["recommendation", "recommendations", "place", "name", "address", "restaurant", "food", "cafe", "grocery", "supermarket", "pharmacy", "transport", "attraction"],
-    terms: ["recomendar", "recomendacion", "recommendation", "recommend", "cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "cerca", "nearby"],
+    terms: ["recomendar", "recomendacion", "recomendaciones", "recomiendes", "recomendas", "recommendation", "recommend", "cafe", "cafes", "coffee", "restaurant", "restaurants", "restaurante", "restaurantes", "comer", "cenar", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "lugares", "cerca", "nearby"],
   },
   {
     category: "rules",
@@ -309,9 +309,10 @@ export function buildGroundedDecision(
       );
     }
 
-    if (attempts >= thresholds.max_clarification_attempts && clarificationCategory(guestMessage)) {
+    if (attempts >= thresholds.max_clarification_attempts && exhaustedClarificationTopic(guestMessage, payload)) {
+      const escalation = escalationLastResortDecision(decision, payload, previousOutcome, clarificationIntent);
       return withGroundedAudit(
-        { decision, override: null },
+        escalation,
         buildAudit(baseAudit, [], null, "clarification_attempts_exhausted", {
           strategy: "escalation_last_resort",
           inferredIntent: clarificationIntent,
@@ -389,8 +390,25 @@ export function buildGroundedDecision(
     );
   }
 
+  const bestAvailableGroup = groupedCandidatesByIntent(candidates)[0];
+  if (bestAvailableGroup?.candidates?.length > 0) {
+    const bestCandidates = bestAvailableGroup.candidates.filter((candidate) => !approvalRequired(candidate.evidence));
+    if (bestCandidates.length > 0) {
+      return withGroundedAudit(
+        replyDecision(decision, payload, bestCandidates, previousOutcome, "reply_with_inference"),
+        buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null, {
+          strategy: "reply_with_inference",
+          inferredIntent: bestCandidates[0]?.inferred_intent || "ambiguous_request",
+          inferenceReason: bestCandidates[0]?.inference_reason || "clarification_attempts_exhausted_best_available",
+          scores: scoresForCandidates(bestCandidates, thresholds, { safetyScore: 85 }),
+        }),
+      );
+    }
+  }
+
+  const escalation = escalationLastResortDecision(decision, payload, previousOutcome, "ambiguous_request");
   return withGroundedAudit(
-    { decision, override: null },
+    escalation,
     buildAudit(baseAudit, sufficiencyAudit, null, "clarification_attempts_exhausted", {
       strategy: "escalation_last_resort",
       inferredIntent: "ambiguous_request",
@@ -416,6 +434,7 @@ function shouldRepairDecisionDiagnostic(decision: any): RepairDecisionDiagnostic
   if (unknownIntent) return { value: true, reason: "unknown_intent_requires_grounding_check" };
   if (fallback) return { value: true, reason: "fallback_flag_requires_grounding_check" };
   if (outcome === "reply" && !hasCitations) return { value: true, reason: "reply_without_evidence_ids" };
+  if (outcome === "ask_clarifying_question") return { value: true, reason: "clarification_requires_loop_and_evidence_check" };
 
   return { value: false, reason: "decision_already_grounded_or_not_repairable" };
 }
@@ -751,6 +770,47 @@ function clarificationDecision(
   };
 }
 
+function escalationLastResortDecision(
+  decision: any,
+  payload: any,
+  previousOutcome: string | null,
+  intent: string,
+): GroundedDecisionBuild {
+  const language = normalizedLanguage(decision?.language || payload?.guest_language_fallback || "en");
+  const messageBody = decision?.safe_fallback_response || escalationLastResortMessage(language);
+
+  return {
+    override: null,
+    decision: {
+      ...decision,
+      outcome: "escalate",
+      decision: "escalate",
+      language,
+      message_body: messageBody,
+      response_text: messageBody,
+      intent_summary: "Clarification limit reached without enough evidence to answer safely.",
+      detected_intents: [{
+        type: intent,
+        status: "escalated",
+      }],
+      evidence_ids: [],
+      used_source_ids: [],
+      required_capabilities: ["owner_attention"],
+      proposed_action: null,
+      escalation: {
+        required: true,
+        reason_code: "clarification_limit_reached",
+        summary_for_host: `No se pudo resolver la consulta luego de pedir aclaración. Pregunta original: ${payload?.guest_message || ""}`,
+      },
+      escalation_required: true,
+      escalation_reason: "clarification_limit_reached",
+      missing_information: ["owner_answer"],
+      safety_flags: removeFallbackFlag(decision?.safety_flags),
+      confidence: Math.max(Number(decision?.confidence || 0), 0.45),
+    },
+  };
+}
+
 function responseFromEvidenceGroup(candidates: Candidate[], language: string, guestMessage = "") {
   if (candidates.length === 0) return "";
   const entries = uniqueEvidence(candidates.map((candidate) => candidate.evidence));
@@ -1038,6 +1098,13 @@ function clarificationWithoutEvidenceMessage(category: string, language: string)
   return "Can you clarify a bit what you mean?";
 }
 
+function escalationLastResortMessage(language: string) {
+  if (language === "es") return "No tengo esa información confirmada. Lo consulto con el anfitrión y te aviso.";
+  if (language === "fr") return "Je n'ai pas cette information confirmée. Je vérifie avec l'hôte et je vous tiens au courant.";
+  if (language === "pt") return "Não tenho essa informação confirmada. Vou consultar o anfitrião e te aviso.";
+  return "I don't have that confirmed information. I'll check with the host and get back to you.";
+}
+
 function summaryForHost(payload: any, evidence: EvidenceCatalogEntry) {
   return `El huésped pidió algo relacionado con ${humanLabel(evidence)} y la política encontrada requiere aprobación. Pregunta original: ${payload?.guest_message || ""}`;
 }
@@ -1144,6 +1211,10 @@ function clarificationCategory(message: string) {
   return null;
 }
 
+function exhaustedClarificationTopic(message: string, payload: any) {
+  return Boolean(clarificationCategory(message) || neutralRecommendationPreference(message, payload));
+}
+
 function neutralRecommendationPreference(message: string, payload: any) {
   const text = normalizeText(message);
   const neutral = /\b(me da igual|como sea|cualquiera|lo que recomiendes|lo que recomendas|recomendame vos|todo sirve|no importa|me es igual|anything|whatever|up to you|your choice|anywhere|qualquer|tanto faz|voce escolhe|você escolhe)\b/.test(text);
@@ -1203,7 +1274,7 @@ function expandTokens(tokens: string[]) {
   if (tokens.some((token) => ["visita", "visitas", "invitado", "invitados", "invitar", "gente", "visitor", "visitors", "guests", "friends"].includes(token))) {
     expanded.push("visitors", "permission");
   }
-  if (tokens.some((token) => ["cafe", "coffee", "restaurant", "restaurante", "comer", "cenar", "recomendar", "recommendation", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "nearby", "cerca"].includes(token))) {
+  if (tokens.some((token) => ["cafe", "cafes", "coffee", "restaurant", "restaurants", "restaurante", "restaurantes", "comer", "cenar", "recomendar", "recomendaciones", "recomiendes", "recomendas", "recommendation", "food", "grocery", "supermarket", "supermercado", "pharmacy", "farmacia", "transport", "transporte", "attraction", "atraccion", "visitar", "lugar", "lugares", "nearby", "cerca"].includes(token))) {
     expanded.push("recommendation");
   }
   if (tokens.some((token) => ["supermarket", "supermercado", "grocery", "market", "mercado"].includes(token))) {
@@ -1212,7 +1283,7 @@ function expandTokens(tokens: string[]) {
   if (tokens.some((token) => ["pharmacy", "farmacia", "drugstore"].includes(token))) {
     expanded.push("pharmacy");
   }
-  if (tokens.some((token) => ["restaurant", "restaurante", "comer", "cenar", "almorzar", "food"].includes(token))) {
+  if (tokens.some((token) => ["restaurant", "restaurants", "restaurante", "restaurantes", "comer", "cenar", "almorzar", "food"].includes(token))) {
     expanded.push("food", "restaurant");
   }
   if (tokens.some((token) => ["transport", "transporte", "taxi", "bus", "uber"].includes(token))) {

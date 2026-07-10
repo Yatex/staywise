@@ -21,7 +21,7 @@ module Whatsapp
 
       account = property.account
       guest = resolve_guest(account, property, parsed)
-      conversation = resolve_conversation(guest, property)
+      conversation = resolve_conversation(guest, property, parsed)
       guest_message = conversation.messages.create!(
         sender: "guest",
         channel: "whatsapp",
@@ -65,17 +65,51 @@ module Whatsapp
         guest.property = property
         guest.name = "Huésped de WhatsApp"
       end.tap do |guest|
-        guest.update!(property: property) if guest.property.blank?
+        guest.update!(property: property) if guest.property.blank? || parsed.property_token.present?
       end
     end
 
-    def resolve_conversation(guest, property)
+    def resolve_conversation(guest, property, parsed)
+      if parsed.property_token.present?
+        conversation = guest.conversations.open.order(updated_at: :desc).first
+        if conversation.present?
+          relink_conversation!(conversation, property, parsed)
+          return conversation
+        end
+
+        @routing_audit = {
+          "token_detected" => true,
+          "relinked" => false,
+          "previous_property_id" => nil,
+          "new_property_id" => property.id
+        }
+        Rails.logger.info("[whatsapp-property-routing] #{@routing_audit.to_json}")
+      end
+
       guest.conversations.where(property: property).open.order(updated_at: :desc).first ||
         guest.conversations.create!(property: property, status: "active", ai_enabled: true)
     end
 
+    def relink_conversation!(conversation, property, parsed)
+      previous_property_id = conversation.property_id
+      relinked = previous_property_id != property.id
+      if relinked
+        conversation.update!(property: property, ai_enabled: property.ai_enabled?)
+        conversation.association(:property).reset
+      end
+      @routing_audit = {
+        "token_detected" => parsed.property_token.present?,
+        "relinked" => relinked,
+        "previous_property_id" => previous_property_id,
+        "new_property_id" => property.id
+      }
+
+      Rails.logger.info("[whatsapp-property-routing] #{@routing_audit.to_json}")
+    end
+
     def guest_message_metadata(parsed, property)
       metadata = parsed.metadata.to_h
+      metadata = metadata.merge(@routing_audit.to_h) if @routing_audit.present?
       return metadata unless routing_init_message?(parsed, property)
 
       metadata.merge(
