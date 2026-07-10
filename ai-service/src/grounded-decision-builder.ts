@@ -34,6 +34,7 @@ type EvidenceGroup = {
   intent: string;
   candidates: Candidate[];
   top_score: number;
+  source_priority: number;
 };
 
 type RepairDecisionDiagnostic = {
@@ -462,15 +463,18 @@ function rankedCandidates(message: string, evidenceCatalog: EvidenceCatalogEntry
 }
 
 function sufficientEvidenceGroup(candidates: Candidate[], thresholds: DecisionThresholds): EvidenceGroup | null {
-  if (relevanceScore(candidates) < thresholds.high_score_threshold) return null;
-
   const groups = groupedCandidatesByIntent(candidates);
-  const topPriority = groups[0]?.source_priority || 9;
-  const topScore = groups[0]?.top_score || 0;
+  const topGroup = groups[0];
+  if (!topGroup) return null;
+
+  const topPriority = topGroup.source_priority;
+  const topScore = topGroup.top_score;
+  if (clampScore(Math.round(topScore * 20)) < thresholds.medium_score_threshold) return null;
+
   const topGroups = groups.filter((group) => group.source_priority === topPriority && group.top_score === topScore);
   if (topGroups.length !== 1) return null;
 
-  return topGroups[0];
+  return topGroup;
 }
 
 function groupedCandidatesByIntent(candidates: Candidate[]) {

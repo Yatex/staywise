@@ -29,3 +29,12 @@ test("decision prompt classifies owner-managed requests as guest requests", () =
   assert.match(DECISION_SYSTEM_PROMPT, /request_extra_bed/);
   assert.match(DECISION_SYSTEM_PROMPT, /confirm receipt only/i);
 });
+
+test("decision prompts follow respond-first clarification rules", () => {
+  for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
+    assert.match(prompt, /Respond first, clarify only when necessary/i);
+    assert.match(prompt, /Only ask a clarification when the guest's answer would materially change/i);
+    assert.match(prompt, /Never offer maps, Google Maps routes, navigation/i);
+    assert.match(prompt, /Never promise future actions/i);
+  }
+});

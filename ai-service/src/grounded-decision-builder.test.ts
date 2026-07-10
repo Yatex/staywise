@@ -275,6 +275,26 @@ test("medium confidence asks clarification instead of escalating", () => {
   assert.ok(scores.evidence_relevance_score >= 40);
 });
 
+test("medium relevance with one useful evidence group replies instead of asking extra questions", () => {
+  const result = buildGroundedDecision(unknownEscalation("es"), {
+    guest_message: "basura",
+  }, catalogFromSource({
+    source_type: "property_fact",
+    source_id: "property_fact:trash_instructions",
+    evidence_id: "property.trash_instructions",
+    field: "trash_instructions",
+    label: "Basura",
+    value: "Sacá la basura al contenedor del subsuelo antes de las 20:00.",
+  }));
+
+  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.escalation_required, false);
+  assert.deepEqual(result.decision.evidence_ids, ["property.trash_instructions"]);
+  assert.match(result.decision.message_body, /contenedor del subsuelo/);
+  assert.doesNotMatch(result.decision.message_body, /\?/);
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.override_type, "sufficient_evidence");
+});
+
 test("two clarification attempts without resolution leave escalation as last resort", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "no anda",
@@ -1037,7 +1057,7 @@ test("sufficient evidence never remains unknown and evidence ids are present", (
   assert.ok(result.decision.audit.grounded_decision_builder.decision_scores.safety_score >= 75);
 });
 
-test("custom high threshold can move medium evidence to clarification", () => {
+test("high threshold does not force clarification when one evidence group can answer", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "a que hora puedo entrar al depto?",
     decision_settings: {
@@ -1056,9 +1076,11 @@ test("custom high threshold can move medium evidence to clarification", () => {
   }));
 
   const audit = result.decision.audit.grounded_decision_builder;
-  assert.equal(result.decision.outcome, "ask_clarifying_question");
+  assert.equal(result.decision.outcome, "reply");
+  assert.deepEqual(result.decision.evidence_ids, ["property.check_in_time"]);
+  assert.match(result.decision.message_body, /15:00/);
   assert.equal(audit.score_thresholds.high_score_threshold, 95);
-  assert.equal(audit.grounded_decision_result.override_type, "partial_evidence");
+  assert.equal(audit.grounded_decision_result.override_type, "sufficient_evidence");
 });
 
 test("custom max clarification attempts uses best available evidence when possible", () => {
