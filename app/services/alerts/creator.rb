@@ -55,7 +55,7 @@ module Alerts
         }.compact
       )
 
-      if alert.priority == "urgent" && account.email_alerts_enabled? && account.ai_automation_enabled?("send_urgent_emails")
+      if alert.alert_type == "emergency" && account.email_alerts_enabled? && account.ai_automation_enabled?("send_urgent_emails")
         OwnerAlertEmailJob.perform_later(alert.id)
       end
 

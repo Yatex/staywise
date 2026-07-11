@@ -1,6 +1,32 @@
 <% content_for :page_title, t("ui.nav.dashboard") %>
 
 <div class="space-y-6">
+  <% if @alerts.present? %>
+    <details class="<%= card_class %> overflow-hidden">
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
+        <div class="flex items-center gap-3">
+          <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700 ring-1 ring-rose-200" aria-hidden="true">!</span>
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Alertas importantes</h2>
+            <p class="text-sm text-slate-500"><%= @alerts.one? ? "1 situación requiere" : "#{@alerts.size} situaciones requieren" %> atención.</p>
+          </div>
+        </div>
+        <span class="text-sm font-semibold text-slate-600">Ver alertas</span>
+      </summary>
+      <div class="divide-y divide-slate-100 border-t border-slate-200">
+        <% @alerts.each do |alert| %>
+          <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %></p>
+          <% end %>
+        <% end %>
+        <div class="px-5 py-3 text-right">
+          <%= link_to t("ui.actions.view_all"), alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+        </div>
+      </div>
+    </details>
+  <% end %>
+
   <section class="grid gap-6 xl:grid-cols-2">
     <div class="<%= card_class %> overflow-hidden">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -30,34 +56,6 @@
       </div>
     </div>
 
-    <div class="<%= card_class %> overflow-hidden">
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <div>
-          <h2 class="text-base font-semibold text-slate-950"><%= t("ui.dashboard.open_alerts") %></h2>
-          <p class="text-sm text-slate-500"><%= t("ui.dashboard.open_alerts_body") %></p>
-        </div>
-        <%= link_to t("ui.actions.view_all"), alerts_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
-      </div>
-      <div class="divide-y divide-slate-100">
-        <% @alerts.each do |alert| %>
-          <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
-                <p class="mt-1 text-sm text-slate-500"><%= alert.property.display_name %></p>
-              </div>
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>
-            </div>
-          <% end %>
-        <% end %>
-        <% if @alerts.blank? %>
-          <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.dashboard.no_alerts") %></p>
-        <% end %>
-      </div>
-    </div>
-  </section>
-
-  <section class="grid gap-6 xl:grid-cols-2">
     <div class="<%= card_class %> overflow-hidden">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <div>

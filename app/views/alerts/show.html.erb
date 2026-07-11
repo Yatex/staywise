@@ -9,7 +9,7 @@
         <p class="mt-2 text-sm text-slate-500"><%= enum_label(@alert.alert_type) %> · <%= @alert.property.display_name %></p>
       </div>
       <div class="flex shrink-0 items-center gap-3">
-        <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@alert.priority) %>"><%= enum_label(@alert.priority) %></span>
+        <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@alert.status) %>"><%= enum_label(@alert.status) %></span>
         <% if @alert.conversation.present? %>
           <%= link_to "Responder al huésped", conversation_path(@alert.conversation), class: primary_button_class %>
         <% end %>
@@ -29,14 +29,10 @@
 
   <section class="<%= card_class %> p-5">
     <h3 class="text-base font-semibold text-slate-950">Actualizar tarea</h3>
-    <%= form_with model: @alert, class: "mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto]" do |form| %>
+    <%= form_with model: @alert, class: "mt-4 flex flex-col gap-4 sm:flex-row sm:items-end" do |form| %>
       <div>
         <%= form.label :status, class: label_class %>
         <%= form.select :status, Alert::STATUSES.map { |status| [enum_label(status), status] }, {}, class: field_class %>
-      </div>
-      <div>
-        <%= form.label :priority, class: label_class %>
-        <%= form.select :priority, Alert::PRIORITIES.map { |priority| [enum_label(priority), priority] }, {}, class: field_class %>
       </div>
       <div class="flex items-end">
         <%= form.submit "Guardar", class: primary_button_class %>

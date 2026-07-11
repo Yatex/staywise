@@ -38,6 +38,6 @@ class GuestRequestsController < ApplicationController
   end
 
   def guest_request_params
-    params.require(:guest_request).permit(:status, :priority)
+    params.require(:guest_request).permit(:status)
   end
 end

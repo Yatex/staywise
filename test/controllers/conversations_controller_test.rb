@@ -170,7 +170,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
       title: "Pedido de comida o bebida",
       description: "quiero un vino",
       ai_summary: "El huésped pidió un vino.",
-      status: "pending",
+      status: "open",
       priority: "normal",
       source_channel: "whatsapp"
     )
@@ -196,7 +196,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
       category: "extra_bed",
       title: "Pedido de cama extra",
       description: "necesito una cama extra",
-      status: "pending",
+      status: "open",
       priority: "normal",
       source_channel: "whatsapp"
     )

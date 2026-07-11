@@ -137,8 +137,8 @@ module GuestRequests
         title: request_title(category),
         description: request_text,
         ai_summary: ai_summary,
-        status: "pending",
-        priority: priority_for(category),
+        status: "open",
+        priority: "normal",
         requires_owner_approval: requires_owner_approval?(category),
         structured_details: structured_details,
         source_channel: @guest_message.channel.presence || "whatsapp",
@@ -185,10 +185,6 @@ module GuestRequests
         @decision.intent_summary.presence ||
         @decision.proposed_action.to_h["details"].presence ||
         request_text
-    end
-
-    def priority_for(category)
-      category.in?(%w[early_checkin late_checkout reservation_change]) ? "high" : "normal"
     end
 
     def requires_owner_approval?(category)

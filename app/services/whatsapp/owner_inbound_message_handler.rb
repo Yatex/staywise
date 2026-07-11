@@ -81,7 +81,6 @@ module Whatsapp
       end
 
       selected_session&.update!(state: "queued")
-      session.alert.update!(status: "in_progress") if session.alert.status == "open"
       session.update!(state: "awaiting_answer", last_owner_message_at: Time.current)
       session.append_event!("owner_alert_selected", position: position, alert_id: session.alert_id)
 

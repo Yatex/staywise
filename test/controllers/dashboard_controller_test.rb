@@ -24,7 +24,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
       account: @account, property: @property, guest: @guest, message: message,
       kind: "inquiry", guest_phone: @guest.phone_number, property_name: @property.display_name,
       category: "other", title: "Consulta pendiente", description: message.body,
-      status: "pending", priority: "normal", source_channel: "whatsapp"
+      status: "open", priority: "normal", source_channel: "whatsapp"
     )
 
     get dashboard_path
@@ -33,7 +33,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Puedo hacer más tarde el checkout?"
     assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
-    assert_includes @response.body, "No hay alertas abiertas"
+    assert_not_includes @response.body, "Alertas importantes"
   end
 
   test "does not show recent chats on dashboard" do
@@ -60,7 +60,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
       category: "food_or_drink",
       title: "Pedido de comida o bebida",
       description: "quiero un vino",
-      status: "pending",
+      status: "open",
       priority: "normal",
       source_channel: "whatsapp"
     )
@@ -113,7 +113,26 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Puedo hacer más tarde el checkout?"
     assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
-    assert_includes @response.body, "No hay alertas abiertas"
+    assert_not_includes @response.body, "Alertas importantes"
+  end
+
+  test "shows operational alerts in a compact collapsed section above owner tasks" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Hay humo en la cocina")
+    @property.alerts.create!(
+      guest: @guest, conversation: @conversation, original_message: message,
+      alert_type: "emergency", title: "Posible emergencia", description: message.body,
+      status: "open", priority: "urgent"
+    )
+
+    get dashboard_path
+
+    assert_response :success
+    assert_select "details:not([open])" do
+      assert_select "summary", text: /Alertas importantes/
+      assert_select "a[href='#{alert_path(@property.alerts.last)}']", text: /Posible emergencia/
+    end
+    assert_operator response.body.index("Alertas importantes"), :<, response.body.index("Pedidos pendientes")
+    assert_operator response.body.index("Pedidos pendientes"), :<, response.body.index("Consultas pendientes")
   end
 
   private

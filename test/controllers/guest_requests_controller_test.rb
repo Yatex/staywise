@@ -27,7 +27,7 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
       title: "Pedido de comida o bebida",
       description: "quiero un vino",
       ai_summary: "El huésped pidió un vino.",
-      status: "pending",
+      status: "open",
       priority: "normal",
       source_channel: "whatsapp"
     )
@@ -59,14 +59,13 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
 
     patch guest_request_path(@guest_request), params: {
       guest_request: {
-        status: "resolved",
-        priority: "high"
+        status: "resolved"
       }
     }
 
     assert_redirected_to guest_request_path(@guest_request)
     assert_equal "resolved", @guest_request.reload.status
-    assert_equal "high", @guest_request.priority
+    assert_equal "normal", @guest_request.priority
     assert_not_nil @guest_request.resolved_at
   end
 
@@ -85,7 +84,7 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
       category: "extra_item",
       title: "Pedido de artículo extra",
       description: "necesito toallas",
-      status: "pending",
+      status: "open",
       priority: "normal",
       source_channel: "whatsapp"
     )
@@ -103,7 +102,7 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
       account: @account, property: @property, guest: @guest, message: inquiry_message,
       kind: "inquiry", guest_phone: @guest.phone_number, property_name: @property.display_name,
       category: "other", title: "Consulta pendiente", description: inquiry_message.body,
-      status: "pending", priority: "normal", source_channel: "whatsapp"
+      status: "open", priority: "normal", source_channel: "whatsapp"
     )
 
     get guest_requests_path

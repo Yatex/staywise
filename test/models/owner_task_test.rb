@@ -10,7 +10,7 @@ class OwnerTaskTest < ActiveSupport::TestCase
     @attributes = {
       account: account, property: property, guest: guest, conversation: conversation, message: message,
       guest_phone: guest.phone_number, property_name: property.display_name, category: "other",
-      title: "Tarea", description: message.body, status: "pending", priority: "normal", source_channel: "whatsapp"
+      title: "Tarea", description: message.body, status: "open", priority: "normal", source_channel: "whatsapp"
     }
   end
 

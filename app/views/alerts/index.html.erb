@@ -21,9 +21,8 @@
               <% end %>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2">
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.priority) %>"><%= enum_label(alert.priority) %></span>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(alert.status) %>"><%= enum_label(alert.status) %></span>
-              <% if alert.status.in?(%w[open in_progress]) %>
+              <% if alert.status == "open" %>
                 <%= button_to alert_path(alert),
                   method: :patch,
                   params: { alert: { status: "resolved" } },

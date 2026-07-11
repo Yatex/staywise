@@ -76,7 +76,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     guest_request = result.fetch(:guest_request)
     assert_equal "late_checkout", guest_request.category
-    assert_equal "pending", guest_request.status
+    assert_equal "open", guest_request.status
     assert_equal "request", guest_request.kind
     assert_equal "+15550000002", guest_request.guest_phone
     assert_equal "Av. Test 123", guest_request.property_address
@@ -127,7 +127,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_nil result.fetch(:alert)
     assert_equal 0, result.fetch(:conversation).alerts.count
     assert_equal "food_or_drink", guest_request.category
-    assert_equal "pending", guest_request.status
+    assert_equal "open", guest_request.status
     assert_equal "+15550000023", guest_request.guest_phone
     assert_equal "Calle Vino 456", guest_request.property_address
     assert_includes guest_request.description, "quiero un vino"
@@ -155,7 +155,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert_nil result.fetch(:alert)
     assert_equal "food_or_drink", guest_request.category
-    assert_equal "pending", guest_request.status
+    assert_equal "open", guest_request.status
     assert_equal "15550000026 · Pedido", guest_request.title
   end
 
@@ -214,7 +214,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert_nil result.fetch(:alert)
     assert_equal "extra_bed", result.fetch(:guest_request).category
-    assert_equal "pending", result.fetch(:guest_request).status
+    assert_equal "open", result.fetch(:guest_request).status
   end
 
   test "unanswered inquiry creates one inquiry owner task without alert" do
@@ -1123,7 +1123,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert detail_result.fetch(:selected)
     assert_equal "awaiting_answer", session.reload.state
-    assert_equal "in_progress", alert.reload.status
+    assert_equal "open", alert.reload.status
     assert_includes provider.sent_messages.last.fetch(:body), "Último mensaje del huésped:"
 
     answer_result = Whatsapp::IncomingMessageHandler.new(
@@ -1166,7 +1166,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       alert_type: "missing_sensitive_information",
       title: "Falta información · Código de caja fuerte",
       description: "Cuál es la contraseña de la caja fuerte?",
-      status: "in_progress",
+      status: "open",
       metadata: {
         "requested_sensitive_type" => "property.safe_code",
         "missing_information" => ["property.safe_code"]
@@ -1388,7 +1388,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       alert_type: "unknown_question",
       title: "Question one",
       description: "Question one",
-      status: "in_progress"
+      status: "open"
     )
     session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "queued")
 
@@ -1462,7 +1462,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       alert_type: "unknown_question",
       title: "Pregunta pendiente",
       description: "¿Puedo invitar gente a la pileta?",
-      status: "in_progress"
+      status: "open"
     )
     session = @account.owner_whatsapp_sessions.create!(alert: alert, state: "awaiting_answer")
     provider = RecordingProvider.new
@@ -1481,7 +1481,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "resolved", session.reload.state
     assert_equal 1, conversation.messages.where(sender: "owner").count
 
-    alert.update!(status: "in_progress")
+    alert.update!(status: "open")
     session.update!(state: "awaiting_answer", resolved_at: nil)
 
     result = Whatsapp::IncomingMessageHandler.new(

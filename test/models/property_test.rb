@@ -91,7 +91,7 @@ class PropertyTest < ActiveSupport::TestCase
       title: "Más toallas",
       description: "Necesito más toallas",
       ai_summary: "El huésped pidió más toallas.",
-      status: "pending",
+      status: "open",
       source_channel: "whatsapp"
     )
 

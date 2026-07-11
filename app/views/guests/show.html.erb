@@ -43,7 +43,7 @@
         <% @alerts.each do |alert| %>
           <%= link_to alert_path(alert), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
             <p class="font-medium text-slate-950"><%= alert_display_title(alert) %></p>
-            <p class="mt-1 text-sm text-slate-500"><%= enum_label(alert.priority) %> · <%= enum_label(alert.status) %></p>
+            <p class="mt-1 text-sm text-slate-500"><%= enum_label(alert.status) %></p>
           <% end %>
         <% end %>
         <% if @alerts.blank? %>

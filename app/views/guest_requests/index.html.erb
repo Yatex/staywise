@@ -45,7 +45,6 @@
               <% if guest_request.requires_owner_approval? %>
                 <span class="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">Requiere aprobación</span>
               <% end %>
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.priority) %>"><%= enum_label(guest_request.priority) %></span>
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.status) %>"><%= enum_label(guest_request.status) %></span>
               <% GuestRequest::STATUSES.without(guest_request.status).each do |status| %>
                 <%= button_to enum_label(status),

@@ -54,7 +54,7 @@ class AlertsController < ApplicationController
   end
 
   def alert_params
-    params.require(:alert).permit(:status, :priority)
+    params.require(:alert).permit(:status)
   end
 
   def answer_question_params

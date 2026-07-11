@@ -10,8 +10,7 @@ class Alert < ApplicationRecord
     unknown_question
     other
   ].freeze
-  STATUSES = %w[open in_progress resolved dismissed].freeze
-  PRIORITIES = %w[low medium high urgent].freeze
+  STATUSES = %w[open resolved].freeze
 
   belongs_to :property
   belongs_to :guest, optional: true
@@ -21,10 +20,9 @@ class Alert < ApplicationRecord
 
   validates :alert_type, inclusion: { in: TYPES }
   validates :status, inclusion: { in: STATUSES }
-  validates :priority, inclusion: { in: PRIORITIES }
   validates :title, presence: true
 
-  scope :open, -> { where(status: %w[open in_progress]) }
+  scope :open, -> { where(status: "open") }
   scope :urgent, -> { where(priority: "urgent") }
   scope :unknown_questions, -> { where(alert_type: "unknown_question") }
   scope :operational, -> { where.not(alert_type: "unknown_question") }
@@ -34,7 +32,7 @@ class Alert < ApplicationRecord
   private
 
   def set_resolved_at
-    self.resolved_at = Time.current if status.in?(%w[resolved dismissed]) && resolved_at.blank?
-    self.resolved_at = nil if status.in?(%w[open in_progress])
+    self.resolved_at = Time.current if status == "resolved" && resolved_at.blank?
+    self.resolved_at = nil if status == "open"
   end
 end
