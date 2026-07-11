@@ -190,29 +190,49 @@ module Whatsapp
 
       body = ai_response_body(conversation, decision, alert: alert, guest_request: guest_request)
       return false if body.blank?
+      attachments = resolved_attachments(conversation, decision)
+      body = message_with_link_attachments(body, attachments)
 
       message = conversation.messages.create!(
         sender: "ai",
         channel: "whatsapp",
         body: body,
         metadata: decision.to_h.merge(
+          "attachments" => attachments,
           "delivery_status" => "pending",
           "delivery_status_updated_at" => Time.current.iso8601
         )
       )
 
-      deliver_persisted_message(message, to: guest.phone_number, body: body)
+      deliver_persisted_message(message, to: guest.phone_number, body: body, attachments: attachments)
     end
 
     def ai_response_body(conversation, decision, alert:, guest_request: nil)
-      safe_response_text_for(decision, alert: alert, guest_request: guest_request)
+      safe_response_text_for(conversation, decision, alert: alert, guest_request: guest_request)
     end
 
-    def safe_response_text_for(decision, alert:, guest_request: nil)
-      return decision.response_text if guest_request.present?
-      return decision.response_text unless decision.escalation_required && alert.blank?
+    def safe_response_text_for(conversation, decision, alert:, guest_request: nil)
+      text = decision.response_text.to_s
+      phone = conversation.property.owner_contact_phone.presence || conversation.property.account.owner_whatsapp_number.presence
+      text = text.gsub("{{owner_contact_phone}}", phone.to_s) if phone.present?
+      if phone.blank? && text.include?("{{owner_contact_phone}}")
+        text = text.split(/(?<=[.!?])\s+/).reject { |sentence| sentence.include?("{{owner_contact_phone}}") }.join(" ").presence ||
+          "No pude procesar tu mensaje en este momento."
+      end
 
-      decision.safe_fallback_response
+      text
+    end
+
+    def resolved_attachments(conversation, decision)
+      registry = AI::SourceRegistry.new(conversation: conversation)
+      decision.attachments.filter_map do |attachment|
+        registry.attachment_for_evidence_id(attachment["evidence_id"], type: attachment["type"])
+      end
+    end
+
+    def message_with_link_attachments(body, attachments)
+      links = attachments.filter_map { |attachment| attachment["url"] if attachment["delivery"] == "link" }
+      [body, *links].compact_blank.join("\n")
     end
 
     def missing_property_context(parsed)
@@ -312,8 +332,13 @@ module Whatsapp
       delivery.respond_to?(:success?) ? delivery.success? : !!delivery
     end
 
-    def deliver_persisted_message(message, to:, body:)
-      delivery = @provider.send_message(to: to, body: body)
+    def deliver_persisted_message(message, to:, body:, attachments: [])
+      media_urls = attachments.filter_map { |attachment| attachment["url"] if attachment["delivery"] == "media" }
+      delivery = if media_urls.present?
+        @provider.send_message(to: to, body: body, media_urls: media_urls)
+      else
+        @provider.send_message(to: to, body: body)
+      end
       delivered = delivery_success?(delivery)
 
       message.update!(

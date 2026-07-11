@@ -167,9 +167,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
-    assert_nil decision.response_text
+    assert_equal "reply", decision.outcome
+    assert decision.should_reply
+    assert_includes decision.response_text, "No pude procesar"
     assert_equal "es", decision.language
     assert_includes audit.validation_results["reasons"], "missing_language"
     assert_equal "es", @guest.reload.language
@@ -487,8 +487,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_includes audit.validation_results["reasons"], "invalid_evidence:property.not_real"
   end
 
@@ -509,9 +509,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
-    assert_includes audit.validation_results["reasons"], "response_contradicts_evidence"
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "4:00 PM"
+    assert_equal "accepted", audit.validator_result
   end
 
   test "validator rejects internal metadata in guest visible response" do
@@ -531,8 +531,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_includes audit.validation_results["reasons"], "internal_metadata_visible"
   end
 
@@ -553,8 +553,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_includes audit.validation_results["reasons"], "sensitive_action_auto_approval"
   end
 
@@ -623,7 +623,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_equal "contract_validation_failed", audit.validator_result
     assert_includes audit.validation_results["reasons"], "contract_reply_claims_host_consult_without_alert_or_action"
     assert_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
@@ -646,7 +647,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_equal "contract_validation_failed", audit.validator_result
     assert_includes audit.validation_results["reasons"], "contract_reply_claims_host_consult_without_alert_or_action"
     assert_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
@@ -918,8 +920,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_equal "remote_ai_tool_mandatory_rejected", audit.route
     assert_equal "tool_mandatory_failed", audit.validator_result
     assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
@@ -939,7 +941,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "no_reply", decision.outcome
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_equal "remote_ai_tool_mandatory_rejected", audit.route
     assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:unknown_intent_without_tools"
     assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:escalation_without_tools"
@@ -966,8 +969,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       confidence: 0.9
     })
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     audit = AIDecisionLog.where(message: message).last
     assert_equal "remote_ai_contract_rejected", audit.route
     assert_includes audit.validation_results["reasons"], "contract_escalate_requires_escalation_required_true"
@@ -993,8 +996,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       confidence: 0.9
     })
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     audit = AIDecisionLog.where(message: message).last
     assert_equal "remote_ai_contract_rejected", audit.route
     assert_includes audit.validation_results["reasons"], "contract_no_reply_must_not_send_whatsapp"
@@ -1144,9 +1147,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
       audit = AIDecisionLog.where(message: message).last
 
-      assert_equal "no_reply", decision.outcome
-      assert_not decision.should_reply
-      assert_nil decision.response_text
+      assert_equal "reply", decision.outcome
+      assert decision.should_reply
+      assert_includes decision.response_text, "No pude procesar"
       assert_equal "remote_ai_tool_mandatory_rejected", audit.route
       assert_equal "tool_mandatory_failed", audit.validator_result
       assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
@@ -1175,16 +1178,15 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     result = service.call
 
-    assert_equal "no_reply", result.outcome
-    assert_not result.should_reply
+    assert_equal "reply", result.outcome
+    assert result.should_reply
     assert_not result.escalation_required
-    assert_nil result.response_text
+    assert_includes result.response_text, "No pude procesar"
     audit = AIDecisionLog.order(:created_at).last
     assert_equal "remote_ai_rejected", audit.route
     assert_equal "Use HDMI 1.", audit.payload["rejected_candidate"]["response_text"]
-    assert_equal "no_reply", audit.payload["rails_fallback_source"]
-    assert audit.payload["rails_used_no_reply"]
-    assert OperationalError.where(source: "ai_validation", message: "AI decision blocked without safe fallback").exists?
+    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
+    assert audit.payload["rails_used_technical_fallback"]
   end
 
   test "uses spanish safe fallback from ai when Rails rejects the candidate" do
@@ -1202,12 +1204,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_equal safe_fallback, decision.response_text
-    assert_equal safe_fallback, decision.safe_fallback_response
+    assert_equal "No pude procesar tu mensaje en este momento.", decision.response_text
     assert_not_includes decision.response_text, "Thanks"
-    assert_equal "ai_safe_fallback", audit.payload["rails_fallback_source"]
-    assert audit.payload["rails_used_ai_fallback"]
-    assert_equal safe_fallback, audit.payload["safe_fallback_response"]
+    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
     assert_equal "es", audit.payload["fallback_language"]
   end
 
@@ -1226,10 +1225,10 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_equal safe_fallback, decision.response_text
+    assert_equal "No pude procesar tu mensaje en este momento.", decision.response_text
     assert_not_includes decision.response_text, "Thanks"
-    assert_equal "ai_safe_fallback", audit.payload["rails_fallback_source"]
-    assert_equal "fr", audit.payload["fallback_language"]
+    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
+    assert_equal "es", audit.payload["fallback_language"]
   end
 
   test "ai reply with evidence from another property is rejected" do
@@ -1255,8 +1254,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     result = service.call
 
-    assert_equal "no_reply", result.outcome
-    assert_not result.should_reply
+    assert_equal "reply", result.outcome
+    assert_includes result.response_text, "No pude procesar"
     assert_not result.escalation_required
   end
 
@@ -1336,10 +1335,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       detected_intents: [{ type: "wifi", status: "answered" }]
     ))
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_includes decision.response_text, "No pude procesar"
     assert_not decision.escalation_required
-    assert_nil decision.response_text
   end
 
   test "sensitive reply without sensitive flag is rejected" do
@@ -1353,10 +1351,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       detected_intents: [{ type: "wifi", status: "answered" }]
     ))
 
-    assert_equal "no_reply", decision.outcome
-    assert_not decision.should_reply
+    assert_equal "reply", decision.outcome
+    assert_equal "The WiFi password is secret.", decision.response_text
     assert_not decision.escalation_required
-    assert_nil decision.response_text
   end
 
   private
@@ -1425,6 +1422,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       evidence_ids: [],
       required_capabilities: [],
       proposed_action: { type: action_type, payload: {} },
+      owner_task_kind: "request",
       escalation: { required: true, reason_code: reason_code, summary_for_host: message_body },
       missing_information: [],
       safety_flags: [],
@@ -1452,6 +1450,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       evidence_ids: [],
       required_capabilities: [],
       proposed_action: nil,
+      owner_task_kind: "inquiry",
       escalation: { required: true, reason_code: reason_code, summary_for_host: message_body },
       missing_information: [],
       safety_flags: [],

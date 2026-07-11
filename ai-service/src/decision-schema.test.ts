@@ -1,162 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DecisionSchema, recoverDecisionFromRawText } from "./decision-schema.js";
+import { DecisionSchema, recoverDecisionFromRawText, toPublicDecision } from "./decision-schema.js";
 
-const checkInReply = {
-  outcome: "reply",
+const reply = {
+  action: "reply",
+  owner_task_kind: null,
   language: "es",
-  message_body: "El check-in es a las 15:00.",
-  safe_fallback_response: "No tengo esa información confirmada. Necesito revisarla antes de responderte.",
-  intent_summary: "Consulta sobre hora de check-in - respondida",
-  detected_intents: [{ type: "check_in_time", status: "answered" }],
-  used_source_ids: ["property_fact:check_in_time"],
-  evidence_ids: ["property.check_in_time"],
-  required_capabilities: [],
-  proposed_action: null,
-  escalation: {
-    reason_code: null,
-    summary_for_host: null,
-  },
-  escalation_required: false,
-  escalation_reason: null,
-  sensitive_info_used: false,
-  missing_information: [],
-  safety_flags: [],
-  confidence: 0.9,
+  message: "La red Wi-Fi es Pepe.",
+  task_summary: null,
+  answer_confidence: 96,
+  evidence_ids: ["property.wifi_name"],
+  attachments: [],
 };
 
-test("AylaDecision parses a grounded check-in reply", () => {
-  const parsed = DecisionSchema.parse(checkInReply);
-
+test("AylaDecision parses the single final reply contract", () => {
+  const parsed = DecisionSchema.parse(reply);
   assert.equal(parsed.outcome, "reply");
-  assert.equal(parsed.message_body, "El check-in es a las 15:00.");
-  assert.deepEqual(parsed.detected_intents, [{ type: "check_in_time", status: "answered" }]);
-  assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
+  assert.equal(parsed.message_body, reply.message);
+  assert.equal(parsed.answer_confidence, 96);
+  assert.deepEqual(parsed.evidence_ids, ["property.wifi_name"]);
 });
 
-test("AylaDecision permits null contract fields and normalizes escalation.required", () => {
-  const parsed = DecisionSchema.parse(checkInReply);
-
-  assert.equal(parsed.proposed_action, null);
-  assert.equal(parsed.escalation.required, false);
-  assert.equal(parsed.escalation.reason_code, null);
-  assert.equal(parsed.escalation.summary_for_host, null);
-  assert.equal(parsed.escalation_reason, null);
+test("AylaDecision parses clarify without an owner task", () => {
+  const parsed = DecisionSchema.parse({ ...reply, action: "clarify", message: "¿Cuántas mantas necesitás?", answer_confidence: 70, evidence_ids: [] });
+  assert.equal(parsed.outcome, "ask_clarifying_question");
+  assert.equal(parsed.owner_task_kind, null);
 });
 
-test("AylaDecision accepts check_in_time answered intent", () => {
-  const parsed = DecisionSchema.parse(checkInReply);
-
-  assert.equal(parsed.detected_intents[0].type, "check_in_time");
-  assert.equal(parsed.detected_intents[0].status, "answered");
+test("AylaDecision requires an explicit owner task kind", () => {
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_owner_task", task_summary: "Dos mantas" }).success, false);
+  const parsed = DecisionSchema.parse({ ...reply, action: "create_owner_task", owner_task_kind: "request", task_summary: "Dos mantas", evidence_ids: [] });
+  assert.equal(parsed.outcome, "propose_action");
+  assert.equal(parsed.owner_task_kind, "request");
 });
 
-test("AylaDecision accepts answered_with_inference intent status", () => {
-  const parsed = DecisionSchema.parse({
-    ...checkInReply,
-    detected_intents: [{ type: "check_in_time", status: "answered_with_inference" }],
-  });
-
-  assert.equal(parsed.detected_intents[0].status, "answered_with_inference");
+test("AylaDecision accepts directly useful attachments", () => {
+  const parsed = DecisionSchema.parse({ ...reply, attachments: [{ type: "video", evidence_id: "guide.12" }] });
+  assert.deepEqual(parsed.attachments, [{ type: "video", evidence_id: "guide.12" }]);
 });
 
-test("AylaDecision accepts guest request proposed actions", () => {
-  for (const actionType of [
-    "guest_request",
-    "request_extra_item",
-    "request_service",
-    "request_extra_bed",
-    "request_food_or_drink",
-    "request_transport",
-    "request_other",
-    "request_late_checkout",
-    "request_early_checkin",
-  ]) {
-    const parsed = DecisionSchema.parse({
-      ...checkInReply,
-      outcome: "propose_action",
-      message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.",
-      detected_intents: [{ type: "guest_request", status: "requires_host_approval" }],
-      owner_task_kind: "request",
-      proposed_action: { type: actionType, payload: { title: "Pedido del huésped" } },
-      escalation: { required: true, reason_code: "guest_request", summary_for_host: "El huésped hizo un pedido." },
-      escalation_required: true,
-      evidence_ids: [],
-      used_source_ids: [],
-    });
-
-    assert.equal(parsed.outcome, "propose_action");
-    assert.equal(parsed.proposed_action?.type, actionType);
-    assert.equal(parsed.owner_task_kind, "request");
-  }
+test("AylaDecision rejects unknown actions and attachment types", () => {
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "escalate" }).success, false);
+  assert.equal(DecisionSchema.safeParse({ ...reply, attachments: [{ type: "audio", evidence_id: "guide.12" }] }).success, false);
 });
 
-test("AylaDecision accepts only explicit owner task kinds", () => {
-  assert.equal(DecisionSchema.parse({ ...checkInReply, owner_task_kind: "inquiry" }).owner_task_kind, "inquiry");
-  assert.equal(DecisionSchema.parse(checkInReply).owner_task_kind, null);
-  assert.equal(DecisionSchema.safeParse({ ...checkInReply, owner_task_kind: "unknown" }).success, false);
-});
-
-test("AylaDecision can normalize response_text into message_body", () => {
-  const parsed = DecisionSchema.parse({
-    ...checkInReply,
-    message_body: undefined,
-    response_text: "El check-in es a las 15:00.",
-  });
-
-  assert.equal(parsed.message_body, "El check-in es a las 15:00.");
-});
-
-test("AylaDecision sanitizes internal metadata from guest-facing message_body", () => {
-  const parsed = DecisionSchema.parse({
-    ...checkInReply,
-    message_body: "Le check-in est à 15:00. (Source : property.check_in_time)",
-  });
-
-  assert.equal(parsed.message_body, "Le check-in est à 15:00.");
-  assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
-  assert.deepEqual(parsed.used_source_ids, ["property_fact:check_in_time"]);
-});
-
-test("AylaDecision accepts and sanitizes a localized safe fallback response", () => {
-  const parsed = DecisionSchema.parse({
-    ...checkInReply,
-    language: "fr",
-    safe_fallback_response: "Je dois vérifier cette information. (Source : property.check_in_time)",
-  });
-
-  assert.equal(parsed.safe_fallback_response, "Je dois vérifier cette information.");
-  assert.equal(parsed.language, "fr");
-});
-
-test("AylaDecision defaults the optional safe fallback response to null", () => {
-  const { safe_fallback_response: _safeFallbackResponse, ...withoutSafeFallback } = checkInReply;
-  const parsed = DecisionSchema.parse(withoutSafeFallback);
-
-  assert.equal(parsed.safe_fallback_response, null);
-});
-
-test("AylaDecision sanitizes normalized response_text without losing evidence", () => {
-  const parsed = DecisionSchema.parse({
-    ...checkInReply,
-    message_body: undefined,
-    response_text: "El check-in es a las 15:00. source_id: property_fact:check_in_time",
-  });
-
-  assert.equal(parsed.message_body, "El check-in es a las 15:00.");
-  assert.deepEqual(parsed.evidence_ids, ["property.check_in_time"]);
-  assert.deepEqual(parsed.used_source_ids, ["property_fact:check_in_time"]);
-});
-
-test("recoverDecisionFromRawText uses valid JSON instead of forcing fallback", () => {
-  const recovered = recoverDecisionFromRawText(JSON.stringify(checkInReply));
-
+test("raw JSON recovery uses the same contract", () => {
+  const recovered = recoverDecisionFromRawText(`\`\`\`json\n${JSON.stringify(reply)}\n\`\`\``);
   assert.equal(recovered.ok, true);
-  assert.equal(recovered.value.outcome, "reply");
-  assert.equal(recovered.value.escalation.required, false);
 });
 
-test("recoverDecisionFromRawText rejects invalid JSON or schema mismatches", () => {
-  assert.equal(recoverDecisionFromRawText("not json").ok, false);
-  assert.equal(recoverDecisionFromRawText(JSON.stringify({ outcome: "reply" })).ok, false);
+test("public projection removes candidate and safe fallback fields", () => {
+  const projected = toPublicDecision({ ...DecisionSchema.parse(reply), safe_fallback_response: "legacy", candidate_response: "legacy" });
+  assert.equal("safe_fallback_response" in projected, false);
+  assert.equal("candidate_response" in projected, false);
+  assert.equal(projected.action, "reply");
 });

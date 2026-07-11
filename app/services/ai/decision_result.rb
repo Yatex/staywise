@@ -27,14 +27,19 @@ module AI
       alert_description
       suggested_owner_action
       owner_task_kind
+      action
+      answer_confidence
+      task_summary
+      attachments
     ].freeze
 
     attr_reader(*ATTRIBUTES)
 
     def self.from_hash(hash)
       normalized = hash.to_h.transform_keys(&:to_s)
-      decision = normalized["decision"].presence || normalized["outcome"]
-      message_body = normalized["message_body"].presence || normalized["response_text"]
+      action = normalized["action"].presence
+      decision = normalized["decision"].presence || normalized["outcome"] || outcome_for_action(action)
+      message_body = normalized["message"].presence || normalized["message_body"].presence || normalized["response_text"]
       safe_fallback_response = normalized["safe_fallback_response"].presence || normalized["safe_response"].presence
       used_source_ids = Array(normalized["used_source_ids"]).compact_blank
       evidence_ids = Array(normalized["evidence_ids"]).presence ||
@@ -53,7 +58,7 @@ module AI
         required_capabilities: normalized.fetch("required_capabilities", []),
         missing_information: normalized.fetch("missing_information", []),
         safety_flags: normalized.fetch("safety_flags", []),
-        confidence: normalized.fetch("confidence", 0.0).to_f,
+        confidence: normalized.fetch("confidence", normalized.fetch("answer_confidence", 0).to_f / 100).to_f,
         evidence: normalized.fetch("evidence", evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } }),
         escalation: normalized["escalation"],
         proposed_action: normalized["proposed_action"],
@@ -67,8 +72,23 @@ module AI
         alert_title: normalized["alert_title"],
         alert_description: normalized["alert_description"],
         suggested_owner_action: normalized["suggested_owner_action"],
-        owner_task_kind: normalized["owner_task_kind"]
+        owner_task_kind: normalized["owner_task_kind"],
+        action: action || action_for_outcome(decision, normalized["owner_task_kind"]),
+        answer_confidence: normalized.fetch("answer_confidence", normalized.fetch("confidence", 0).to_f * 100).to_f,
+        task_summary: normalized["task_summary"],
+        attachments: normalized.fetch("attachments", [])
       )
+    end
+
+    def self.outcome_for_action(action)
+      { "reply" => "reply", "clarify" => "ask_clarifying_question", "create_owner_task" => "propose_action" }[action.to_s]
+    end
+
+    def self.action_for_outcome(outcome, owner_task_kind)
+      return "create_owner_task" if owner_task_kind.present? || outcome.to_s.in?(%w[escalate propose_action])
+      return "clarify" if outcome.to_s == "ask_clarifying_question"
+
+      "reply"
     end
 
     def initialize(attributes)
@@ -87,13 +107,16 @@ module AI
       @escalation = @escalation.to_h.stringify_keys if @escalation.present?
       @proposed_action = @proposed_action.to_h.stringify_keys if @proposed_action.present?
       @audit = @audit.to_h.stringify_keys
+      @attachments = Array(@attachments).map { |item| item.to_h.stringify_keys }
+      @answer_confidence = @answer_confidence.to_f
       @sensitive_info_used = ActiveModel::Type::Boolean.new.cast(@sensitive_info_used)
     end
 
     def to_h
       ATTRIBUTES.index_with { |attribute| public_send(attribute) }.merge(
         decision: outcome,
-        message_body: response_text
+        message_body: response_text,
+        message: response_text
       )
     end
 

@@ -23,21 +23,20 @@ module AI
 
     def call
       reasons = []
-      reasons << "invalid_outcome" unless @decision.outcome.in?(%w[reply ask_clarifying_question escalate propose_action no_reply])
+      reasons << "invalid_action" unless @decision.action.in?(%w[reply clarify create_owner_task])
       reasons << "invalid_owner_task_kind" if @decision.owner_task_kind.present? && !@decision.owner_task_kind.in?(OwnerTask::KINDS)
+      reasons << "owner_task_kind_required" if @decision.action == "create_owner_task" && @decision.owner_task_kind.blank?
+      reasons << "owner_task_kind_not_allowed" if @decision.action != "create_owner_task" && @decision.owner_task_kind.present?
+      reasons << "empty_response" if @decision.response_text.blank?
       reasons.concat(contract_reasons)
       reasons.concat(tool_mandatory_reasons)
       reasons << "missing_language" if @decision.language.blank?
-      reasons << "low_confidence" if @decision.outcome == "reply" && @decision.confidence < SafetyConfig.minimum_reply_confidence
+      reasons << "answer_confidence_below_threshold" if reply_below_answer_confidence_threshold?
       reasons.concat(evidence_reasons)
-      reasons << "response_contradicts_evidence" if response_contradicts_evidence?
+      reasons.concat(attachment_reasons)
       reasons << "internal_metadata_visible" if internal_metadata_visible?
       reasons << "sensitive_action_auto_approval" if sensitive_action_auto_approval?
       reasons << "sensitive_access_without_authorization" if sensitive_access_without_authorization?
-      reasons << "sensitive_info_without_sensitive_tool" if sensitive_info_without_sensitive_tool?
-      reasons << "sensitive_info_flag_without_sensitive_evidence" if sensitive_info_flag_without_sensitive_evidence?
-      reasons << "host_notification_claim_without_escalation" if host_notification_claim_without_escalation?
-      reasons << "unresolved_detected_intents" if unresolved_detected_intents?
       warnings = validation_warnings
 
       Result.new(
@@ -50,6 +49,23 @@ module AI
     end
 
     private
+
+    def reply_below_answer_confidence_threshold?
+      @decision.action == "reply" &&
+        @decision.answer_confidence < SafetyConfig.answer_confidence_threshold(account: @conversation.property.account)
+    end
+
+    def attachment_reasons
+      @decision.attachments.filter_map do |attachment|
+        type = attachment["type"].to_s
+        evidence_id = attachment["evidence_id"].to_s
+        if !type.in?(%w[video image document]) || evidence_id.blank?
+          "invalid_attachment"
+        elsif @registry.attachment_for_evidence_id(evidence_id, type: type).blank?
+          "invalid_attachment_evidence:#{evidence_id}"
+        end
+      end
+    end
 
     REAL_MESSAGE_EXCLUSION_PATTERN = /\A(?:hi|hello|hey|hola|buenas|buen dia|buenos dias|buenas tardes|buenas noches|gracias|muchas gracias|thanks|thank you|ok|okay|dale|listo|perfecto|entendido|genial|excelente|no gracias|asi esta bien|así está bien)\z/i
     HUMAN_OR_EMERGENCY_PATTERN = /(humano|persona|anfitri[oó]n|host|owner|emergency|emergencia|urgent|urgente|polic[ií]a|ambulancia|bomberos)/i
@@ -132,7 +148,7 @@ module AI
       return [] if conversational_only_decision?
 
       evidence_refs = evidence_refs_for_decision
-      return ["missing_evidence"] if evidence_refs.blank?
+      return successful_tool_names.present? ? ["missing_evidence"] : [] if evidence_refs.blank?
 
       evidence_refs.flat_map do |item|
         reasons = []

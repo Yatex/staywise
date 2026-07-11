@@ -1,8 +1,8 @@
 module Whatsapp
   module Providers
     class NullProvider < BaseProvider
-      def send_message(to:, body:)
-        Rails.logger.info("[whatsapp-null] to=#{to} body=#{body}")
+      def send_message(to:, body:, media_urls: [])
+        Rails.logger.info("[whatsapp-null] to=#{to} body=#{body} media_urls=#{media_urls.inspect}")
         true
       end
 

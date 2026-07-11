@@ -12,10 +12,10 @@ import {
   shouldRetryGroundedDecision,
 } from "./evidence-catalog.js";
 import { buildGroundedDecision } from "./grounded-decision-builder.js";
-import { DecisionSchema, recoverDecisionFromRawText } from "./decision-schema.js";
+import { DecisionSchema, recoverDecisionFromRawText, toPublicDecision } from "./decision-schema.js";
 import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decision-system-prompt.js";
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
-import { ensureSafeFallbackResponse, safeFallbackResponseFor } from "./safe-fallback-response.js";
+import { safeFallbackResponseFor } from "./safe-fallback-response.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 import { classifyConversationalOnly } from "./conversational-classifier.js";
 
@@ -101,14 +101,14 @@ const server = createServer(async (request, response) => {
     if (conversationalClassification) {
       mandatoryTrace.skip_reason = `conversational_only:${conversationalClassification.kind}`;
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
-      sendJson(response, 200, conversationalOnlyDecision(payload, conversationalClassification));
+      sendJson(response, 200, toPublicDecision(conversationalOnlyDecision(payload, conversationalClassification)));
       return;
     }
 
     if (!gatewayConfigured()) {
       mandatoryTrace.skip_reason = "gateway_not_configured";
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
-      sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace));
+      sendJson(response, 503, { error: "ai_gateway_not_configured", audit: withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace).audit });
       return;
     }
 
@@ -154,10 +154,7 @@ const server = createServer(async (request, response) => {
       }, generateObjectTrace);
       groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
     }
-    const finalDecision = ensureSafeFallbackResponse(
-      sanitizeDecisionGuestText(groundedDecision.decision),
-      payload?.guest_language_fallback || payload?.owner_language,
-    );
+    const finalDecision = sanitizeDecisionGuestText(groundedDecision.decision);
     const finalDecisionAudit = {
       ...((finalDecision as any).audit || {}),
     };
@@ -181,7 +178,7 @@ const server = createServer(async (request, response) => {
 
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 200, {
-      ...finalDecision,
+      ...toPublicDecision(finalDecision),
       audit: {
         ...finalDecisionAudit,
         model: gatewayModelId(),
@@ -203,7 +200,10 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     console.error("[ai-service]", error);
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
-    sendJson(response, 200, withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace, generateObjectTrace));
+    sendJson(response, 500, {
+      error: "ai_service_failure",
+      audit: withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace, generateObjectTrace).audit,
+    });
   }
 });
 
@@ -1165,7 +1165,7 @@ function withToolMandatoryAudit(decision: any, toolTrace: any[], mandatoryTrace:
   const sanitizedDecision = sanitizeDecisionGuestText(decision);
 
   return {
-    ...sanitizedDecision,
+    ...toPublicDecision(sanitizedDecision),
     audit: {
       ...(sanitizedDecision?.audit || {}),
       generate_object_trace: generateObjectTrace,

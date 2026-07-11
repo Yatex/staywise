@@ -38,7 +38,7 @@ module AI
         Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
         if validation.contract_failed?
           report_contract_validation_failure(decision, validation)
-          fallback = safe_response_from_ai_or_no_reply(decision, "AI contract validation failed: #{validation.reasons.join(", ")}", flag: "contract_validation_failed")
+          fallback = technical_fallback("AI contract validation failed: #{validation.reasons.join(", ")}")
           audit(
             "remote_ai_contract_rejected",
             fallback,
@@ -47,7 +47,7 @@ module AI
             rejection_reason: validation.reasons.join(", "),
             rejected_decision: decision,
             fallback_reason: "contract_validation_failed",
-            rails_fallback_source: fallback_source_for(fallback),
+            rails_fallback_source: "rails_technical_fallback",
             validation_results: validation_payload(validation, decision)
           )
           return fallback
@@ -55,7 +55,7 @@ module AI
 
         if validation.tool_mandatory_failed?
           report_tool_mandatory_failure(decision, validation)
-          fallback = safe_response_from_ai_or_no_reply(decision, "AI mandatory tool validation failed: #{validation.reasons.join(", ")}", flag: "tool_mandatory_failed")
+          fallback = technical_fallback("AI mandatory tool validation failed: #{validation.reasons.join(", ")}")
           audit(
             "remote_ai_tool_mandatory_rejected",
             fallback,
@@ -64,13 +64,13 @@ module AI
             rejection_reason: validation.reasons.join(", "),
             rejected_decision: decision,
             fallback_reason: "tool_mandatory_failed",
-            rails_fallback_source: fallback_source_for(fallback),
+            rails_fallback_source: "rails_technical_fallback",
             validation_results: validation_payload(validation, decision)
           )
           return fallback
         end
 
-        fallback = safe_response_from_ai_or_no_reply(decision, "AI decision rejected: #{validation.reasons.join(", ")}", flag: "validation_rejected")
+        fallback = technical_fallback("AI decision rejected: #{validation.reasons.join(", ")}")
         audit(
           "remote_ai_rejected",
           fallback,
@@ -79,13 +79,13 @@ module AI
           rejection_reason: validation.reasons.join(", "),
           rejected_decision: decision,
           fallback_reason: "validation_rejected",
-          rails_fallback_source: fallback_source_for(fallback),
+          rails_fallback_source: "rails_technical_fallback",
           validation_results: validation_payload(validation, decision)
         )
         return fallback
       end
 
-      fallback = safe_no_reply("AI service unavailable.", flag: "ai_service_unavailable")
+      fallback = technical_fallback("AI service unavailable.")
       audit("local_fallback", fallback, started_at, fallback_reason: @fallback_reason || "ai_service_unavailable", validation_results: { status: "skipped" })
       fallback
     end
@@ -194,50 +194,35 @@ module AI
       )
     end
 
-    def safe_response_from_ai_or_no_reply(decision, description, flag:)
-      safe_response = decision.safe_fallback_response.to_s.squish.presence
-      if safe_response.blank?
+    def technical_fallback(description)
+      phone = @property.owner_contact_phone.presence || @property.account.owner_whatsapp_number.presence
+      message = if phone.present?
+        "No pude procesar tu mensaje en este momento. Podés comunicarte con el anfitrión al #{phone}."
+      else
         ErrorReporter.report(
           source: "ai_validation",
           severity: "warning",
           account: @property.account,
           property: @property,
-          message: "AI decision blocked without safe fallback",
-          context: ai_context.merge(
-            reason: description,
-            rejected_outcome: decision.outcome,
-            language: decision.language
-          )
+          message: "Technical fallback has no owner contact phone",
+          context: ai_context.merge(reason: description)
         )
-        return safe_no_reply(description, flag: flag)
+        "No pude procesar tu mensaje en este momento."
       end
 
       DecisionResult.from_hash(
-        decision: "reply",
-        language: decision.language.presence || @fallback_language,
-        message_body: safe_response,
-        safe_fallback_response: safe_response,
+        action: "reply",
+        message: message,
+        answer_confidence: 100,
+        language: @fallback_language,
         intent_summary: description,
-        detected_intents: [{ type: flag, status: "blocked" }],
+        detected_intents: [{ type: "technical_fallback", status: "blocked" }],
         evidence_ids: [],
-        used_source_ids: [],
-        required_capabilities: [],
-        missing_information: [],
-        safety_flags: [flag, "ai_safe_fallback"],
+        attachments: [],
+        safety_flags: ["rails_technical_fallback"],
         should_reply: true,
-        confidence: 1.0,
-        evidence: [],
-        escalation: { required: false },
-        proposed_action: nil,
-        audit: decision.audit.to_h.merge(
-          "rails_fallback_source" => "ai_safe_fallback",
-          "rails_rejected_original_outcome" => decision.outcome
-        )
+        owner_task_kind: nil
       )
-    end
-
-    def fallback_source_for(decision)
-      decision.safety_flags.include?("ai_safe_fallback") ? "ai_safe_fallback" : "no_reply"
     end
 
     def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil, validation_results: nil, fallback_reason: nil, rails_fallback_source: nil)
@@ -254,10 +239,10 @@ module AI
         outcome: decision.outcome,
         final_outcome: decision.outcome,
         final_response_text: decision.response_text,
-        safe_fallback_response: rejected_decision&.safe_fallback_response || decision.safe_fallback_response,
+        answer_confidence: decision.answer_confidence,
+        attachments: decision.attachments,
         rails_fallback_source: rails_fallback_source,
-        rails_used_ai_fallback: rails_fallback_source == "ai_safe_fallback",
-        rails_used_no_reply: rails_fallback_source == "no_reply",
+        rails_used_technical_fallback: rails_fallback_source == "rails_technical_fallback",
         fallback_language: decision.language || @fallback_language,
         alert_type: decision.alert_type,
         evidence_ids: evidence_ids,
@@ -392,7 +377,7 @@ module AI
 
     def decision_from_error_response(response)
       parsed = JSON.parse(response.body)
-      return unless parsed.is_a?(Hash) && parsed["outcome"].present?
+      return unless parsed.is_a?(Hash) && (parsed["action"].present? || parsed["outcome"].present?)
 
       @tool_calls = Array(parsed.dig("audit", "tool_calls"))
       DecisionResult.from_hash(parsed)

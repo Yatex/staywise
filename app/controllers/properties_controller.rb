@@ -173,6 +173,7 @@ class PropertiesController < ApplicationController
       :parking_instructions,
       :emergency_information,
       :owner_contact_instructions,
+      :owner_contact_phone,
       :ai_general_notes,
       :status,
       :tag_list,

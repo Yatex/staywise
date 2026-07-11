@@ -19,7 +19,7 @@
   <section class="<%= card_class %> p-4">
     <div class="mb-3">
       <h3 class="text-base font-semibold text-slate-950">Scores</h3>
-      <p class="mt-1 text-sm text-slate-500">Por defecto, una confianza alta empieza en 75/100. La IA responde cuando evidencia, confianza y safety superan los thresholds; si quedan en zona media, pregunta una aclaración.</p>
+      <p class="mt-1 text-sm text-slate-500">La IA solo puede responder hechos cuando su confianza en tener evidencia directa y suficiente alcanza este umbral. Los scores anteriores se conservan únicamente en trazas históricas.</p>
     </div>
 
     <% if @account.errors.any? %>
@@ -28,18 +28,10 @@
       </div>
     <% end %>
 
-    <%= form_with model: @account, url: admin_ai_settings_path, method: :patch, class: "grid items-end gap-3 md:grid-cols-5" do |form| %>
+    <%= form_with model: @account, url: admin_ai_settings_path, method: :patch, class: "grid items-end gap-3 md:grid-cols-3" do |form| %>
       <div>
-        <%= form.label :ai_high_score_threshold, "Alto", class: compact_label_class %>
-        <%= form.number_field :ai_high_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
-      </div>
-      <div>
-        <%= form.label :ai_medium_score_threshold, "Medio", class: compact_label_class %>
-        <%= form.number_field :ai_medium_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
-      </div>
-      <div>
-        <%= form.label :ai_safety_score_threshold, "Safety", class: compact_label_class %>
-        <%= form.number_field :ai_safety_score_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
+        <%= form.label :ai_answer_confidence_threshold, "Answer confidence", class: compact_label_class %>
+        <%= form.number_field :ai_answer_confidence_threshold, min: 0, max: 100, class: "#{compact_field_class} mt-1" %>
       </div>
       <div>
         <%= form.label :ai_max_clarification_attempts, "Aclaraciones", class: compact_label_class %>

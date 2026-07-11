@@ -105,6 +105,7 @@ type DecisionScores = {
 };
 
 type DecisionThresholds = {
+  answer_confidence_threshold: number;
   high_score_threshold: number;
   medium_score_threshold: number;
   safety_score_threshold: number;
@@ -464,20 +465,6 @@ export function buildGroundedDecision(
     const groundedReplyCandidates = replyCandidates.length > 0 ? replyCandidates : sufficient;
     const strategy = groundedReplyCandidates.some((candidate) => candidate.strategy === "inference") ? "reply_with_inference" : "direct_reply";
     const replyScores = scoresForCandidates(groundedReplyCandidates, thresholds, { safetyScore: 95 });
-    if (replyScores.safety_score < thresholds.safety_score_threshold && attempts < thresholds.max_clarification_attempts) {
-      const clarification = clarificationDecision(decision, payload, candidates.slice(0, 3), previousOutcome);
-      return withGroundedAudit(
-        clarification,
-        buildAudit(baseAudit, sufficiencyAudit, "partial_evidence", null, {
-          strategy: "clarify_before_escalate",
-          inferredIntent: sufficient[0]?.inferred_intent || "ambiguous_request",
-          clarificationQuestion: clarification.decision.message_body || null,
-          ambiguityCandidates: unique(candidates.slice(0, 3).map((candidate) => candidate.inferred_intent)),
-          scores: replyScores,
-        }),
-      );
-    }
-
     return withGroundedAudit(
       replyDecision(decision, payload, groundedReplyCandidates, previousOutcome, strategy),
       buildAudit(baseAudit, sufficiencyAudit, "sufficient_evidence", null, {
@@ -587,7 +574,7 @@ function sufficientEvidenceGroup(candidates: Candidate[], thresholds: DecisionTh
 
   const topPriority = topGroup.source_priority;
   const topScore = topGroup.top_score;
-  if (clampScore(Math.round(topScore * 20)) < thresholds.medium_score_threshold) return null;
+  if (clampScore(Math.round(topScore * 25)) < thresholds.answer_confidence_threshold) return null;
 
   const topGroups = groups.filter((group) => group.source_priority === topPriority && group.top_score === topScore);
   if (topGroups.length !== 1) return null;
@@ -1968,7 +1955,7 @@ function scoresForExistingDecision(decision: any, candidates: CandidateAudit[]):
 
 function relevanceScore(candidates: Candidate[]) {
   const topScore = candidates[0]?.score || 0;
-  return clampScore(Math.round(Math.min(100, topScore * 20)));
+  return clampScore(Math.round(Math.min(100, topScore * 25)));
 }
 
 function clampScore(score: number) {
@@ -1993,6 +1980,7 @@ function decisionThresholds(payload: any): DecisionThresholds {
   const high = Math.max(medium, boundedScore(configured.high_score_threshold, HIGH_SCORE_THRESHOLD));
 
   return {
+    answer_confidence_threshold: boundedScore(configured.answer_confidence_threshold, 90),
     high_score_threshold: high,
     medium_score_threshold: medium,
     safety_score_threshold: boundedScore(configured.safety_score_threshold, SAFETY_SCORE_THRESHOLD),
@@ -2002,6 +1990,7 @@ function decisionThresholds(payload: any): DecisionThresholds {
 
 function defaultDecisionThresholds(): DecisionThresholds {
   return {
+    answer_confidence_threshold: 90,
     high_score_threshold: HIGH_SCORE_THRESHOLD,
     medium_score_threshold: MEDIUM_SCORE_THRESHOLD,
     safety_score_threshold: SAFETY_SCORE_THRESHOLD,

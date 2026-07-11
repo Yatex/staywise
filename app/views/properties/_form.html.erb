@@ -140,6 +140,10 @@
             <%= form.label :owner_contact_instructions, "Cuándo consultar al propietario", class: label_class %>
             <%= form.text_area :owner_contact_instructions, rows: 4, class: field_class, placeholder: "Late checkout, reembolsos, daños, emergencias, mantenimiento o permisos especiales." %>
           </div>
+          <div class="md:col-span-2">
+            <%= form.label :owner_contact_phone, "Teléfono de contacto del anfitrión", class: label_class %>
+            <%= form.telephone_field :owner_contact_phone, class: field_class, placeholder: "+598..." %>
+          </div>
         </div>
       </div>
     </div>

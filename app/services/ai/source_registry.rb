@@ -296,6 +296,21 @@ module AI
       evidence_source("evidence_id" => evidence_id)
     end
 
+    def attachment_for_evidence_id(evidence_id, type:)
+      source = source_for_evidence_id(evidence_id)
+      return if source.blank?
+
+      url = attachment_url_for(source, type.to_s)
+      return if url.blank?
+
+      {
+        "type" => type.to_s,
+        "evidence_id" => evidence_id.to_s,
+        "url" => url,
+        "delivery" => youtube_url?(url) ? "link" : "media"
+      }
+    end
+
     def relevant_evidence?(item, message)
       item = item.to_h.stringify_keys
       source = evidence_source(item)
@@ -369,6 +384,25 @@ module AI
     end
 
     private
+
+    def attachment_url_for(source, type)
+      candidates = case type
+      when "video"
+        [source["video_url"], source["youtube_url"], source["media_url"]]
+      when "image"
+        [source["image_url"], source["media_url"]]
+      when "document"
+        [source["document_url"], source["file_url"], source["media_url"]]
+      else
+        []
+      end
+
+      candidates.compact_blank.find { |url| url.to_s.match?(/\Ahttps:\/\//i) }
+    end
+
+    def youtube_url?(url)
+      url.to_s.match?(/\Ahttps:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i)
+    end
 
     def active_recommendations
       @property.recommendations.active

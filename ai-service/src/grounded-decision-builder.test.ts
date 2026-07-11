@@ -319,7 +319,7 @@ test("medium confidence asks clarification instead of escalating", () => {
   assert.ok(scores.evidence_relevance_score >= 40);
 });
 
-test("medium relevance with one useful evidence group replies instead of asking extra questions", () => {
+test("evidence below answer confidence threshold asks for clarification", () => {
   const result = buildGroundedDecision(unknownEscalation("es"), {
     guest_message: "basura",
   }, catalogFromSource({
@@ -331,12 +331,11 @@ test("medium relevance with one useful evidence group replies instead of asking 
     value: "Sacá la basura al contenedor del subsuelo antes de las 20:00.",
   }));
 
-  assert.equal(result.decision.outcome, "reply");
+  assert.equal(result.decision.outcome, "ask_clarifying_question");
   assert.equal(result.decision.escalation_required, false);
   assert.deepEqual(result.decision.evidence_ids, ["property.trash_instructions"]);
-  assert.match(result.decision.message_body, /contenedor del subsuelo/);
-  assert.doesNotMatch(result.decision.message_body, /\?/);
-  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.override_type, "sufficient_evidence");
+  assert.match(result.decision.message_body, /\?/);
+  assert.equal(result.decision.audit.grounded_decision_builder.grounded_decision_result.override_type, "partial_evidence");
 });
 
 test("two clarification attempts without resolution leave escalation as last resort", () => {

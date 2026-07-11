@@ -20,6 +20,7 @@ module Admin
 
     def ai_settings_params
       params.require(:account).permit(
+        :ai_answer_confidence_threshold,
         :ai_high_score_threshold,
         :ai_medium_score_threshold,
         :ai_safety_score_threshold,

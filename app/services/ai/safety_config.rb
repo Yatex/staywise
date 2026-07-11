@@ -28,6 +28,10 @@ module AI
       ENV.fetch("AI_MIN_REPLY_CONFIDENCE", "0.55").to_f
     end
 
+    def answer_confidence_threshold(account: nil)
+      account&.ai_answer_confidence_threshold || ENV.fetch("ANSWER_CONFIDENCE_THRESHOLD", "90").to_i
+    end
+
     def enabled?(name, default:)
       value = ENV[name]
       return default if value.blank?

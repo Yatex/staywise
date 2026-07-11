@@ -13,6 +13,7 @@ class Property < ApplicationRecord
     parking_instructions
     emergency_information
     owner_contact_instructions
+    owner_contact_phone
     ai_general_notes
     ai_enabled
     tags
@@ -38,6 +39,7 @@ class Property < ApplicationRecord
   has_secure_token :public_token
 
   before_validation :normalize_tags
+  before_validation :normalize_owner_contact_phone
 
   default_scope { where(deleted_at: nil) }
 
@@ -100,6 +102,10 @@ class Property < ApplicationRecord
 
   def normalize_tags
     self.tags = Array(tags).map { |tag| tag.to_s.strip.downcase }.compact_blank.uniq
+  end
+
+  def normalize_owner_contact_phone
+    self.owner_contact_phone = owner_contact_phone.to_s.gsub(/\Awhatsapp:/, "").strip.presence
   end
 
   def account_property_limit

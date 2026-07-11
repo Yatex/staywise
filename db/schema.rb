@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_11_090000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_11_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -40,6 +40,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_11_090000) do
     t.integer "ai_medium_score_threshold", default: 40, null: false
     t.integer "ai_safety_score_threshold", default: 75, null: false
     t.integer "ai_max_clarification_attempts", default: 2, null: false
+    t.integer "ai_answer_confidence_threshold", default: 90, null: false
     t.index ["owner_whatsapp_number"], name: "index_accounts_on_owner_whatsapp_number"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
   end
@@ -307,6 +308,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_11_090000) do
     t.string "public_token", null: false
     t.text "checkout_instructions"
     t.datetime "deleted_at"
+    t.string "owner_contact_phone"
     t.index ["account_id", "name"], name: "index_properties_on_account_id_and_name"
     t.index ["account_id"], name: "index_properties_on_account_id"
     t.index ["deleted_at"], name: "index_properties_on_deleted_at"

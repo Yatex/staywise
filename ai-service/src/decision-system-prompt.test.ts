@@ -16,10 +16,10 @@ test("decision prompt still requires structured evidence for audit", () => {
   assert.match(DECISION_SYSTEM_PROMPT, /used_source_ids for source id values/);
 });
 
-test("decision prompts require a localized neutral safe fallback", () => {
-  assert.match(DECISION_SYSTEM_PROMPT, /Always provide safe_fallback_response in the same language as the latest guest message/i);
-  assert.match(DECISION_SYSTEM_PROMPT, /must not claim that the host was contacted/i);
-  assert.match(GROUNDED_REVIEW_SYSTEM_PROMPT, /Always provide safe_fallback_response in the latest guest message's language/i);
+test("decision prompts require one final action contract", () => {
+  assert.match(DECISION_SYSTEM_PROMPT, /exactly one final action/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /answer_confidence/i);
+  assert.doesNotMatch(DECISION_SYSTEM_PROMPT, /Always provide safe_fallback_response/i);
 });
 
 test("decision prompt classifies owner-managed requests as guest requests", () => {

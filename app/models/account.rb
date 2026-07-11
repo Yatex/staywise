@@ -3,6 +3,7 @@ class Account < ApplicationRecord
   AI_CHANNELS = %w[whatsapp].freeze
   AI_LANGUAGES = %w[en es].freeze
   DEFAULT_AI_DECISION_SETTINGS = {
+    answer_confidence_threshold: 90,
     high_score_threshold: 75,
     medium_score_threshold: 40,
     safety_score_threshold: 75,
@@ -40,7 +41,7 @@ class Account < ApplicationRecord
   validates :ai_response_style, inclusion: { in: AI_RESPONSE_STYLES }
   validates :ai_default_channel, inclusion: { in: AI_CHANNELS }
   validates :ai_preferred_language, inclusion: { in: AI_LANGUAGES }
-  validates :ai_high_score_threshold, :ai_medium_score_threshold, :ai_safety_score_threshold,
+  validates :ai_answer_confidence_threshold, :ai_high_score_threshold, :ai_medium_score_threshold, :ai_safety_score_threshold,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :ai_max_clarification_attempts,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }
@@ -73,6 +74,7 @@ class Account < ApplicationRecord
   def ai_decision_settings
     {
       high_score_threshold: ai_high_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:high_score_threshold),
+      answer_confidence_threshold: ai_answer_confidence_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:answer_confidence_threshold),
       medium_score_threshold: ai_medium_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:medium_score_threshold),
       safety_score_threshold: ai_safety_score_threshold || DEFAULT_AI_DECISION_SETTINGS.fetch(:safety_score_threshold),
       max_clarification_attempts: ai_max_clarification_attempts || DEFAULT_AI_DECISION_SETTINGS.fetch(:max_clarification_attempts)
@@ -91,6 +93,7 @@ class Account < ApplicationRecord
     self.ai_preferred_language = "es" unless AI_LANGUAGES.include?(ai_preferred_language.to_s)
     self.languages_supported = "Español, Inglés"
     self.ai_high_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:high_score_threshold)
+    self.ai_answer_confidence_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:answer_confidence_threshold)
     self.ai_medium_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:medium_score_threshold)
     self.ai_safety_score_threshold ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:safety_score_threshold)
     self.ai_max_clarification_attempts ||= DEFAULT_AI_DECISION_SETTINGS.fetch(:max_clarification_attempts)

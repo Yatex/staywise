@@ -80,7 +80,7 @@ module GuestRequests
         INTENT_CATEGORIES[intent["type"].to_s]
       end
 
-      categories.find { |category| category != "other" } || categories.first
+      categories.find { |category| category != "other" } || categories.first || "other"
     end
 
     def detected_intents
@@ -180,6 +180,8 @@ module GuestRequests
     end
 
     def ai_summary
+      return @decision.task_summary if @decision.task_summary.present?
+
       @decision.alert_description.presence ||
         @decision.escalation.to_h["summary_for_host"].presence ||
         @decision.intent_summary.presence ||

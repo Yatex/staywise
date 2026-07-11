@@ -68,6 +68,7 @@ class AiContextBuilderTest < ActiveSupport::TestCase
 
     assert_equal({
       high_score_threshold: 82,
+      answer_confidence_threshold: 90,
       medium_score_threshold: 45,
       safety_score_threshold: 88,
       max_clarification_attempts: 3

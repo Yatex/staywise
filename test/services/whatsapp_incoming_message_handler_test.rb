@@ -2,7 +2,7 @@ require "test_helper"
 
 class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   class FailingProvider < Whatsapp::Providers::BaseProvider
-    def send_message(to:, body:)
+    def send_message(to:, body:, media_urls: [])
       false
     end
   end
@@ -14,8 +14,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       @sent_messages = []
     end
 
-    def send_message(to:, body:)
-      @sent_messages << { to: to, body: body }
+    def send_message(to:, body:, media_urls: [])
+      @sent_messages << { to: to, body: body, media_urls: media_urls }
       super
     end
 
@@ -33,11 +33,11 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       @sent_messages = []
     end
 
-    def send_message(to:, body:)
+    def send_message(to:, body:, media_urls: [])
       persisted = Message.where(sender: @expected_sender, channel: "whatsapp", body: body).exists?
       raise "outbound message was sent before being persisted" unless persisted
 
-      @sent_messages << { to: to, body: body }
+      @sent_messages << { to: to, body: body, media_urls: media_urls }
       DeliveryResult.new(success?: true, provider_message_id: "SM_persisted_first", provider_status: "queued")
     end
   end

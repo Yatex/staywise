@@ -5,10 +5,11 @@ module Whatsapp
     class TwilioProvider < BaseProvider
       TWILIO_MESSAGES_URL = "https://api.twilio.com/2010-04-01/Accounts/%<sid>s/Messages.json".freeze
 
-      def send_message(to:, body:)
+      def send_message(to:, body:, media_urls: [])
         return false unless configured?
 
-        deliver(to: to, payload: { "Body" => body }, context: { body: body })
+        payload = { "Body" => body, "MediaUrls" => Array(media_urls).compact_blank }
+        deliver(to: to, payload: payload, context: { body: body })
       end
 
       def send_template(to:, template_sid:, variables: {})
@@ -31,12 +32,14 @@ module Whatsapp
         uri = URI(format(TWILIO_MESSAGES_URL, sid: account_sid))
         request = Net::HTTP::Post.new(uri)
         request.basic_auth(account_sid, auth_token)
+        media_urls = Array(payload.delete("MediaUrls"))
         payload = payload.merge(
           "From" => formatted(from_number),
           "To" => formatted(to),
         )
         payload["StatusCallback"] = status_callback_url if status_callback_url.present?
-        request.set_form_data(payload)
+        request["Content-Type"] = "application/x-www-form-urlencoded"
+        request.body = URI.encode_www_form(payload.to_a + media_urls.map { |url| ["MediaUrl", url] })
 
         response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) do |http|
           http.request(request)
