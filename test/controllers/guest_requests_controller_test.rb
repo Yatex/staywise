@@ -49,9 +49,13 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     get guest_request_path(@guest_request)
 
     assert_response :success
-    assert_includes @response.body, "Mensaje original"
-    assert_includes @response.body, "El huésped pidió un vino."
-    assert_includes @response.body, "Abrir conversación"
+    assert_includes @response.body, "Quién lo pidió"
+    assert_includes @response.body, "Mensaje del huésped"
+    assert_includes @response.body, "quiero un vino"
+    assert_select "a[href='#{conversation_path(@conversation)}']", text: "Responder al huésped"
+    assert_not_includes @response.body, "Resumen de Ayla"
+    assert_not_includes @response.body, "Detalles estructurados"
+    assert_not_includes @response.body, "El huésped pidió un vino."
 
     patch guest_request_path(@guest_request), params: {
       guest_request: {

@@ -6,6 +6,6 @@ class GuestsController < ApplicationController
   def show
     @guest = current_account.guests.includes(:property, conversations: :property).find(params[:id])
     @conversations = @guest.conversations.includes(:property).recent
-    @alerts = @guest.alerts.includes(:property).order(created_at: :desc)
+    @alerts = @guest.alerts.includes(:property, :original_message).order(created_at: :desc)
   end
 end

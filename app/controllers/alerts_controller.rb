@@ -4,7 +4,7 @@ class AlertsController < ApplicationController
   def index
     scope = Alert.joins(:property)
       .where(properties: { account_id: current_account.id })
-      .includes(:guest, :property, :conversation)
+      .includes(:guest, :property, :conversation, :original_message)
       .order(created_at: :desc)
     @current_page = [params[:page].to_i, 1].max
     @total_count = scope.count
@@ -13,7 +13,8 @@ class AlertsController < ApplicationController
   end
 
   def show
-    @alert = scoped_alerts.includes(:guest, :property, :conversation).find(params[:id])
+    @alert = scoped_alerts.includes(:guest, :property, :conversation, :original_message).find(params[:id])
+    @guest_message = @alert.original_message || guest_message_before_alert(@alert)
   end
 
   def update
@@ -40,6 +41,16 @@ class AlertsController < ApplicationController
 
   def scoped_alerts
     Alert.joins(:property).where(properties: { account_id: current_account.id })
+  end
+
+  def guest_message_before_alert(alert)
+    return if alert.conversation.blank?
+
+    alert.conversation.messages
+      .where(sender: "guest")
+      .where("created_at <= ?", alert.created_at)
+      .order(created_at: :desc, id: :desc)
+      .first
   end
 
   def alert_params

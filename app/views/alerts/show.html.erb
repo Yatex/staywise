@@ -8,12 +8,17 @@
         <h2 class="text-2xl font-semibold text-slate-950"><%= alert_display_title(@alert) %></h2>
         <p class="mt-2 text-sm text-slate-500"><%= enum_label(@alert.alert_type) %> · <%= @alert.property.display_name %></p>
       </div>
-      <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@alert.priority) %>"><%= enum_label(@alert.priority) %></span>
+      <div class="flex shrink-0 items-center gap-3">
+        <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@alert.priority) %>"><%= enum_label(@alert.priority) %></span>
+        <% if @alert.conversation.present? %>
+          <%= link_to "Responder al huésped", conversation_path(@alert.conversation), class: primary_button_class %>
+        <% end %>
+      </div>
     </div>
 
     <div class="mt-6 rounded-lg bg-slate-50 p-4">
-      <p class="text-sm font-semibold text-slate-900">Descripción</p>
-      <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600"><%= @alert.description.presence || "Sin descripción." %></p>
+      <p class="text-sm font-semibold text-slate-900">Mensaje del huésped</p>
+      <p class="mt-2 whitespace-pre-line text-base leading-7 text-slate-700"><%= @guest_message&.body.presence || "El mensaje original no está disponible." %></p>
     </div>
 
     <div class="mt-4 rounded-lg bg-slate-50 p-4">
@@ -38,8 +43,4 @@
       </div>
     <% end %>
   </section>
-
-  <% if @alert.conversation.present? %>
-    <%= link_to "Abrir conversación", conversation_path(@alert.conversation), class: secondary_button_class %>
-  <% end %>
 </div>

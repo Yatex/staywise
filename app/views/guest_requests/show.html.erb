@@ -8,68 +8,42 @@
         <h2 class="text-2xl font-semibold text-slate-950"><%= @guest_request.title %></h2>
         <p class="mt-2 text-sm text-slate-500"><%= enum_label(@guest_request.category) %> · <%= @guest_request.property_name %></p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@guest_request.priority) %>"><%= enum_label(@guest_request.priority) %></span>
         <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@guest_request.status) %>"><%= enum_label(@guest_request.status) %></span>
+        <% if @guest_request.conversation.present? %>
+          <%= link_to "Responder al huésped", conversation_path(@guest_request.conversation), class: primary_button_class %>
+        <% end %>
       </div>
     </div>
 
-    <dl class="mt-6 grid gap-4 rounded-lg bg-slate-50 p-4 text-sm md:grid-cols-2">
+    <dl class="mt-6 grid gap-4 rounded-lg bg-slate-50 p-4 text-sm sm:grid-cols-2">
       <div>
-        <dt class="text-slate-500">Huésped</dt>
-        <dd class="font-medium text-slate-900"><%= display_phone_number(@guest_request.guest_phone) %></dd>
+        <dt class="text-slate-500">Quién lo pidió</dt>
+        <dd class="mt-1 font-medium text-slate-900"><%= @guest_request.guest&.name.presence || display_phone_number(@guest_request.guest_phone) %></dd>
+        <% if @guest_request.guest&.name.present? %>
+          <dd class="mt-1 text-slate-500"><%= display_phone_number(@guest_request.guest_phone) %></dd>
+        <% end %>
       </div>
       <div>
-        <dt class="text-slate-500">Dirección</dt>
-        <dd class="font-medium text-slate-900"><%= @guest_request.property_address.presence || "Sin dirección configurada" %></dd>
-      </div>
-      <div>
-        <dt class="text-slate-500">Origen</dt>
-        <dd class="font-medium text-slate-900"><%= enum_label(@guest_request.source_channel) %></dd>
-      </div>
-      <div>
-        <dt class="text-slate-500">Aprobación</dt>
-        <dd class="font-medium text-slate-900"><%= @guest_request.requires_owner_approval? ? "Requiere aprobación del propietario" : "No marcada como requerida" %></dd>
-      </div>
-      <div>
-        <dt class="text-slate-500">Creado</dt>
-        <dd class="font-medium text-slate-900"><%= local_long_datetime(@guest_request.created_at) %></dd>
+        <dt class="text-slate-500">Propiedad</dt>
+        <dd class="mt-1 font-medium text-slate-900"><%= @guest_request.property_name %></dd>
       </div>
     </dl>
 
     <div class="mt-4 rounded-lg bg-slate-50 p-4">
-      <p class="text-sm font-semibold text-slate-900">Mensaje original</p>
-      <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600"><%= @guest_request.description %></p>
+      <p class="text-sm font-semibold text-slate-900">Mensaje del huésped</p>
+      <p class="mt-2 whitespace-pre-line text-base leading-7 text-slate-700"><%= @guest_request.message&.body.presence || "El mensaje original no está disponible." %></p>
     </div>
-
-    <div class="mt-4 rounded-lg bg-slate-50 p-4">
-      <p class="text-sm font-semibold text-slate-900">Resumen de Ayla</p>
-      <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600"><%= @guest_request.ai_summary.presence || "Sin resumen." %></p>
-    </div>
-
-    <% if @guest_request.structured_details.present? %>
-      <div class="mt-4 rounded-lg bg-slate-50 p-4">
-        <p class="text-sm font-semibold text-slate-900">Detalles estructurados</p>
-        <dl class="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-          <% @guest_request.structured_details.each do |key, value| %>
-            <div>
-              <dt class="text-slate-500"><%= key.to_s.humanize %></dt>
-              <dd class="font-medium text-slate-900"><%= value.presence || "Pendiente" %></dd>
-            </div>
-          <% end %>
-        </dl>
-      </div>
-    <% end %>
 
     <% updates = Array(@guest_request.metadata["updates"]) %>
     <% if updates.present? %>
       <div class="mt-4 rounded-lg bg-slate-50 p-4">
-        <p class="text-sm font-semibold text-slate-900">Mensajes relacionados posteriores</p>
+        <p class="text-sm font-semibold text-slate-900">Aclaraciones del huésped</p>
         <div class="mt-3 space-y-3">
           <% updates.each do |update| %>
             <div class="rounded-md bg-white p-3 ring-1 ring-slate-200">
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= update["changed_field"].presence || "Detalle" %> · <%= update["received_at"] %></p>
-              <p class="mt-1 whitespace-pre-line text-sm text-slate-700"><%= update["body"] %></p>
+              <p class="whitespace-pre-line text-sm leading-6 text-slate-700"><%= update["body"] %></p>
             </div>
           <% end %>
         </div>
@@ -93,13 +67,4 @@
       </div>
     <% end %>
   </section>
-
-  <div class="flex flex-wrap gap-2">
-    <% if @guest_request.conversation.present? %>
-      <%= link_to "Abrir conversación", conversation_path(@guest_request.conversation), class: secondary_button_class %>
-    <% end %>
-    <% if @guest_request.ai_decision_log.present? && current_user.admin? %>
-      <%= link_to "Ver AI Trace", admin_ai_trace_path(@guest_request.ai_decision_log), class: secondary_button_class %>
-    <% end %>
-  </div>
 </div>

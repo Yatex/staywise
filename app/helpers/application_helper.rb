@@ -200,8 +200,8 @@ module ApplicationHelper
   end
 
   def alert_display_title(alert)
-    if alert.alert_type.to_s == "unknown_question" && alert.description.present?
-      return alert.description.to_s.squish
+    if alert.alert_type.to_s == "unknown_question" && alert.original_message&.body.present?
+      return alert.original_message.body.to_s.squish
     end
 
     alert.title

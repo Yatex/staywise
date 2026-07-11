@@ -14,17 +14,30 @@ class AlertsControllerTest < ActionDispatch::IntegrationTest
     @property = @account.properties.create!(name: "Alert Apartment")
     @guest = @account.guests.create!(phone_number: "+15550001000", property: @property)
     @conversation = @guest.conversations.create!(property: @property)
+    @guest_message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "¿Dónde hay toallas extra?")
     @alert = @property.alerts.create!(
       guest: @guest,
       conversation: @conversation,
+      original_message: @guest_message,
       alert_type: "unknown_question",
       title: "La pregunta necesita respuesta del anfitrión",
-      description: "¿Dónde hay toallas extra?",
+      description: '{"internal_note":"payload que no debe ver el owner"}',
       status: "open",
       priority: "medium"
     )
 
     sign_in_as(@user)
+  end
+
+  test "show presents the original guest message instead of the internal description" do
+    get alert_path(@alert)
+
+    assert_response :success
+    assert_select "p", text: "Mensaje del huésped"
+    assert_select "p", text: @guest_message.body
+    assert_select "a[href='#{conversation_path(@conversation)}']", text: "Responder al huésped"
+    assert_select "a", text: "Abrir conversación", count: 0
+    assert_no_match(/internal_note|payload que no debe ver/, response.body)
   end
 
   test "answering an unknown question creates active faq and resolves alert" do
