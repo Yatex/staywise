@@ -29,6 +29,10 @@ class OwnerTask < ApplicationRecord
     self[:requires_owner_approval] || category.in?(APPROVAL_CATEGORIES)
   end
 
+  def current_guest_message
+    Array(metadata.to_h["updates"]).last.to_h["body"].presence || description
+  end
+
   private
 
   def set_resolved_at

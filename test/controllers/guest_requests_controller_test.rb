@@ -45,6 +45,26 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Pedido Apartment"
   end
 
+  test "list and detail show the latest clarification while preserving the original message" do
+    @guest_request.update!(metadata: {
+      "updates" => [{
+        "message_id" => @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "tres botellas").id,
+        "body" => "tres botellas"
+      }]
+    })
+
+    get guest_requests_path
+    assert_response :success
+    assert_includes response.body, "tres botellas"
+    assert_not_includes response.body, ">quiero un vino<"
+
+    get guest_request_path(@guest_request)
+    assert_response :success
+    assert_includes response.body, "quiero un vino"
+    assert_includes response.body, "tres botellas"
+    assert_equal "quiero un vino", @guest_request.reload.description
+  end
+
   test "owner can view and update guest request" do
     get guest_request_path(@guest_request)
 

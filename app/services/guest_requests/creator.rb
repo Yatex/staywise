@@ -89,6 +89,7 @@ module GuestRequests
 
     def existing_request(category)
       OwnerTask.find_by(message: @guest_message) ||
+        pending_clarification_request ||
         @conversation.owner_tasks.open.where(
           account: @conversation.property.account,
           property: @conversation.property,
@@ -96,6 +97,29 @@ module GuestRequests
           kind: @decision.owner_task_kind,
           category: category
         ).where("created_at >= ?", 24.hours.ago).order(updated_at: :desc).first
+    end
+
+    def pending_clarification_request
+      @conversation.owner_tasks.open
+        .where(
+          account: @conversation.property.account,
+          property: @conversation.property,
+          guest: @conversation.guest,
+          kind: @decision.owner_task_kind
+        )
+        .where("created_at >= ?", 24.hours.ago)
+        .order(updated_at: :desc)
+        .detect { |request| awaiting_guest_clarification?(request) }
+    end
+
+    def awaiting_guest_clarification?(request)
+      metadata = request.metadata.to_h
+      if metadata.key?("awaiting_guest_clarification")
+        return ActiveModel::Type::Boolean.new.cast(metadata["awaiting_guest_clarification"])
+      end
+
+      metadata["decision"] == "ask_clarifying_question" ||
+        Array(metadata["detected_intents"]).any? { |intent| intent.to_h["status"] == "needs_clarification" }
     end
 
     def update_request!(request)
@@ -116,7 +140,8 @@ module GuestRequests
         metadata: request.metadata.merge(
           "updates" => updates,
           "last_update_message_id" => @guest_message.id,
-          "last_update_at" => Time.current.iso8601
+          "last_update_at" => Time.current.iso8601,
+          "awaiting_guest_clarification" => false
         )
       )
       request
@@ -148,7 +173,8 @@ module GuestRequests
           "proposed_action" => @decision.proposed_action,
           "detected_intents" => @decision.detected_intents,
           "evidence_ids" => @decision.evidence_ids,
-          "approval_required" => requires_owner_approval?(category)
+          "approval_required" => requires_owner_approval?(category),
+          "awaiting_guest_clarification" => awaiting_clarification?
         }.compact
       )
     rescue ActiveRecord::RecordNotUnique
@@ -209,6 +235,11 @@ module GuestRequests
       return "owner_approval" if requires_owner_approval?(request_category)
 
       "details"
+    end
+
+    def awaiting_clarification?
+      @decision.outcome == "ask_clarifying_question" ||
+        detected_intents.any? { |intent| intent["status"] == "needs_clarification" }
     end
 
     def truthy?(value)

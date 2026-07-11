@@ -178,11 +178,15 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     end
 
     assert_no_difference -> { GuestRequest.count } do
-      with_ai_decision(ai_guest_request_decision(
-        action_type: "none",
-        intent_type: "request_food_or_drink",
-        message_body: "Perfecto, sumo ese detalle al pedido.",
-        intent_status: "needs_clarification"
+      with_ai_decision(AI::DecisionResult.from_hash(
+        action: "create_owner_task",
+        owner_task_kind: "request",
+        language: "es",
+        message: "Perfecto, sumo ese detalle al pedido.",
+        task_summary: "Vino tinto",
+        answer_confidence: 98,
+        evidence_ids: [],
+        attachments: []
       )) do
         Whatsapp::IncomingMessageHandler.new(
           {
@@ -198,6 +202,31 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     guest_request = first.fetch(:guest_request).reload
     assert_equal 1, guest_request.metadata.fetch("updates").length
     assert_includes guest_request.metadata.fetch("updates").first.fetch("body"), "tinto"
+    assert_equal "tinto por favor", guest_request.current_guest_message
+    assert_includes guest_request.description, "quiero un vino"
+    assert_equal false, guest_request.metadata.fetch("awaiting_guest_clarification")
+
+    assert_difference -> { GuestRequest.count }, 1 do
+      with_ai_decision(AI::DecisionResult.from_hash(
+        action: "create_owner_task",
+        owner_task_kind: "request",
+        language: "es",
+        message: "Recibí tu nuevo pedido.",
+        task_summary: "Pedido no relacionado",
+        answer_confidence: 98,
+        evidence_ids: [],
+        attachments: []
+      )) do
+        Whatsapp::IncomingMessageHandler.new(
+          {
+            "From" => from,
+            "To" => "whatsapp:+15550009999",
+            "Body" => "necesito traslado al aeropuerto"
+          },
+          provider: Whatsapp::Providers::NullProvider.new
+        ).call
+      end
+    end
   end
 
   test "extra bed request creates pedido" do

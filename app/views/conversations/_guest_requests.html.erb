@@ -3,7 +3,7 @@
     <%= link_to guest_request_path(guest_request), class: "block rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50" do %>
       <p class="text-sm font-medium text-slate-950"><%= guest_request.title %></p>
       <p class="mt-1 text-xs text-slate-500"><%= enum_label(guest_request.category) %> · <%= enum_label(guest_request.status) %></p>
-      <p class="mt-2 line-clamp-2 text-xs text-slate-500"><%= guest_request.description %></p>
+      <p class="mt-2 line-clamp-2 text-xs text-slate-500"><%= guest_request.current_guest_message %></p>
     <% end %>
   <% end %>
   <% if guest_requests.blank? %>
