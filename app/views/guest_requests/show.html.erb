@@ -1,11 +1,14 @@
+<% inquiry_view = @task_kind == "inquiry" %>
+<% item_path = inquiry_view ? inquiry_path(@guest_request) : guest_request_path(@guest_request) %>
 <% content_for :page_title, @guest_request.title %>
 
 <div class="mx-auto max-w-4xl space-y-6">
   <section class="<%= card_class %> p-5">
-    <%= link_to "Volver a pedidos", guest_requests_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+    <%= link_to(inquiry_view ? "Volver a consultas" : "Volver a pedidos", inquiry_view ? inquiries_path : guest_requests_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950") %>
     <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2 class="text-2xl font-semibold text-slate-950"><%= @guest_request.title %></h2>
+        <span class="text-xs font-semibold text-slate-500"><%= inquiry_view ? "Consulta" : "Pedido" %></span>
+        <h2 class="mt-1 text-2xl font-semibold text-slate-950"><%= @guest_request.title %></h2>
         <p class="mt-2 text-sm text-slate-500"><%= enum_label(@guest_request.category) %> · <%= @guest_request.property_name %></p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -53,7 +56,7 @@
 
   <section class="<%= card_class %> p-5">
     <h3 class="text-base font-semibold text-slate-950">Actualizar pedido</h3>
-    <%= form_with model: @guest_request, class: "mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto]" do |form| %>
+    <%= form_with model: @guest_request, url: item_path, class: "mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto]" do |form| %>
       <div>
         <%= form.label :status, "Estado", class: label_class %>
         <%= form.select :status, GuestRequest::STATUSES.map { |status| [enum_label(status), status] }, {}, class: field_class %>

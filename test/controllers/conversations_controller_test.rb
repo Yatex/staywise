@@ -224,7 +224,8 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
         escalation: { required: true, reason_code: "unknown_question", summary_for_host: "El huésped hizo una pregunta sin información disponible." },
         missing_information: ["unknown_question"],
         safety_flags: [],
-        confidence: 0.72
+        confidence: 0.72,
+        owner_task_kind: "inquiry"
       )
     }) do
       result = Whatsapp::IncomingMessageHandler.new(
@@ -238,7 +239,8 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     conversation = result.fetch(:conversation)
-    assert_equal "open", result.fetch(:alert).status
+    assert_nil result.fetch(:alert)
+    assert_equal "inquiry", result.fetch(:guest_request).kind
 
     Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
       post reply_conversation_path(conversation), params: {
@@ -258,11 +260,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "No tengo esa información confirmada"
     assert_includes @response.body, "No se pueden invitar visitas a la pileta."
 
-    suggestion = @property.faqs.last
-    assert_equal "pending_review", suggestion.status
-    assert_not suggestion.active?
-    assert_equal "owner_answer", suggestion.source_type
-    assert_equal result.fetch(:alert), suggestion.source_alert
+    assert_nil result.fetch(:alert)
   end
 
   test "show page includes guest messages referenced by ai trace logs" do

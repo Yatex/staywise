@@ -85,6 +85,7 @@ es:
       properties: "Propiedades"
       conversations: "Conversaciones"
       guest_requests: "Pedidos"
+      inquiries: "Consultas"
       alerts: "Alertas"
       recommendations: "Recomendaciones"
       guests: "Huéspedes"

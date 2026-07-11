@@ -30,7 +30,11 @@ class GuestRequestsController < ApplicationController
   private
 
   def scoped_guest_requests
-    current_account.guest_requests
+    current_account.owner_tasks.where(kind: task_kind)
+  end
+
+  def task_kind
+    @task_kind ||= params[:kind].to_s.in?(OwnerTask::KINDS) ? params[:kind].to_s : "request"
   end
 
   def guest_request_params

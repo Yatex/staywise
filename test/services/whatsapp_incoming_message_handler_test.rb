@@ -52,7 +52,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   teardown do
   end
 
-  test "creates late checkout pedido and its owner approval alert from incoming whatsapp payload" do
+  test "creates one late checkout owner task without alert" do
     @property.update!(address: "Av. Test 123")
     result = with_ai_decision(ai_late_checkout_decision) do
       Whatsapp::IncomingMessageHandler.new(
@@ -68,15 +68,16 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     conversation = result.fetch(:conversation)
 
     assert result.fetch(:replied)
-    assert_equal "escalated", conversation.reload.status
+    assert_equal "active", conversation.reload.status
     assert_equal "+15550000002", conversation.guest.phone_number
     assert_equal 2, conversation.messages.count
-    assert_equal "late_checkout_request", result.fetch(:alert).alert_type
-    assert_equal 1, conversation.alerts.count
+    assert_nil result.fetch(:alert)
+    assert_equal 0, conversation.alerts.count
 
     guest_request = result.fetch(:guest_request)
     assert_equal "late_checkout", guest_request.category
     assert_equal "pending", guest_request.status
+    assert_equal "request", guest_request.kind
     assert_equal "+15550000002", guest_request.guest_phone
     assert_equal "Av. Test 123", guest_request.property_address
     assert_equal conversation.messages.where(sender: "guest").last, guest_request.message
@@ -123,8 +124,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     guest_request = result.fetch(:guest_request)
 
     assert result.fetch(:replied)
-    assert_equal "owner_approval_required", result.fetch(:alert).alert_type
-    assert_equal 1, result.fetch(:conversation).alerts.count
+    assert_nil result.fetch(:alert)
+    assert_equal 0, result.fetch(:conversation).alerts.count
     assert_equal "food_or_drink", guest_request.category
     assert_equal "pending", guest_request.status
     assert_equal "+15550000023", guest_request.guest_phone
@@ -211,12 +212,47 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       ).call
     end
 
-    assert_equal "owner_approval_required", result.fetch(:alert).alert_type
+    assert_nil result.fetch(:alert)
     assert_equal "extra_bed", result.fetch(:guest_request).category
     assert_equal "pending", result.fetch(:guest_request).status
   end
 
-  test "reprocessing the same AI action does not duplicate pedido or alert" do
+  test "unanswered inquiry creates one inquiry owner task without alert" do
+    result = with_ai_decision(ai_unknown_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000029",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} ¿Cuál es el código de la ventana?"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    assert_nil result.fetch(:alert)
+    assert_equal "inquiry", result.fetch(:guest_request).kind
+    assert_equal 1, result.fetch(:conversation).owner_tasks.inquiries.count
+    assert_equal 0, result.fetch(:conversation).alerts.count
+  end
+
+  test "operational escalation creates alert without owner task" do
+    result = with_ai_decision(ai_operational_alert_decision) do
+      Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000030",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} hay un problema"
+        },
+        provider: Whatsapp::Providers::NullProvider.new
+      ).call
+    end
+
+    assert_equal "maintenance_issue", result.fetch(:alert).alert_type
+    assert_nil result.fetch(:guest_request)
+    assert_equal 0, result.fetch(:conversation).owner_tasks.count
+  end
+
+  test "reprocessing the same AI action does not duplicate owner task or create alert" do
     guest = @account.guests.create!(phone_number: "+15550000028", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "active", ai_enabled: true)
     message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Necesito un servicio")
@@ -228,9 +264,10 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     second_alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: Whatsapp::Providers::NullProvider.new)
 
     assert_equal first_request.id, second_request.id
-    assert_equal first_alert.id, second_alert.id
+    assert_nil first_alert
+    assert_nil second_alert
     assert_equal 1, conversation.guest_requests.count
-    assert_equal 1, conversation.alerts.count
+    assert_equal 0, conversation.alerts.count
   end
 
   test "pedido uses relinked property when guest sends a new stay token" do
@@ -288,7 +325,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         detected_intents: [{ "type" => "unknown_question", "status" => "escalated" }],
         payload: { "tools" => [], "evidence" => [] }
       )
-      ai_unknown_decision
+      ai_operational_alert_decision
     }) do
       result = Whatsapp::IncomingMessageHandler.new(
         {
@@ -305,7 +342,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal result.fetch(:message), alert.original_message
     assert_equal trace, alert.ai_decision_log
     assert_equal "ai_escalation", alert.metadata["source"]
-    assert_includes alert.metadata["detected_intents"].map { |intent| intent["type"] || intent[:type] }, "unknown_question"
+    assert_includes alert.metadata["detected_intents"].map { |intent| intent["type"] || intent[:type] }, "operational_failure"
   end
 
   test "english emergency phrase creates urgent alert from ai decision" do
@@ -1008,7 +1045,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
 
     assert result.fetch(:replied)
     assert_equal @property, result.fetch(:conversation).property
-    assert_equal "late_checkout_request", result.fetch(:alert).alert_type
+    assert_nil result.fetch(:alert)
     assert_equal "late_checkout", result.fetch(:guest_request).category
     assert_equal @property, result.fetch(:guest_request).property
   end
@@ -1019,7 +1056,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
     provider = RecordingProvider.new
 
-    guest_result = with_ai_decision(ai_unknown_decision) do
+    guest_result = with_ai_decision(ai_operational_alert_decision) do
       Whatsapp::IncomingMessageHandler.new(
         {
           "From" => "whatsapp:+15550000012",
@@ -1046,7 +1083,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
     provider = RecordingProvider.new
 
-    guest_result = with_ai_decision(ai_unknown_decision) do
+    guest_result = with_ai_decision(ai_operational_alert_decision) do
       Whatsapp::IncomingMessageHandler.new(
         {
           "From" => "whatsapp:+15550000012",
@@ -1072,7 +1109,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert list_result.fetch(:inbox)
     assert_includes provider.sent_messages.last.fetch(:body), "Alertas abiertas:"
     assert_includes provider.sent_messages.last.fetch(:body), "1. 15550000012"
-    assert_includes provider.sent_messages.last.fetch(:body), "¿Puedo invitar gente a la pileta?"
+    assert_includes provider.sent_messages.last.fetch(:body), "Se produjo un problema operativo"
     assert_equal 1, session.reload.metadata["last_listed_position"]
 
     detail_result = Whatsapp::IncomingMessageHandler.new(
@@ -1103,7 +1140,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "resolved", session.reload.state
     assert_includes guest_result.fetch(:conversation).messages.where(sender: "owner").last.body, "No se pueden invitar"
     suggestion = @property.faqs.last
-    assert_equal "¿Puedo invitar gente a la pileta?", suggestion.question
+    assert_equal "Se produjo un problema operativo que requiere atención.", suggestion.question
     assert_equal "No se pueden invitar personas a la pileta.", suggestion.answer
     assert_equal "pending_review", suggestion.status
     assert_not suggestion.active?
@@ -1169,7 +1206,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     }
 
     AI::Translator.stub(:call, ->(text:, **) { translations.fetch(text, text) }) do
-      guest_result = with_ai_decision(ai_unknown_decision(language: "ru", guest_ack: "Спасибо за сообщение. Я уточню это у хозяина и скоро отвечу.")) do
+      guest_result = with_ai_decision(ai_operational_alert_decision(language: "ru", guest_ack: "Спасибо за сообщение. Я уточню это у хозяина и скоро отвечу.")) do
         Whatsapp::IncomingMessageHandler.new(
           {
             "From" => "whatsapp:+15550000013",
@@ -1183,7 +1220,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       alert = guest_result.fetch(:alert)
       session = @account.owner_whatsapp_sessions.find_by!(alert: alert)
 
-      assert_equal "¿Puedo invitar gente a la pileta?", alert.description
+      assert_equal "Se produjo un problema operativo que requiere atención.", alert.description
 
       Whatsapp::IncomingMessageHandler.new(
         {
@@ -1203,7 +1240,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         provider: provider
       ).call
 
-      assert_includes provider.sent_messages.last.fetch(:body), "¿Puedo invitar gente a la pileta?"
+      assert_includes provider.sent_messages.last.fetch(:body), "Se produjo un problema operativo"
 
       Whatsapp::IncomingMessageHandler.new(
         {
@@ -1218,7 +1255,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       assert_equal "Нельзя приглашать людей в бассейн.", owner_message.body
       assert_equal "No se pueden invitar personas a la pileta.", owner_message.metadata["original_owner_body"]
       suggestion = @property.faqs.last
-      assert_equal "¿Puedo invitar gente a la pileta?", suggestion.question
+      assert_equal "Se produjo un problema operativo que requiere atención.", suggestion.question
       assert_equal "No se pueden invitar personas a la pileta.", suggestion.answer
       assert_equal "pending_review", suggestion.status
       assert_not suggestion.active?
@@ -1231,7 +1268,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     @account.update!(owner_whatsapp_number: "+15559990007", owner_whatsapp_escalations_enabled: true)
     provider = RecordingProvider.new
 
-    guest_result = with_ai_decision(ai_unknown_decision) do
+    guest_result = with_ai_decision(ai_operational_alert_decision) do
       Whatsapp::IncomingMessageHandler.new(
         {
           "From" => "whatsapp:+15550000014",
@@ -1573,7 +1610,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       escalation: { required: true, reason_code: "booking_change", summary_for_host: "Guest asked for late checkout." },
       missing_information: [],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      owner_task_kind: "request"
     )
   end
 
@@ -1595,7 +1633,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       },
       missing_information: [],
       safety_flags: [],
-      confidence: 0.92
+      confidence: 0.92,
+      owner_task_kind: "request"
     )
   end
 
@@ -1612,7 +1651,28 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
       escalation: { required: true, reason_code: "unknown_question", summary_for_host: "El huésped preguntó algo que Ayla no sabe responder." },
       missing_information: ["visitor_pool_policy"],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      owner_task_kind: "inquiry"
+    )
+  end
+
+  def ai_operational_alert_decision(language: "es", guest_ack: "Hubo un problema operativo y el equipo fue notificado.")
+    AI::DecisionResult.from_hash(
+      decision: "escalate",
+      language: language,
+      message_body: guest_ack,
+      intent_summary: "operational failure",
+      detected_intents: [{ type: "operational_failure", status: "escalated" }],
+      evidence_ids: [],
+      required_capabilities: ["owner_attention"],
+      proposed_action: nil,
+      escalation: { required: true, reason_code: "maintenance", summary_for_host: "Se produjo un problema operativo que requiere atención." },
+      missing_information: [],
+      safety_flags: ["operational_failure"],
+      confidence: 0.9,
+      owner_task_kind: nil,
+      alert_type: "maintenance_issue",
+      alert_title: "Problema operativo"
     )
   end
 

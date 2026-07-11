@@ -97,6 +97,27 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, "necesito toallas"
   end
 
+  test "requests and inquiries are listed in separate sections" do
+    inquiry_message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "¿Cuál es el código de la ventana?")
+    inquiry = @conversation.owner_tasks.create!(
+      account: @account, property: @property, guest: @guest, message: inquiry_message,
+      kind: "inquiry", guest_phone: @guest.phone_number, property_name: @property.display_name,
+      category: "other", title: "Consulta pendiente", description: inquiry_message.body,
+      status: "pending", priority: "normal", source_channel: "whatsapp"
+    )
+
+    get guest_requests_path
+    assert_response :success
+    assert_includes response.body, @guest_request.description
+    assert_not_includes response.body, inquiry.description
+
+    get inquiries_path
+    assert_response :success
+    assert_includes response.body, inquiry.description
+    assert_not_includes response.body, @guest_request.description
+    assert_select "a[href='#{inquiry_path(inquiry)}']"
+  end
+
   private
 
   def sign_in_as(user)

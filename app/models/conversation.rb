@@ -6,7 +6,8 @@ class Conversation < ApplicationRecord
   belongs_to :property
   has_many :messages, dependent: :destroy
   has_many :alerts, dependent: :nullify
-  has_many :guest_requests, dependent: :destroy
+  has_many :owner_tasks, dependent: :destroy
+  has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
 
   validates :status, inclusion: { in: STATUSES }
   validates :channel, inclusion: { in: CHANNELS }

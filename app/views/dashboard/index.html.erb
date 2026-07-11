@@ -15,6 +15,7 @@
           <%= link_to guest_request_path(guest_request), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
             <div class="flex items-start justify-between gap-4">
               <div>
+                <span class="text-xs font-semibold text-slate-500">Pedido</span>
                 <p class="font-medium text-slate-950"><%= guest_request.title %></p>
                 <p class="mt-1 text-sm text-slate-500"><%= guest_request.property_name %> · <%= display_phone_number(guest_request.guest_phone) %></p>
                 <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= guest_request.description %></p>
@@ -51,6 +52,35 @@
         <% end %>
         <% if @alerts.blank? %>
           <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.dashboard.no_alerts") %></p>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-2">
+    <div class="<%= card_class %> overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-950">Consultas pendientes</h2>
+          <p class="text-sm text-slate-500">Preguntas que necesitan información del propietario.</p>
+        </div>
+        <%= link_to t("ui.actions.view_all"), inquiries_path, class: "text-sm font-semibold text-slate-700 hover:text-slate-950" %>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <% @inquiries.each do |inquiry| %>
+          <%= link_to inquiry_path(inquiry), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <span class="text-xs font-semibold text-slate-500">Consulta</span>
+                <p class="mt-1 font-medium text-slate-950"><%= inquiry.message&.body.presence || inquiry.description %></p>
+                <p class="mt-1 text-sm text-slate-500"><%= inquiry.property_name %> · <%= display_phone_number(inquiry.guest_phone) %></p>
+              </div>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(inquiry.status) %>"><%= enum_label(inquiry.status) %></span>
+            </div>
+          <% end %>
+        <% end %>
+        <% if @inquiries.blank? %>
+          <p class="px-5 py-8 text-sm text-slate-500">No hay consultas pendientes.</p>
         <% end %>
       </div>
     </div>

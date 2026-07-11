@@ -44,7 +44,7 @@ module Whatsapp
       end
 
       decision = AI::DecisionService.call(conversation: conversation, guest_message: guest_message)
-      guest_request = GuestRequests::Creator.call(conversation: conversation, decision: decision, guest_message: guest_message)
+      guest_request = OwnerTasks::Creator.call(conversation: conversation, decision: decision, guest_message: guest_message)
       alert = Alerts::Creator.call(conversation: conversation, decision: decision, owner_whatsapp_provider: @provider)
       report_missing_alert(conversation: conversation, decision: decision) if decision.escalation_required && alert.blank? && guest_request.blank?
       replied = maybe_reply(conversation, guest, decision, alert: alert, guest_request: guest_request)

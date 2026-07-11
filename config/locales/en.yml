@@ -106,6 +106,8 @@ en:
       properties: "Properties"
       conversations: "Conversations"
       alerts: "Alerts"
+      guest_requests: "Requests"
+      inquiries: "Inquiries"
       recommendations: "Recommendations"
       guests: "Guests"
       subscriptions: "Subscriptions"

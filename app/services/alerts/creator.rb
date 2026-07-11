@@ -1,5 +1,6 @@
 module Alerts
   class Creator
+    OPERATIONAL_TYPES = %w[emergency maintenance_issue complaint other].freeze
     PRIORITY_BY_TYPE = {
       "emergency" => "urgent",
       "maintenance_issue" => "high",
@@ -22,7 +23,9 @@ module Alerts
     end
 
     def call
+      return if @decision.owner_task_kind.present?
       return unless @decision.escalation_required
+      return unless @decision.alert_type.to_s.in?(OPERATIONAL_TYPES)
       return unless account.ai_automation_enabled?("create_alerts")
       return unless account.ai_escalates?(@decision.alert_type)
 

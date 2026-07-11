@@ -18,24 +18,22 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@user)
   end
 
-  test "shows open unknown question alerts" do
-    @property.alerts.create!(
-      guest: @guest,
-      conversation: @conversation,
-      alert_type: "unknown_question",
-      title: "Pregunta sin configurar",
-      description: "Puedo hacer más tarde el checkout?",
-      status: "open",
-      priority: "medium"
+  test "shows pending inquiries separately from alerts" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Puedo hacer más tarde el checkout?")
+    @conversation.owner_tasks.create!(
+      account: @account, property: @property, guest: @guest, message: message,
+      kind: "inquiry", guest_phone: @guest.phone_number, property_name: @property.display_name,
+      category: "other", title: "Consulta pendiente", description: message.body,
+      status: "pending", priority: "normal", source_channel: "whatsapp"
     )
 
     get dashboard_path
 
     assert_response :success
     assert_includes @response.body, "Puedo hacer más tarde el checkout?"
-    assert_not_includes @response.body, ">Pregunta sin configurar<"
+    assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
-    assert_not_includes @response.body, "No hay alertas abiertas"
+    assert_includes @response.body, "No hay alertas abiertas"
   end
 
   test "does not show recent chats on dashboard" do
@@ -75,7 +73,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "quiero un vino"
   end
 
-  test "shows alert created by ai escalation from whatsapp flow" do
+  test "shows inquiry created by ai escalation from whatsapp flow without alert" do
     decision = AI::DecisionResult.from_hash(
       decision: "escalate",
       language: "es",
@@ -88,7 +86,8 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
       escalation: { required: true, reason_code: "unknown_question", summary_for_host: "El huésped preguntó si puede hacer más tarde el checkout." },
       missing_information: ["late_checkout_policy"],
       safety_flags: [],
-      confidence: 0.9
+      confidence: 0.9,
+      owner_task_kind: "inquiry"
     )
     result = nil
 
@@ -103,21 +102,18 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
       ).call
     end
 
-    alert = result.fetch(:alert)
-
-    assert_equal "unknown_question", alert.alert_type
-    assert_equal "Puedo hacer más tarde el checkout?", alert.title
-    assert_equal "open", alert.status
-    assert_equal @property, alert.property
-    assert_equal result.fetch(:conversation), alert.conversation
+    inquiry = result.fetch(:guest_request)
+    assert_nil result.fetch(:alert)
+    assert_equal "inquiry", inquiry.kind
+    assert_equal @property, inquiry.property
 
     get dashboard_path
 
     assert_response :success
     assert_includes @response.body, "Puedo hacer más tarde el checkout?"
-    assert_not_includes @response.body, ">Pregunta sin configurar<"
+    assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
-    assert_not_includes @response.body, "No hay alertas abiertas"
+    assert_includes @response.body, "No hay alertas abiertas"
   end
 
   private

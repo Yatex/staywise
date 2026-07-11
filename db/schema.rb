@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_10_190200) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_10_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -187,6 +187,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_190200) do
     t.datetime "updated_at", null: false
     t.boolean "requires_owner_approval", default: false, null: false
     t.jsonb "structured_details", default: {}, null: false
+    t.string "kind", default: "request", null: false
+    t.index ["account_id", "kind", "status"], name: "index_owner_tasks_on_account_kind_status"
     t.index ["account_id", "status"], name: "index_guest_requests_on_account_id_and_status"
     t.index ["account_id"], name: "index_guest_requests_on_account_id"
     t.index ["ai_decision_log_id"], name: "index_guest_requests_on_ai_decision_log_id"
@@ -198,6 +200,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_10_190200) do
     t.index ["message_id"], name: "index_guest_requests_on_message_id_unique", unique: true
     t.index ["property_id", "status"], name: "index_guest_requests_on_property_id_and_status"
     t.index ["property_id"], name: "index_guest_requests_on_property_id"
+    t.check_constraint "kind::text = ANY (ARRAY['request'::character varying, 'inquiry'::character varying]::text[])", name: "guest_requests_kind_check"
   end
 
   create_table "guests", force: :cascade do |t|

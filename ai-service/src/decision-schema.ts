@@ -27,6 +27,8 @@ export const DecisionSchema = z.preprocess(normalizeDecisionInput, z.object({
   used_source_ids: z.array(z.string()).default([]),
   evidence_ids: z.array(z.string()).default([]),
   required_capabilities: z.array(z.string()).default([]),
+  owner_task_kind: z.enum(["request", "inquiry"]).nullable().default(null)
+    .describe("Owner-facing task type chosen by the AI. Use request for something the guest asks the team to do or approve; inquiry only when a guest question cannot be answered reliably. Use null otherwise."),
   proposed_action: z
     .object({
       type: z.enum([

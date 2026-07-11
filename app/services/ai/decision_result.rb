@@ -26,6 +26,7 @@ module AI
       alert_title
       alert_description
       suggested_owner_action
+      owner_task_kind
     ].freeze
 
     attr_reader(*ATTRIBUTES)
@@ -65,7 +66,8 @@ module AI
         alert_type: normalized["alert_type"],
         alert_title: normalized["alert_title"],
         alert_description: normalized["alert_description"],
-        suggested_owner_action: normalized["suggested_owner_action"]
+        suggested_owner_action: normalized["suggested_owner_action"],
+        owner_task_kind: normalized["owner_task_kind"]
       )
     end
 

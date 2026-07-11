@@ -1,12 +1,15 @@
-<% content_for :page_title, "Pedidos" %>
+<% inquiry_view = @task_kind == "inquiry" %>
+<% section_title = inquiry_view ? "Consultas" : "Pedidos" %>
+<% collection_path = inquiry_view ? inquiries_path : guest_requests_path %>
+<% content_for :page_title, section_title %>
 
 <div class="space-y-6">
   <div>
-    <h2 class="text-xl font-semibold text-slate-950">Pedidos</h2>
-    <p class="mt-1 text-sm text-slate-500">Solicitudes de huéspedes detectadas por Ayla desde WhatsApp.</p>
+    <h2 class="text-xl font-semibold text-slate-950"><%= section_title %></h2>
+    <p class="mt-1 text-sm text-slate-500"><%= inquiry_view ? "Preguntas de huéspedes que necesitan información del propietario." : "Solicitudes de huéspedes detectadas por Ayla desde WhatsApp." %></p>
   </div>
 
-  <%= form_with url: guest_requests_path, method: :get, class: "#{card_class} grid gap-4 p-5 md:grid-cols-[1fr_1fr_auto]" do |form| %>
+  <%= form_with url: collection_path, method: :get, class: "#{card_class} grid gap-4 p-5 md:grid-cols-[1fr_1fr_auto]" do |form| %>
     <div>
       <%= form.label :property_id, "Propiedad", class: label_class %>
       <%= form.select :property_id,
@@ -23,7 +26,7 @@
     </div>
     <div class="flex items-end gap-2">
       <%= form.submit "Filtrar", class: primary_button_class %>
-      <%= link_to "Limpiar", guest_requests_path, class: secondary_button_class %>
+      <%= link_to "Limpiar", collection_path, class: secondary_button_class %>
     </div>
   <% end %>
 
@@ -32,7 +35,8 @@
       <% @guest_requests.each do |guest_request| %>
         <div class="px-5 py-4 transition hover:bg-slate-50">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <%= link_to guest_request_path(guest_request), class: "min-w-0 flex-1" do %>
+            <%= link_to(inquiry_view ? inquiry_path(guest_request) : guest_request_path(guest_request), class: "min-w-0 flex-1") do %>
+              <span class="text-xs font-semibold text-slate-500"><%= inquiry_view ? "Consulta" : "Pedido" %></span>
               <p class="font-medium text-slate-950"><%= guest_request.title %></p>
               <p class="mt-1 text-sm text-slate-500"><%= guest_request.property_name %> · <%= display_phone_number(guest_request.guest_phone) %></p>
               <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= guest_request.description %></p>
@@ -45,7 +49,7 @@
               <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.status) %>"><%= enum_label(guest_request.status) %></span>
               <% GuestRequest::STATUSES.without(guest_request.status).each do |status| %>
                 <%= button_to enum_label(status),
-                  guest_request_path(guest_request),
+                  inquiry_view ? inquiry_path(guest_request) : guest_request_path(guest_request),
                   method: :patch,
                   params: { guest_request: { status: status } },
                   class: "rounded-md px-2 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-50 hover:text-slate-950" %>
@@ -55,7 +59,7 @@
         </div>
       <% end %>
       <% if @guest_requests.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">No hay pedidos para mostrar.</p>
+        <p class="px-5 py-8 text-sm text-slate-500">No hay <%= inquiry_view ? "consultas" : "pedidos" %> para mostrar.</p>
       <% end %>
     </div>
   </div>
@@ -65,10 +69,10 @@
       <p class="text-sm text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
       <div class="flex gap-2">
         <% if @current_page > 1 %>
-          <%= link_to "Anterior", guest_requests_path(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
+          <%= link_to "Anterior", url_for(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
         <% end %>
         <% if @current_page < @total_pages %>
-          <%= link_to "Siguiente", guest_requests_path(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
+          <%= link_to "Siguiente", url_for(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
         <% end %>
       </div>
     </div>

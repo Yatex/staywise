@@ -58,7 +58,9 @@ module GuestRequests
     end
 
     def call
-      category = request_category
+      return unless @decision.owner_task_kind.in?(OwnerTask::KINDS)
+
+      category = @decision.owner_task_kind == "inquiry" ? "other" : request_category
       return unless category
 
       if (request = existing_request(category))
@@ -86,11 +88,12 @@ module GuestRequests
     end
 
     def existing_request(category)
-      GuestRequest.find_by(message: @guest_message) ||
-        @conversation.guest_requests.open.where(
+      OwnerTask.find_by(message: @guest_message) ||
+        @conversation.owner_tasks.open.where(
           account: @conversation.property.account,
           property: @conversation.property,
           guest: @conversation.guest,
+          kind: @decision.owner_task_kind,
           category: category
         ).where("created_at >= ?", 24.hours.ago).order(updated_at: :desc).first
     end
@@ -120,8 +123,9 @@ module GuestRequests
     end
 
     def create_request(category)
-      @conversation.guest_requests.create!(
+      @conversation.owner_tasks.create!(
         account: @conversation.property.account,
+        kind: @decision.owner_task_kind,
         property: @conversation.property,
         guest: @conversation.guest,
         message: @guest_message,
@@ -148,7 +152,7 @@ module GuestRequests
         }.compact
       )
     rescue ActiveRecord::RecordNotUnique
-      GuestRequest.find_by!(message: @guest_message)
+      OwnerTask.find_by!(message: @guest_message)
     end
 
     def latest_ai_trace
@@ -157,6 +161,8 @@ module GuestRequests
     end
 
     def request_title(category)
+      return "Consulta pendiente" if @decision.owner_task_kind == "inquiry"
+
       "#{@conversation.guest.phone_number.to_s.delete_prefix("+")} · Pedido"
     end
 
@@ -186,6 +192,8 @@ module GuestRequests
     end
 
     def requires_owner_approval?(category)
+      return false if @decision.owner_task_kind == "inquiry"
+
       category.in?(GuestRequest::APPROVAL_CATEGORIES) ||
         @decision.required_capabilities.include?("owner_approval") ||
         @decision.required_capabilities.include?("owner_attention") ||

@@ -2,7 +2,8 @@ class DashboardController < ApplicationController
   def index
     alert_scope = Alert.joins(:property).where(properties: { account_id: current_account.id })
 
-    @guest_requests = current_account.guest_requests.includes(:guest, :property, :conversation).open.pending_first.limit(5)
+    @guest_requests = current_account.owner_tasks.requests.includes(:guest, :property, :conversation).open.pending_first.limit(5)
+    @inquiries = current_account.owner_tasks.inquiries.includes(:guest, :property, :conversation).open.pending_first.limit(5)
     @alerts = alert_scope.includes(:guest, :property, :original_message).open.order(created_at: :desc).limit(5)
   end
 end

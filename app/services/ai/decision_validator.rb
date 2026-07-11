@@ -24,6 +24,7 @@ module AI
     def call
       reasons = []
       reasons << "invalid_outcome" unless @decision.outcome.in?(%w[reply ask_clarifying_question escalate propose_action no_reply])
+      reasons << "invalid_owner_task_kind" if @decision.owner_task_kind.present? && !@decision.owner_task_kind.in?(OwnerTask::KINDS)
       reasons.concat(contract_reasons)
       reasons.concat(tool_mandatory_reasons)
       reasons << "missing_language" if @decision.language.blank?

@@ -77,6 +77,7 @@ test("AylaDecision accepts guest request proposed actions", () => {
       outcome: "propose_action",
       message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.",
       detected_intents: [{ type: "guest_request", status: "requires_host_approval" }],
+      owner_task_kind: "request",
       proposed_action: { type: actionType, payload: { title: "Pedido del huésped" } },
       escalation: { required: true, reason_code: "guest_request", summary_for_host: "El huésped hizo un pedido." },
       escalation_required: true,
@@ -86,7 +87,14 @@ test("AylaDecision accepts guest request proposed actions", () => {
 
     assert.equal(parsed.outcome, "propose_action");
     assert.equal(parsed.proposed_action?.type, actionType);
+    assert.equal(parsed.owner_task_kind, "request");
   }
+});
+
+test("AylaDecision accepts only explicit owner task kinds", () => {
+  assert.equal(DecisionSchema.parse({ ...checkInReply, owner_task_kind: "inquiry" }).owner_task_kind, "inquiry");
+  assert.equal(DecisionSchema.parse(checkInReply).owner_task_kind, null);
+  assert.equal(DecisionSchema.safeParse({ ...checkInReply, owner_task_kind: "unknown" }).success, false);
 });
 
 test("AylaDecision can normalize response_text into message_body", () => {
