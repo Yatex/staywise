@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_11_130000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_11_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -272,7 +272,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_11_130000) do
 
   create_table "owner_whatsapp_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "alert_id", null: false
+    t.bigint "alert_id"
     t.string "state", default: "queued", null: false
     t.datetime "last_prompted_at"
     t.datetime "last_owner_message_at"
@@ -280,8 +280,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_11_130000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "active_category"
+    t.string "active_item_type"
+    t.bigint "active_item_id"
+    t.datetime "started_at"
+    t.datetime "expires_at"
+    t.jsonb "processed_message_sids", default: [], null: false
     t.index ["account_id", "state"], name: "index_owner_whatsapp_sessions_on_account_id_and_state"
+    t.index ["account_id"], name: "index_one_active_owner_whatsapp_session_per_account", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'awaiting_owner_reply'::character varying, 'awaiting_learning_confirmation'::character varying])::text[]))"
     t.index ["account_id"], name: "index_owner_whatsapp_sessions_on_account_id"
+    t.index ["active_item_type", "active_item_id"], name: "index_owner_sessions_on_active_item"
     t.index ["alert_id"], name: "index_owner_whatsapp_sessions_on_alert_id", unique: true
   end
 

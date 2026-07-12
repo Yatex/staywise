@@ -2,50 +2,47 @@ module Whatsapp
   class OwnerEscalationNotifier
     Result = Struct.new(:sent?, :session, :error, keyword_init: true)
 
-    def self.call(alert:, provider: ProviderFactory.build)
-      new(alert: alert, provider: provider).call
+    def self.call(alert: nil, item: nil, account: nil, provider: ProviderFactory.build)
+      item ||= alert
+      account ||= item&.property&.account
+      new(account: account, provider: provider).call
     end
 
     def self.drain_queue(account:, provider: ProviderFactory.build, except_session: nil)
-      scope = account.owner_whatsapp_sessions
-      scope = scope.where.not(id: except_session.id) if except_session
-      session = scope.where(state: "queued").order(:created_at).first
-      session ||= scope.where(state: "on_hold").order(:updated_at).first
-      return unless session
-
-      new(alert: session.alert, provider: provider).notify_session(session)
+      call(account: account, provider: provider)
     end
 
     def self.drain_queue_for_owner(owner_whatsapp_number:, provider: ProviderFactory.build, except_session: nil)
-      scope = OwnerWhatsappSession.joins(:account).where(accounts: {
+      accounts = Account.where(
         owner_whatsapp_escalations_enabled: true,
         owner_whatsapp_number: owner_whatsapp_number
-      })
-      scope = scope.where.not(id: except_session.id) if except_session
-      session = scope.where(state: "queued").order(:created_at).first
-      session ||= scope.where(state: "on_hold").order(:updated_at).first
-      return unless session
-
-      new(alert: session.alert, provider: provider).notify_session(session)
+      )
+      accounts.filter_map { |account| call(account: account, provider: provider) }.find(&:sent?)
     end
 
-    def initialize(alert:, provider:)
-      @alert = alert
-      @account = alert.property.account
+    def initialize(account:, provider:)
+      @account = account
       @provider = provider
     end
 
     def call
       return Result.new(sent?: false, session: nil, error: "owner_whatsapp_not_configured") unless @account.owner_whatsapp_configured?
 
-      session = @account.owner_whatsapp_sessions.find_or_create_by!(alert: @alert)
-      return Result.new(sent?: false, session: session, error: "already_resolved") if session.state.in?(%w[resolved failed])
+      expire_active_session!
+      if (session = @account.owner_whatsapp_sessions.active.order(created_at: :desc).first)
+        return Result.new(sent?: false, session: session, error: "owner_session_active")
+      end
+      return Result.new(sent?: false, session: nil, error: "nothing_pending") if pending_counts.values.sum.zero?
 
+      session = @account.owner_whatsapp_sessions.create!(state: "menu", started_at: Time.current, expires_at: 30.minutes.from_now)
       notify_session(session)
+    rescue ActiveRecord::RecordNotUnique
+      session = @account.owner_whatsapp_sessions.active.order(created_at: :desc).first
+      Result.new(sent?: false, session: session, error: "owner_session_active")
     end
 
     def notify_session(session)
-      delivery = deliver_initial_notice(session.alert)
+      delivery = deliver_initial_notice
       unless delivery_success?(delivery)
         session.update!(
           state: "queued",
@@ -59,34 +56,51 @@ module Whatsapp
       end
 
       session.update!(
-        state: session.state.in?(%w[awaiting_answer resolved failed]) ? session.state : "queued",
+        state: session.state,
         last_prompted_at: Time.current,
         metadata: session.metadata.merge(delivery_metadata(delivery)).compact
       )
-      session.append_event!("owner_alert_notification_sent", alert_id: session.alert_id, property_id: session.alert.property_id)
+      session.append_event!("owner_pending_notification_sent", counts: pending_counts)
 
       Result.new(sent?: true, session: session, error: nil)
     end
 
     private
 
-    def deliver_initial_notice(alert)
-      template_sid = ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"]
+    def deliver_initial_notice
+      template_sid = ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
       if template_sid.present? && @provider.respond_to?(:send_template)
         return @provider.send_template(
           to: @account.owner_whatsapp_number,
           template_sid: template_sid,
           variables: {
-            "1" => alert.property.display_name
+            "1" => pending_counts[:pedidos].to_s,
+            "2" => pending_counts[:consultas].to_s,
+            "3" => pending_counts[:alertas].to_s
           }
         )
       end
 
-      @provider.send_message(to: @account.owner_whatsapp_number, body: template_message(alert))
+      @provider.send_message(to: @account.owner_whatsapp_number, body: template_message)
     end
 
-    def template_message(alert)
-      "Nueva alerta de huésped en #{alert.property.display_name}. Respondé ALERTAS para verla."
+    def template_message
+      counts = pending_counts
+      "Pendientes en Ayla: #{counts[:pedidos]} pedidos, #{counts[:consultas]} consultas y #{counts[:alertas]} alertas."
+    end
+
+    def pending_counts
+      @pending_counts ||= {
+        pedidos: @account.owner_tasks.open.requests.count,
+        consultas: @account.owner_tasks.open.inquiries.count,
+        alertas: Alert.joins(:property).where(properties: { account_id: @account.id }).open.count
+      }
+    end
+
+    def expire_active_session!
+      @account.owner_whatsapp_sessions.active.where("expires_at <= ?", Time.current).find_each do |session|
+        session.update!(state: "resolved", resolved_at: Time.current, active_category: nil, active_item_type: nil, active_item_id: nil)
+      end
     end
 
     def delivery_success?(delivery)

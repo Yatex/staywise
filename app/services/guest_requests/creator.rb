@@ -63,14 +63,23 @@ module GuestRequests
       category = @decision.owner_task_kind == "inquiry" ? "other" : request_category
       return unless category
 
-      if (request = existing_request(category))
+      result = if (request = existing_request(category))
         update_request!(request)
       else
         create_request(category)
       end
+      notify_owner(result)
+      result
     end
 
     private
+
+    def notify_owner(request)
+      return unless request&.persisted?
+      return unless @conversation.property.account.ai_automation_enabled?("send_owner_whatsapp_escalations")
+
+      Whatsapp::OwnerEscalationNotifier.call(item: request)
+    end
 
     def request_category
       action_type = @decision.proposed_action.to_h["type"].to_s
