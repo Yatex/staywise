@@ -72,6 +72,38 @@ class AlertsControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil @alert.resolved_at
   end
 
+  test "index never exposes technical JSON and explains the alert in plain language" do
+    @alert.update!(
+      original_message: nil,
+      alert_type: "late_checkout_request",
+      title: "Solicitud de late checkout",
+      description: {
+        requested_time: "6:00 PM",
+        guest_message: "hasta las 6pm",
+        note: "El huésped quiere extender su salida y necesita aprobación.",
+        evidence: ["property.check_out_time", "policy.late_checkout"]
+      }.to_json
+    )
+
+    get alerts_path
+
+    assert_response :success
+    assert_includes response.body, "Pedido para salir más tarde"
+    assert_includes response.body, "El huésped escribió: “hasta las 6pm”"
+    assert_includes response.body, "Horario solicitado: 6:00 PM."
+    assert_includes response.body, "El huésped quiere extender su salida y necesita aprobación."
+    assert_no_match(/requested_time|guest_message|evidence|property\.check_out_time|policy\.late_checkout|\{&quot;/, response.body)
+  end
+
+  test "index hides technical-only JSON when no useful owner information exists" do
+    @alert.update!(original_message: nil, description: { evidence: ["property.address"] }.to_json)
+
+    get alerts_path
+
+    assert_response :success
+    assert_no_match(/evidence|property\.address|\{&quot;/, response.body)
+  end
+
   private
 
   def sign_in_as(user)

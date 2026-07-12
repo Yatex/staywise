@@ -148,7 +148,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "details:not([open])" do
       assert_select "summary", text: /Alertas importantes/
-      assert_select "a[href='#{alert_path(@property.alerts.last)}']", text: /Posible emergencia/
+      assert_select "a[href='#{alert_path(@property.alerts.last)}']", text: /Situación urgente/
     end
     assert_operator response.body.index("Alertas importantes"), :<, response.body.index("Pedidos pendientes")
     assert_operator response.body.index("Pedidos pendientes"), :<, response.body.index("Consultas pendientes")

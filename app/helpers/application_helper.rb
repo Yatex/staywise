@@ -204,15 +204,51 @@ module ApplicationHelper
       return alert.original_message.body.to_s.squish
     end
 
-    alert.title
+    {
+      "late_checkout_request" => "Pedido para salir más tarde",
+      "missing_item" => "El huésped informa que falta algo",
+      "maintenance_issue" => "Hay un problema en la propiedad",
+      "emergency" => "Situación urgente",
+      "complaint" => "El huésped hizo un reclamo",
+      "owner_approval_required" => "El huésped necesita tu aprobación",
+      "missing_sensitive_information" => "Ayla necesita información para responder",
+      "unknown_question" => "El huésped necesita una respuesta"
+    }.fetch(alert.alert_type.to_s, alert.title)
   end
 
   def alert_display_description(alert)
-    description = alert.description.to_s.squish
+    original_message = alert.original_message&.body.to_s.squish
+    return "El huésped escribió: “#{original_message}”" if original_message.present?
+
+    description = owner_friendly_alert_description(alert.description)
     return if description.blank?
     return if description == alert_display_title(alert).to_s.squish
 
     description
+  end
+
+  def owner_friendly_alert_description(value)
+    text = value.to_s.strip
+    return if text.blank?
+    return text.squish unless text.start_with?("{", "[")
+
+    payload = JSON.parse(text)
+    payload = payload.first if payload.is_a?(Array)
+    return unless payload.is_a?(Hash)
+
+    guest_message = payload["guest_message"].to_s.squish.presence
+    requested_time = payload["requested_time"].to_s.squish.presence
+    requested_for = payload["requested_for"].to_s.squish.presence
+    note = payload["note"].to_s.squish.presence
+
+    parts = []
+    parts << "El huésped escribió: “#{guest_message}”" if guest_message
+    parts << "Horario solicitado: #{requested_time}." if requested_time && !guest_message.to_s.include?(requested_time)
+    parts << "Para: #{requested_for}." if requested_for && !guest_message.to_s.include?(requested_for)
+    parts << note unless note && (guest_message.to_s.include?(note) || parts.any? { |part| part.include?(note) })
+    parts.compact_blank.join(" ").presence
+  rescue JSON::ParserError
+    "Revisá el mensaje del huésped para entender qué necesita."
   end
 
   def display_phone_number(value)
