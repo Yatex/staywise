@@ -1,6 +1,21 @@
 <% content_for :page_title, t("ui.nav.dashboard") %>
 
 <div class="space-y-6">
+  <% unless current_account.owner_whatsapp_configured? %>
+    <div class="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm sm:flex-row sm:items-center sm:justify-between" role="alert" data-testid="owner-whatsapp-warning">
+      <div class="flex gap-3">
+        <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M8.485 2.495a1.75 1.75 0 0 1 3.03 0l6.28 10.88A1.75 1.75 0 0 1 16.28 16H3.72a1.75 1.75 0 0 1-1.515-2.625l6.28-10.88ZM10 6.25a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0V7a.75.75 0 0 1 .75-.75Zm0 7.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+        </svg>
+        <div>
+          <p class="font-semibold">No estás recibiendo notificaciones por WhatsApp</p>
+          <p class="mt-0.5 text-amber-800">Configurá el WhatsApp del anfitrión para recibir pedidos, consultas y alertas.</p>
+        </div>
+      </div>
+      <%= link_to "Configurar WhatsApp", settings_path, class: "shrink-0 self-start font-semibold text-amber-950 underline decoration-amber-300 underline-offset-2 hover:decoration-amber-600 sm:self-auto" %>
+    </div>
+  <% end %>
+
   <% if @alerts.present? %>
     <details class="<%= card_class %> overflow-hidden">
       <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">

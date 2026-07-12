@@ -26,6 +26,38 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/Nombre de la organización|Email|Proveedor de WhatsApp|Alertas urgentes|Asistente IA|Instrucciones de IA|Tono de voz|late_checkout_policy/, response.body)
   end
 
+  test "settings warns when owner whatsapp is not configured" do
+    sign_in_as(@user)
+
+    get settings_path
+
+    assert_response :success
+    assert_select "[data-testid='owner-whatsapp-warning']", 1
+    assert_includes response.body, "WhatsApp del anfitrión sin configurar"
+    assert_includes response.body, "Ingresá el número del anfitrión"
+  end
+
+  test "settings warns when owner whatsapp has a number but notifications are disabled" do
+    @account.update!(owner_whatsapp_number: "+59899123456", owner_whatsapp_escalations_enabled: false)
+    sign_in_as(@user)
+
+    get settings_path
+
+    assert_response :success
+    assert_select "[data-testid='owner-whatsapp-warning']", 1
+    assert_includes response.body, "Activá las notificaciones"
+  end
+
+  test "settings hides owner whatsapp warning when notifications are configured" do
+    @account.update!(owner_whatsapp_number: "+59899123456", owner_whatsapp_escalations_enabled: true)
+    sign_in_as(@user)
+
+    get settings_path
+
+    assert_response :success
+    assert_select "[data-testid='owner-whatsapp-warning']", 0
+  end
+
   test "owner can turn ai off for the account" do
     sign_in_as(@user)
 
