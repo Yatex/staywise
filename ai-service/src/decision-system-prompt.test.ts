@@ -38,3 +38,15 @@ test("decision prompts follow respond-first clarification rules", () => {
     assert.match(prompt, /Never promise future actions/i);
   }
 });
+
+test("decision prompts troubleshoot property problems before creating inquiries", () => {
+  for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
+    assert.match(prompt, /Troubleshoot reported problems before escalating/i);
+    assert.match(prompt, /instructions, manuals, videos, FAQs, guides, knowledge blocks/i);
+    assert.match(prompt, /wait for the guest to report whether they worked/i);
+    assert.match(prompt, /Do not create an owner task in the same turn/i);
+    assert.match(prompt, /confirms that the problem is resolved.*never create an inquiry/i);
+    assert.match(prompt, /followed the instructions and the problem continues/i);
+    assert.match(prompt, /new problem report by itself is not confirmation/i);
+  }
+});
