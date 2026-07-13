@@ -17,6 +17,18 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
       @sent_messages << { to: to, template_sid: template_sid, variables: variables }
       super
     end
+
+    def send_interactive(to:, content_key:, variables: {}, fallback_body:)
+      @sent_messages << { to: to, content_key: content_key, variables: variables, fallback_body: fallback_body, interactive: true }
+      super
+    end
+  end
+
+  class FailingInteractiveProvider < RecordingProvider
+    def send_interactive(to:, content_key:, variables: {}, fallback_body:)
+      super
+      false
+    end
   end
 
   setup do
@@ -104,8 +116,14 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     session = @account.owner_whatsapp_sessions.active.first
     assert_equal first.id, session.active_item_id
 
+    inbound("Responder", "SM10A", action_id: "responder")
     inbound("Texto EXACTO, sin traducir.", "SM11")
-    inbound("Texto EXACTO, sin traducir.", "SM11")
+    assert_equal "open", first.reload.status
+    assert_equal "Texto EXACTO, sin traducir.", session.reload.draft_reply_body
+    assert_empty @conversation.messages.where(sender: "owner")
+
+    inbound("Enviar", "SM12", action_id: "enviar")
+    inbound("Enviar", "SM12", action_id: "enviar")
 
     assert_equal "resolved", first.reload.status
     assert_equal "open", second.reload.status
@@ -117,9 +135,11 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     inquiry = create_task("inquiry", "¿Cómo enciendo el horno?")
     Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
     inbound("consultas", "SM20")
+    inbound("Responder", "SM20A", action_id: "responder")
     inbound("Girando la perilla roja.", "SM21")
+    inbound("Enviar", "SM21A", action_id: "enviar")
     assert_equal "awaiting_learning_confirmation", @account.owner_whatsapp_sessions.active.first.state
-    inbound("recordar", "SM22")
+    inbound("Sí, recordar", "SM22", action_id: "recordar")
 
     faq = @property.faqs.find_by!(question: inquiry.current_guest_message)
     assert_equal "approved", faq.status
@@ -129,9 +149,154 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     second = create_task("inquiry", "¿Dónde está la escoba?")
     Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
     inbound("consultas", "SM23")
+    inbound("Responder", "SM23A", action_id: "responder")
     inbound("En el placard.", "SM24")
-    inbound("no_recordar", "SM25")
+    inbound("Enviar", "SM24A", action_id: "enviar")
+    inbound("No recordar", "SM25", action_id: "no_recordar")
     assert_nil @property.faqs.find_by(question: second.current_guest_message)
+  end
+
+  test "item view includes original request clarifications recent conversation and last guest message" do
+    task = create_task("inquiry", "La puerta del balcón está trabada")
+    clarification = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Seguí las instrucciones pero todavía no abre")
+    @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "Probá levantando completamente la manija.")
+    last_guest = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Todavía sigue trabada")
+    task.update!(metadata: { "updates" => [{ "message_id" => clarification.id, "body" => clarification.body }] })
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Consultas", "SM30", action_id: "consultas")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #C-#{task.id}") }[:body]
+    assert_includes detail, "Solicitud original:"
+    assert_includes detail, "La puerta del balcón está trabada"
+    assert_includes detail, "Aclaraciones:"
+    assert_includes detail, clarification.body
+    assert_includes detail, "Conversación reciente:"
+    assert_includes detail, "Ayla:"
+    assert_includes detail, "Último mensaje del huésped:"
+    assert_includes detail, last_guest.body
+  end
+
+  test "item context never includes messages from another property or conversation" do
+    task = create_task("inquiry", "Consulta de esta propiedad")
+    other_property = @account.properties.create!(name: "Private apartment")
+    other_guest = @account.guests.create!(phone_number: "+15550009999", property: other_property)
+    other_conversation = other_guest.conversations.create!(property: other_property)
+    other_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "MENSAJE PRIVADO DE OTRA CONVERSACION")
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Consultas", "SM35", action_id: "consultas")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #C-#{task.id}") }[:body]
+    assert_includes detail, "Consulta de esta propiedad"
+    assert_not_includes detail, "MENSAJE PRIVADO DE OTRA CONVERSACION"
+    assert_not_includes detail, "Private apartment"
+  end
+
+  test "free text and typo while viewing do not navigate or reach the guest" do
+    task = create_task("request", "Necesito toallas")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM40", action_id: "pedidos")
+    session = @account.owner_whatsapp_sessions.active.first
+
+    inbound("Siguitne", "SM41")
+
+    assert_equal "viewing_item", session.reload.state
+    assert_equal task.id, session.active_item_id
+    assert_equal "open", task.reload.status
+    assert_empty @conversation.messages.where(sender: "owner")
+    assert_includes @provider.sent_messages[-2][:body], "Elegí una de las opciones"
+  end
+
+  test "edit replaces the draft and cancel returns to the same item without sending" do
+    task = create_task("request", "Necesito una manta")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM50", action_id: "pedidos")
+    inbound("Responder", "SM51", action_id: "responder")
+    inbound("Primer borrador", "SM52")
+    inbound("Editar", "SM53", action_id: "editar")
+    inbound("Segundo borrador", "SM54")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "Segundo borrador", session.draft_reply_body
+    inbound("Cancelar", "SM55", action_id: "cancelar")
+
+    assert_equal "viewing_item", session.reload.state
+    assert_nil session.draft_reply_body
+    assert_equal task.id, session.active_item_id
+    assert_equal "open", task.reload.status
+    assert_empty @conversation.messages.where(sender: "owner")
+  end
+
+  test "next omit and exit work through interactive action ids" do
+    first = create_task("request", "Primero")
+    second = create_task("request", "Segundo")
+    third = create_task("request", "Tercero")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM56", action_id: "pedidos")
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal first.id, session.active_item_id
+
+    inbound("Siguiente", "SM57", action_id: "siguiente")
+    assert_equal second.id, session.reload.active_item_id
+    assert_equal "open", first.reload.status
+
+    inbound("Omitir", "SM58", action_id: "omitir")
+    assert_equal third.id, session.reload.active_item_id
+    assert_equal "open", second.reload.status
+
+    inbound("Salir", "SM59", action_id: "salir")
+    assert_equal "resolved", session.reload.state
+    assert_equal "open", third.reload.status
+    assert_nil session.draft_reply_body
+  end
+
+  test "new pending does not change the active item or draft" do
+    first = create_task("request", "Primero")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM60", action_id: "pedidos")
+    inbound("Responder", "SM61", action_id: "responder")
+    inbound("Mi borrador", "SM62")
+    session = @account.owner_whatsapp_sessions.active.first
+
+    create_task("request", "Nuevo pendiente")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+
+    assert_equal first.id, session.reload.active_item_id
+    assert_equal "Mi borrador", session.draft_reply_body
+    assert_equal "awaiting_send_confirmation", session.state
+  end
+
+  test "expired session confirmation never sends to the guest" do
+    task = create_task("request", "Pedido")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM70", action_id: "pedidos")
+    inbound("Responder", "SM71", action_id: "responder")
+    inbound("No debe enviarse", "SM72")
+    session = @account.owner_whatsapp_sessions.active.first
+    session.update!(expires_at: 1.minute.ago)
+
+    inbound("Enviar", "SM73", action_id: "enviar")
+
+    assert_equal "open", task.reload.status
+    assert_empty @conversation.messages.where(sender: "owner")
+    assert_not_equal session.id, @account.owner_whatsapp_sessions.active.first&.id
+  end
+
+  test "interactive content failure keeps the confirmation draft and active item safe" do
+    @provider = FailingInteractiveProvider.new
+    task = create_task("request", "Pedido")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM80", action_id: "pedidos")
+    inbound("Responder", "SM81", action_id: "responder")
+    inbound("Borrador seguro", "SM82")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "awaiting_send_confirmation", session.state
+    assert_equal task.id, session.active_item_id
+    assert_equal "Borrador seguro", session.draft_reply_body
+    assert_equal "open", task.reload.status
+    assert_empty @conversation.messages.where(sender: "owner")
   end
 
   private
@@ -147,8 +312,8 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     @conversation.alerts.create!(property: @property, guest: @guest, alert_type: "maintenance_issue", title: body, description: body)
   end
 
-  def inbound(body, sid)
+  def inbound(body, sid, action_id: nil)
     Whatsapp::IncomingMessageHandler.new({ "From" => "whatsapp:#{@account.owner_whatsapp_number}", "To" => "whatsapp:+15550009999",
-                                           "Body" => body, "MessageSid" => sid }, provider: @provider).call
+                                           "Body" => body, "MessageSid" => sid, "ButtonPayload" => action_id }, provider: @provider).call
   end
 end

@@ -1,6 +1,6 @@
 class OwnerWhatsappSession < ApplicationRecord
-  STATES = %w[queued awaiting_ack awaiting_answer on_hold menu awaiting_owner_reply awaiting_learning_confirmation resolved failed].freeze
-  ACTIVE_STATES = %w[menu awaiting_owner_reply awaiting_learning_confirmation].freeze
+  STATES = %w[queued awaiting_ack awaiting_answer on_hold menu awaiting_owner_reply viewing_item awaiting_reply_text awaiting_send_confirmation awaiting_learning_confirmation resolved failed].freeze
+  ACTIVE_STATES = %w[menu viewing_item awaiting_reply_text awaiting_send_confirmation awaiting_learning_confirmation].freeze
 
   belongs_to :account
   belongs_to :alert, optional: true
@@ -19,6 +19,10 @@ class OwnerWhatsappSession < ApplicationRecord
     return if active_item_type.blank? || active_item_id.blank?
 
     active_item_type.constantize.find_by(id: active_item_id)
+  end
+
+  def draft_for_active_item?
+    draft_reply_body.present? && draft_item_type == active_item_type && draft_item_id == active_item_id
   end
 
   def append_event!(type, payload = {})

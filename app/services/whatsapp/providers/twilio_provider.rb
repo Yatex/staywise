@@ -5,6 +5,10 @@ module Whatsapp
     class TwilioProvider < BaseProvider
       TWILIO_MESSAGES_URL = "https://api.twilio.com/2010-04-01/Accounts/%<sid>s/Messages.json".freeze
 
+      def initialize(content_registry: TwilioContentRegistry)
+        @content_registry = content_registry
+      end
+
       def send_message(to:, body:, media_urls: [])
         return false unless configured?
 
@@ -24,6 +28,13 @@ module Whatsapp
           },
           context: { body: "template:#{template_sid}" }
         )
+      end
+
+      def send_interactive(to:, content_key:, variables: {}, fallback_body:)
+        content_sid = @content_registry.fetch(content_key)
+        return send_message(to: to, body: fallback_body) if content_sid.blank?
+
+        send_template(to: to, template_sid: content_sid, variables: variables)
       end
 
       private

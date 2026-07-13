@@ -10,6 +10,11 @@ module Whatsapp
         Rails.logger.info("[whatsapp-null-template] to=#{to} template_sid=#{template_sid} variables=#{variables.inspect}")
         true
       end
+
+      def send_interactive(to:, content_key:, variables: {}, fallback_body:)
+        Rails.logger.info("[whatsapp-null-interactive] to=#{to} content_key=#{content_key} variables=#{variables.inspect}")
+        true
+      end
     end
   end
 end
