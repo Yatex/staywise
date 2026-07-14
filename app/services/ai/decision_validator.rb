@@ -23,7 +23,7 @@ module AI
 
     def call
       reasons = []
-      reasons << "invalid_action" unless @decision.action.in?(%w[reply clarify create_owner_task no_action])
+      reasons << "invalid_action" unless @decision.action.in?(%w[reply clarify create_owner_task check_out no_action])
       reasons << "invalid_owner_task_kind" if @decision.owner_task_kind.present? && !@decision.owner_task_kind.in?(OwnerTask::KINDS)
       reasons << "owner_task_kind_required" if @decision.action == "create_owner_task" && @decision.owner_task_kind.blank?
       reasons << "owner_task_kind_not_allowed" if @decision.action != "create_owner_task" && @decision.owner_task_kind.present?
@@ -101,7 +101,7 @@ module AI
     end
 
     def tool_mandatory_reasons
-      return [] if @decision.action == "no_action"
+      return [] if @decision.action.in?(%w[no_action check_out])
       return [] if conversational_only_decision?
       return [] unless real_guest_message?
 

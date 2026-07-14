@@ -44,6 +44,21 @@ test("AylaDecision accepts no_action only with a null message and no effects", (
   assert.equal(DecisionSchema.safeParse({ ...reply, action: "no_action", message: "De nada" }).success, false);
 });
 
+test("AylaDecision accepts a confirmed check_out with a guest reply and no owner task", () => {
+  const parsed = DecisionSchema.parse({
+    ...reply,
+    action: "check_out",
+    message: "¡Muchas gracias por avisar! Esperamos que hayas disfrutado tu estadía.",
+    evidence_ids: [],
+  });
+
+  assert.equal(parsed.outcome, "check_out");
+  assert.equal(parsed.should_reply, true);
+  assert.equal(parsed.escalation_required, false);
+  assert.equal(parsed.owner_task_kind, null);
+  assert.equal(toPublicDecision(parsed).action, "check_out");
+});
+
 test("AylaDecision requires an explicit owner task kind", () => {
   assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_owner_task", task_summary: "Dos mantas" }).success, false);
   const parsed = DecisionSchema.parse({ ...reply, action: "create_owner_task", owner_task_kind: "request", task_summary: "Dos mantas", evidence_ids: [] });

@@ -30,6 +30,7 @@ class Property < ApplicationRecord
   has_many :owner_tasks, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
   has_many :operational_errors, dependent: :nullify
+  has_many :checkout_events, dependent: :destroy
 
   validates :name, presence: true
   validates :public_token, presence: true, uniqueness: true

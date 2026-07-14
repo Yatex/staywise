@@ -7,7 +7,7 @@ const AttachmentSchema = z.object({
 }).strict();
 
 const PublicDecisionSchema = z.object({
-  action: z.enum(["reply", "clarify", "create_owner_task", "no_action"]),
+  action: z.enum(["reply", "clarify", "create_owner_task", "check_out", "no_action"]),
   owner_task_kind: z.enum(["request", "inquiry"]).nullable().default(null),
   language: z.string().min(2),
   message: z.string().min(1).nullable(),
@@ -72,6 +72,8 @@ export function recoverDecisionFromRawText(rawText: unknown) {
 function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
   const outcome = value.action === "no_action"
     ? "no_reply"
+    : value.action === "check_out"
+    ? "check_out"
     : value.action === "clarify"
     ? "ask_clarifying_question"
     : value.action === "create_owner_task" ? "propose_action" : "reply";
@@ -106,6 +108,7 @@ function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
 
 function publicAction(decision: any) {
   if (decision?.action === "no_action" || decision?.outcome === "no_reply" || decision?.decision === "no_reply") return "no_action";
+  if (decision?.action === "check_out" || decision?.outcome === "check_out" || decision?.decision === "check_out") return "check_out";
   if (decision?.action === "clarify" || decision?.outcome === "ask_clarifying_question") return "clarify";
   if (decision?.action === "create_owner_task" || decision?.owner_task_kind) return "create_owner_task";
   if (["escalate", "propose_action"].includes(String(decision?.outcome || decision?.decision))) return "create_owner_task";

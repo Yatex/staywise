@@ -5,6 +5,7 @@ class Guest < ApplicationRecord
   has_many :alerts, dependent: :nullify
   has_many :owner_tasks, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
+  has_many :checkout_events, dependent: :destroy
 
   validates :phone_number, presence: true, uniqueness: { scope: :account_id }
 

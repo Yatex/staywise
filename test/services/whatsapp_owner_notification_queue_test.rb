@@ -31,6 +31,12 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     end
   end
 
+  class CheckoutTemplateProvider < RecordingProvider
+    def template_supports_action?(_template_sid, action_id)
+      action_id == "checkouts"
+    end
+  end
+
   setup do
     @original_notice_sid = ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
     ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"] = "HX_NOTICE"
@@ -80,6 +86,68 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     assert_equal({ "1" => "0", "2" => "1", "3" => "0" }, templates[1][:variables])
     assert_equal 1, @account.owner_whatsapp_sessions.active.count
     assert_equal 1, other.owner_whatsapp_sessions.active.count
+  end
+
+  test "checkout-aware notice sends four owner-scoped counters while the old template remains at three" do
+    create_checkout("Ya dejamos las llaves y nos fuimos")
+    other = Account.create!(name: "Checkout other", owner_whatsapp_number: "+15559993000", owner_whatsapp_escalations_enabled: true)
+    other_property = other.properties.create!(name: "Other checkout apartment")
+    other_guest = other.guests.create!(phone_number: "+15550003000", property: other_property)
+    other_conversation = other_guest.conversations.create!(property: other_property)
+    other_message = other_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Ya nos fuimos")
+    other.checkout_events.create!(property: other_property, guest: other_guest, conversation: other_conversation,
+      source_message: other_message, reservation_key: "conversation:#{other_conversation.id}",
+      guest_message_body: other_message.body, checked_out_at: Time.current)
+
+    old_provider = RecordingProvider.new
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: old_provider)
+    assert_equal({ "1" => "0", "2" => "0", "3" => "0" }, old_provider.sent_messages.first[:variables])
+
+    @account.owner_whatsapp_sessions.active.first.update!(state: "resolved", resolved_at: Time.current)
+    new_provider = CheckoutTemplateProvider.new
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: new_provider)
+    assert_equal({ "1" => "0", "2" => "0", "3" => "0", "4" => "1" }, new_provider.sent_messages.first[:variables])
+    assert_equal 1, @account.checkout_events.pending.count
+    assert_equal 1, other.checkout_events.pending.count
+  end
+
+  test "owner reviews scoped checkouts without reply or learning actions and marks one seen" do
+    event = create_checkout("Ya dejamos el departamento y las llaves quedaron en la caja")
+    @provider = CheckoutTemplateProvider.new
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Checkouts", "SM-CO-1", action_id: "checkouts")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "CheckoutEvent", session.active_item_type
+    assert_equal event.id, session.active_item_id
+    detail = @provider.sent_messages.find { |message| message[:body]&.include?("Caso #CO-#{event.id}") }.fetch(:body)
+    assert_includes detail, @property.display_name
+    assert_includes detail, @guest.phone_number
+    assert_includes detail, event.guest_message_body
+    assert_includes detail, "Salida informada:"
+
+    actions = @provider.sent_messages.reverse.find { |message| message[:content_key] == :checkout_actions }
+    assert_equal "Opciones: checkout_visto, siguiente o salir.", actions[:fallback_body]
+    assert_not_includes actions[:fallback_body], "responder"
+    assert_not_includes actions[:fallback_body], "recordar"
+
+    inbound("Marcar como visto", "SM-CO-2", action_id: "checkout_visto")
+    assert_equal "seen", event.reload.status
+    assert event.owner_seen_at.present?
+  end
+
+  test "a new checkout stays queued and never replaces another active item" do
+    task = create_task("request", "Necesito una manta")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-CO-QUEUE-1", action_id: "pedidos")
+    session = @account.owner_whatsapp_sessions.active.first
+
+    create_checkout("Ya nos fuimos")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+
+    assert_equal "OwnerTask", session.reload.active_item_type
+    assert_equal task.id, session.active_item_id
+    assert_equal 1, @account.checkout_events.pending.count
   end
 
   test "only one active session can exist for an owner" do
@@ -310,6 +378,13 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
 
   def create_alert(body)
     @conversation.alerts.create!(property: @property, guest: @guest, alert_type: "maintenance_issue", title: body, description: body)
+  end
+
+  def create_checkout(body)
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: body)
+    @account.checkout_events.create!(property: @property, guest: @guest, conversation: @conversation,
+      source_message: message, provider_message_sid: "SM-EVENT-#{message.id}", reservation_key: "conversation:#{@conversation.id}", guest_message_body: body,
+      checked_out_at: message.created_at)
   end
 
   def inbound(body, sid, action_id: nil)

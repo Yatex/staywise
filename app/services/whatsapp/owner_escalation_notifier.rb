@@ -73,11 +73,7 @@ module Whatsapp
         return @provider.send_template(
           to: @account.owner_whatsapp_number,
           template_sid: template_sid,
-          variables: {
-            "1" => pending_counts[:pedidos].to_s,
-            "2" => pending_counts[:consultas].to_s,
-            "3" => pending_counts[:alertas].to_s
-          }
+          variables: initial_notice_variables(template_sid)
         )
       end
 
@@ -86,15 +82,30 @@ module Whatsapp
 
     def template_message
       counts = pending_counts
-      "Pendientes en Ayla: #{counts[:pedidos]} pedidos, #{counts[:consultas]} consultas y #{counts[:alertas]} alertas."
+      "Pendientes en Ayla: #{counts[:pedidos]} pedidos, #{counts[:consultas]} consultas, #{counts[:alertas]} alertas y #{counts[:checkouts]} checkouts."
     end
 
     def pending_counts
       @pending_counts ||= {
         pedidos: @account.owner_tasks.open.requests.count,
         consultas: @account.owner_tasks.open.inquiries.count,
-        alertas: Alert.joins(:property).where(properties: { account_id: @account.id }).open.count
+        alertas: Alert.joins(:property).where(properties: { account_id: @account.id }).open.count,
+        checkouts: @account.checkout_events.pending.count
       }
+    end
+
+    def initial_notice_variables(template_sid)
+      variables = {
+        "1" => pending_counts[:pedidos].to_s,
+        "2" => pending_counts[:consultas].to_s,
+        "3" => pending_counts[:alertas].to_s
+      }
+      variables["4"] = pending_counts[:checkouts].to_s if template_supports_checkouts?(template_sid)
+      variables
+    end
+
+    def template_supports_checkouts?(template_sid)
+      @provider.respond_to?(:template_supports_action?) && @provider.template_supports_action?(template_sid, "checkouts")
     end
 
     def expire_active_session!

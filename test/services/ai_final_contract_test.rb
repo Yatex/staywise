@@ -97,6 +97,50 @@ class AIFinalContractTest < ActiveSupport::TestCase
     assert_equal previous_errors, OperationalError.count
   end
 
+  test "check_out replies, creates one operational event, and creates no owner task or alert" do
+    provider = MediaProvider.new
+    check_out = decision(
+      action: "check_out",
+      message: "¡Muchas gracias por avisar! Esperamos que hayas disfrutado tu estadía.",
+      confidence: 100
+    )
+
+    assert validate(check_out).valid?
+    assert_equal "check_out", check_out.outcome
+    assert check_out.should_reply
+
+    params = {
+      "From" => "whatsapp:+59899000333",
+      "To" => "whatsapp:+59899000999",
+      "Body" => "Ya dejamos el departamento y nos fuimos.",
+      "MessageSid" => "SM-CHECKOUT-ONE"
+    }
+
+    2.times do
+      AI::DecisionService.stub(:call, check_out) do
+        result = Whatsapp::IncomingMessageHandler.new(params, provider: provider).call
+        assert_equal "check_out", result.fetch(:decision).action
+        assert result.fetch(:replied)
+      end
+    end
+
+    event = @conversation.checkout_events.first
+    assert_equal 1, CheckoutEvent.where(conversation: @conversation).count
+    assert_equal "SM-CHECKOUT-ONE", event.provider_message_sid
+    assert_equal "Ya dejamos el departamento y nos fuimos.", event.guest_message_body
+    assert_equal "pending", event.status
+    assert_empty @conversation.owner_tasks
+    assert_empty @conversation.alerts
+    assert_equal check_out.response_text, provider.deliveries.last[:body]
+
+    event.mark_seen!
+    AI::DecisionService.stub(:call, check_out) do
+      Whatsapp::IncomingMessageHandler.new(params.merge("MessageSid" => "SM-CHECKOUT-EQUIVALENT"), provider: provider).call
+    end
+    assert_equal 1, CheckoutEvent.where(conversation: @conversation).count
+    assert_empty CheckoutEvent.pending.where(conversation: @conversation)
+  end
+
   test "unknown action remains invalid" do
     unknown = decision(action: "unexpected_action", message: nil, confidence: 100)
 

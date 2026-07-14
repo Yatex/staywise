@@ -2,13 +2,14 @@ require "test_helper"
 
 class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
   class FakeClient
-    attr_reader :account_sid, :created_definitions
+    attr_reader :account_sid, :created_definitions, :approval_submissions
 
     def initialize(contents: [], fail_create: false)
       @account_sid = "AC_TEST_CONTENT"
       @contents = contents
       @fail_create = fail_create
       @created_definitions = []
+      @approval_submissions = []
       @mutex = Mutex.new
     end
 
@@ -30,6 +31,15 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
         @contents << content
         content.deep_dup
       end
+    end
+
+    def fetch_whatsapp_approval(_content_sid)
+      {}
+    end
+
+    def submit_whatsapp_approval(content_sid, name:, category:)
+      @approval_submissions << { content_sid: content_sid, name: name, category: category }
+      { "status" => "received", "name" => name, "category" => category }
     end
   end
 
@@ -82,11 +92,45 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
     item_ids = definitions.dig(:item_actions, "types", "twilio/list-picker", "items").map { |item| item["id"] }
     confirm_ids = definitions.dig(:confirm_reply, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
     learning_ids = definitions.dig(:learning, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
+    checkout_ids = definitions.dig(:checkout_actions, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
+    notice = definitions.fetch(:owner_escalation_notice_with_checkouts)
+    notice_ids = notice.dig("types", "twilio/quick-reply", "actions").map { |action| action["id"] }
 
     assert_equal %w[responder siguiente omitir salir], item_ids
     assert_equal %w[enviar editar cancelar], confirm_ids
     assert_equal %w[recordar no_recordar], learning_ids
+    assert_equal %w[checkout_visto siguiente salir], checkout_ids
+    assert_equal %w[pedidos consultas alertas checkouts], notice_ids
+    assert_equal({ "1" => "2", "2" => "1", "3" => "1", "4" => "1" }, notice.fetch("variables"))
+    assert_equal "owner_escalation_notice_with_checkouts_v1", notice.fetch("friendly_name")
     assert_no_match(/approval/i, definitions.to_json)
+  end
+
+  test "provisions the versioned owner notice once and submits it without changing runtime configuration" do
+    previous_sid = ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
+    ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"] = "HX_OLD_APPROVED"
+    client = FakeClient.new
+    registry = registry_for(client)
+
+    first = registry.provision_and_submit_owner_notice
+    second_sid = registry.fetch(:owner_escalation_notice_with_checkouts)
+
+    assert_equal first.fetch("sid"), second_sid
+    assert_equal 1, client.created_definitions.count { |definition| definition["friendly_name"] == "owner_escalation_notice_with_checkouts_v1" }
+    assert_equal 1, client.approval_submissions.size
+    assert_equal "UTILITY", client.approval_submissions.first.fetch(:category)
+    assert_equal "HX_OLD_APPROVED", ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
+  ensure
+    ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"] = previous_sid
+  end
+
+  test "detects checkout support from the configured content SID" do
+    definition = Whatsapp::TwilioContentRegistry::DEFINITIONS.fetch(:owner_escalation_notice_with_checkouts)
+    client = FakeClient.new(contents: [definition.merge("sid" => "HX_CHECKOUTS")])
+    registry = registry_for(client)
+
+    assert registry.supports_action?("HX_CHECKOUTS", "checkouts")
+    assert_not registry.supports_action?("HX_CHECKOUTS", "unknown")
   end
 
   test "returns nil and reports a clear error when Twilio creation fails" do
@@ -100,6 +144,22 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
 
     assert_equal "twilio_content_registry", reported.last.fetch(:source)
     assert_equal "learning", reported.last.dig(:context, :content_key)
+  end
+
+  test "does not silently reuse a stable friendly name with different action ids" do
+    definition = Whatsapp::TwilioContentRegistry::DEFINITIONS.fetch(:owner_escalation_notice_with_checkouts)
+    incompatible = definition.deep_dup
+    incompatible["sid"] = "HX_WRONG_ACTIONS"
+    incompatible.dig("types", "twilio/quick-reply", "actions").last["id"] = "otra_cosa"
+    client = FakeClient.new(contents: [incompatible])
+    reported = nil
+
+    ErrorReporter.stub(:report, ->(*args, **kwargs) { reported = [args, kwargs] }) do
+      assert_nil registry_for(client).fetch(:owner_escalation_notice_with_checkouts)
+    end
+
+    assert_match(/incompatible action IDs/, reported.first.first.message)
+    assert_empty client.created_definitions
   end
 
   private

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_13_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -124,6 +124,29 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_13_120000) do
     t.index ["account_id"], name: "index_billing_events_on_account_id"
     t.index ["event_type"], name: "index_billing_events_on_event_type"
     t.index ["stripe_event_id"], name: "index_billing_events_on_stripe_event_id", unique: true
+  end
+
+  create_table "checkout_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "property_id", null: false
+    t.bigint "guest_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "source_message_id", null: false
+    t.string "provider_message_sid"
+    t.string "reservation_key", null: false
+    t.text "guest_message_body", null: false
+    t.datetime "checked_out_at", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "owner_seen_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "reservation_key"], name: "index_checkout_events_on_account_id_and_reservation_key", unique: true
+    t.index ["account_id", "status", "created_at"], name: "index_checkout_events_on_account_id_and_status_and_created_at"
+    t.index ["account_id"], name: "index_checkout_events_on_account_id"
+    t.index ["guest_id"], name: "index_checkout_events_on_guest_id"
+    t.index ["property_id"], name: "index_checkout_events_on_property_id"
+    t.index ["provider_message_sid"], name: "index_checkout_events_on_provider_message_sid", unique: true, where: "(provider_message_sid IS NOT NULL)"
+    t.index ["source_message_id"], name: "index_checkout_events_on_source_message_id", unique: true
   end
 
   create_table "conversations", force: :cascade do |t|
@@ -411,6 +434,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_13_120000) do
   add_foreign_key "alerts", "messages", column: "original_message_id"
   add_foreign_key "alerts", "properties"
   add_foreign_key "billing_events", "accounts"
+  add_foreign_key "checkout_events", "accounts"
+  add_foreign_key "checkout_events", "conversations"
+  add_foreign_key "checkout_events", "guests"
+  add_foreign_key "checkout_events", "messages", column: "source_message_id"
+  add_foreign_key "checkout_events", "properties"
   add_foreign_key "conversations", "guests"
   add_foreign_key "conversations", "properties"
   add_foreign_key "faqs", "alerts", column: "source_alert_id"

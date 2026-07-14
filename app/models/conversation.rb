@@ -4,6 +4,7 @@ class Conversation < ApplicationRecord
 
   belongs_to :guest
   belongs_to :property
+  has_many :checkout_events, dependent: :destroy
   has_many :messages, dependent: :destroy
   has_many :alerts, dependent: :nullify
   has_many :owner_tasks, dependent: :destroy

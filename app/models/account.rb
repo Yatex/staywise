@@ -35,6 +35,7 @@ class Account < ApplicationRecord
   has_many :owner_whatsapp_sessions, dependent: :destroy
   has_many :owner_tasks, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
+  has_many :checkout_events, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true

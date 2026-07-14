@@ -37,6 +37,10 @@ module Whatsapp
         send_template(to: to, template_sid: content_sid, variables: variables)
       end
 
+      def template_supports_action?(template_sid, action_id)
+        @content_registry.supports_action?(template_sid, action_id)
+      end
+
       private
 
       def deliver(to:, payload:, context:)

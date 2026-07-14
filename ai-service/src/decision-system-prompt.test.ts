@@ -61,6 +61,21 @@ test("decision prompt uses contextual no_action without hiding new needs", () =>
   assert.match(DECISION_SYSTEM_PROMPT, /A short answer such as 'yes', 'for walking', or 'names only'/i);
 });
 
+test("decision prompt distinguishes confirmed checkout from future departures and checkout questions", () => {
+  assert.match(DECISION_SYSTEM_PROMPT, /action check_out exclusively/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /already left or have just vacated/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /future departure, an intention or preparation to leave/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /checkout-time or checkout-instructions question/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /late-checkout request/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /check_out takes precedence/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /never classify from a keyword alone/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /'Ya nos fuimos'.*'Ya dejamos el departamento'.*'Ya entregamos las llaves'.*check_out/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /'Nos vamos en una hora'.*'Estamos por salir'.*not check_out yet/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /'¿A qué hora es el check-out\?'.*normal property question/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /'¿Podemos salir a las 14\?'.*owner-managed request/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /'Gracias, todo perfecto'.*no_action.*'Gracias, ya dejamos las llaves y nos fuimos'.*check_out/i);
+});
+
 test("decision prompt forbids unverified future searches and redundant clarification", () => {
   assert.match(DECISION_SYSTEM_PROMPT, /Never offer or promise to search, look up, investigate/i);
   assert.match(DECISION_SYSTEM_PROMPT, /use it directly instead of asking permission/i);

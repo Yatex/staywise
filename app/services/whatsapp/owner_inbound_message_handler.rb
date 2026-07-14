@@ -9,12 +9,14 @@ module Whatsapp
       editar: "editar",
       cancelar: "cancelar",
       recordar: "recordar",
-      no_recordar: "no_recordar"
+      no_recordar: "no_recordar",
+      checkout_visto: "checkout_visto"
     }.freeze
-    CATEGORIES = %w[pedidos consultas alertas].freeze
+    CATEGORIES = %w[pedidos consultas alertas checkouts].freeze
     ITEM_ACTIONS = ACTION_IDS.values_at(:responder, :siguiente, :omitir, :salir).freeze
     CONFIRMATION_ACTIONS = ACTION_IDS.values_at(:enviar, :editar, :cancelar).freeze
     LEARNING_ACTIONS = ACTION_IDS.values_at(:recordar, :no_recordar).freeze
+    CHECKOUT_ACTIONS = ACTION_IDS.values_at(:checkout_visto, :siguiente, :salir).freeze
     MAX_RECENT_MESSAGES = 6
     MAX_CONTEXT_LENGTH = 3_500
 
@@ -58,6 +60,8 @@ module Whatsapp
     end
 
     def handle_viewing_item(session)
+      return handle_checkout_item(session) if session.active_category == "checkouts"
+
       case action_id
       when ACTION_IDS[:responder]
         session.update!(state: "awaiting_reply_text", draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
@@ -70,6 +74,25 @@ module Whatsapp
       else
         send_owner_message("Elegí una de las opciones para continuar.")
         send_item_actions
+        handled(session, true)
+      end
+    end
+
+    def handle_checkout_item(session)
+      case action_id
+      when ACTION_IDS[:checkout_visto]
+        event = validated_active_item(session)
+        return invalid_active_item(session) unless event
+
+        event.mark_seen!
+        advance_or_finish(session)
+      when ACTION_IDS[:siguiente]
+        show_next_item(session)
+      when ACTION_IDS[:salir]
+        finish_session(session)
+      else
+        send_owner_message("Elegí Marcar como visto, Siguiente o Salir para continuar.")
+        send_checkout_actions
         handled(session, true)
       end
     end
@@ -205,11 +228,13 @@ module Whatsapp
 
       session.update!(state: "viewing_item", draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
       send_owner_message(item_detail(item, session.active_category))
-      send_item_actions
+      session.active_category == "checkouts" ? send_checkout_actions : send_item_actions
       handled(session, true, selected: true)
     end
 
     def item_detail(item, category)
+      return checkout_detail(item) if category == "checkouts"
+
       table = item.class.base_class.table_name
       position = pending_items(category).where("#{table}.created_at < ?", item.created_at).count + 1
       total = pending_items(category).count
@@ -230,6 +255,24 @@ module Whatsapp
       sections << "Conversación reciente:\n\n#{recent}" if recent.present?
       sections << "Último mensaje del huésped:\n“#{clean_context_body(last_guest, item.property)}”" if last_guest.present?
       sections.join("\n\n").truncate(MAX_CONTEXT_LENGTH)
+    end
+
+    def checkout_detail(event)
+      table = event.class.base_class.table_name
+      position = pending_items("checkouts").where("#{table}.created_at < ?", event.created_at).count + 1
+      total = pending_items("checkouts").count
+      guest = event.guest
+      guest_label = [guest&.name.presence, guest&.phone_number.presence].compact.join(" · ").presence || "Huésped de WhatsApp"
+
+      [
+        "Checkout #{position} de #{total}",
+        "Caso ##{case_identifier(event, 'checkouts')}",
+        "Propiedad:\n#{event.property.display_name}",
+        "Huésped:\n#{guest_label}",
+        "Salida informada:\n#{I18n.l(event.checked_out_at, format: :long)}",
+        "Mensaje del huésped:\n“#{clean_context_body(event.guest_message_body, event.property)}”",
+        "El departamento ya puede revisarse."
+      ].join("\n\n").truncate(MAX_CONTEXT_LENGTH)
     end
 
     def original_item_message(item)
@@ -264,7 +307,7 @@ module Whatsapp
     end
 
     def case_identifier(item, category)
-      prefix = { "pedidos" => "P", "consultas" => "C", "alertas" => "A" }.fetch(category)
+      prefix = { "pedidos" => "P", "consultas" => "C", "alertas" => "A", "checkouts" => "CO" }.fetch(category)
       "#{prefix}-#{item.id}"
     end
 
@@ -272,6 +315,13 @@ module Whatsapp
       send_interactive(
         content_key: :item_actions,
         fallback_body: "Opciones: responder, siguiente, omitir o salir."
+      )
+    end
+
+    def send_checkout_actions
+      send_interactive(
+        content_key: :checkout_actions,
+        fallback_body: "Opciones: checkout_visto, siguiente o salir."
       )
     end
 
@@ -302,7 +352,7 @@ module Whatsapp
       typed = @parsed.body.to_s.strip.downcase
       allowed = case active_session&.state
       when "menu" then CATEGORIES + [ACTION_IDS[:salir]]
-      when "viewing_item" then ITEM_ACTIONS
+      when "viewing_item" then active_session&.active_category == "checkouts" ? CHECKOUT_ACTIONS : ITEM_ACTIONS
       when "awaiting_send_confirmation" then CONFIRMATION_ACTIONS
       when "awaiting_learning_confirmation" then LEARNING_ACTIONS
       else []
@@ -391,10 +441,10 @@ module Whatsapp
         @provider.send_template(
           to: @owner_whatsapp_number,
           template_sid: template_sid,
-          variables: { "1" => counts[:pedidos].to_s, "2" => counts[:consultas].to_s, "3" => counts[:alertas].to_s }
+          variables: initial_notice_variables(template_sid, counts)
         )
       else
-        send_owner_message("Elegí una categoría: pedidos (#{counts[:pedidos]}), consultas (#{counts[:consultas]}) o alertas (#{counts[:alertas]}).")
+        send_owner_message("Elegí una categoría: pedidos (#{counts[:pedidos]}), consultas (#{counts[:consultas]}), alertas (#{counts[:alertas]}) o checkouts (#{counts[:checkouts]}).")
       end
       handled(session, true, menu: true)
     end
@@ -404,20 +454,31 @@ module Whatsapp
       when "pedidos" then @account.owner_tasks.open.requests.order(:created_at)
       when "consultas" then @account.owner_tasks.open.inquiries.order(:created_at)
       when "alertas" then Alert.joins(:property).where(properties: { account_id: @account.id }).open.order(:created_at)
+      when "checkouts" then @account.checkout_events.pending.order(:created_at)
       else OwnerTask.none
       end
     end
 
     def pending_counts
-      { pedidos: pending_items("pedidos").count, consultas: pending_items("consultas").count, alertas: pending_items("alertas").count }
+      { pedidos: pending_items("pedidos").count, consultas: pending_items("consultas").count, alertas: pending_items("alertas").count, checkouts: pending_items("checkouts").count }
     end
 
     def validated_active_item(session)
       item = session.active_item
-      return unless item&.status == "open"
+      return unless item && (item.is_a?(CheckoutEvent) ? item.pending? : item.status == "open")
       return unless item.property.account_id == @account.id
       return unless item.class.base_class.name == session.active_item_type
       item
+    end
+
+    def initial_notice_variables(template_sid, counts)
+      variables = { "1" => counts[:pedidos].to_s, "2" => counts[:consultas].to_s, "3" => counts[:alertas].to_s }
+      variables["4"] = counts[:checkouts].to_s if template_supports_checkouts?(template_sid)
+      variables
+    end
+
+    def template_supports_checkouts?(template_sid)
+      @provider.respond_to?(:template_supports_action?) && @provider.template_supports_action?(template_sid, "checkouts")
     end
 
     def send_owner_message(body)

@@ -81,12 +81,13 @@ module AI
     end
 
     def self.outcome_for_action(action)
-      { "reply" => "reply", "clarify" => "ask_clarifying_question", "create_owner_task" => "propose_action", "no_action" => "no_reply" }[action.to_s]
+      { "reply" => "reply", "clarify" => "ask_clarifying_question", "create_owner_task" => "propose_action", "check_out" => "check_out", "no_action" => "no_reply" }[action.to_s]
     end
 
     def self.action_for_outcome(outcome, owner_task_kind)
       return "create_owner_task" if owner_task_kind.present? || outcome.to_s.in?(%w[escalate propose_action])
       return "clarify" if outcome.to_s == "ask_clarifying_question"
+      return "check_out" if outcome.to_s == "check_out"
       return "no_action" if outcome.to_s == "no_reply"
 
       "reply"
@@ -155,7 +156,7 @@ module AI
     def normalized_outcome
       value = @outcome.to_s
       return "no_reply" if value == "ignore"
-      return value if value.in?(%w[reply ask_clarifying_question escalate propose_action no_reply])
+      return value if value.in?(%w[reply ask_clarifying_question escalate propose_action check_out no_reply])
 
       @escalation_required ? "escalate" : "reply"
     end

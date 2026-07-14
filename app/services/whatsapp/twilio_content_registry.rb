@@ -49,11 +49,45 @@ module Whatsapp
             ]
           }
         }
+      },
+      checkout_actions: {
+        "friendly_name" => "ayla_owner_checkout_actions_v1",
+        "language" => "es",
+        "types" => {
+          "twilio/quick-reply" => {
+            "body" => "Elegí una opción para continuar.",
+            "actions" => [
+              { "type" => "QUICK_REPLY", "title" => "Marcar como visto", "id" => "checkout_visto" },
+              { "type" => "QUICK_REPLY", "title" => "Siguiente", "id" => "siguiente" },
+              { "type" => "QUICK_REPLY", "title" => "Salir", "id" => "salir" }
+            ]
+          }
+        }
+      },
+      owner_escalation_notice_with_checkouts: {
+        "friendly_name" => "owner_escalation_notice_with_checkouts_v1",
+        "language" => "es",
+        "variables" => { "1" => "2", "2" => "1", "3" => "1", "4" => "1" },
+        "types" => {
+          "twilio/quick-reply" => {
+            "body" => "Tenés novedades pendientes de tus huéspedes:\n\nPedidos: {{1}}\nConsultas: {{2}}\nAlertas: {{3}}\nCheckouts: {{4}}\n\nSeleccioná qué querés revisar.",
+            "actions" => [
+              { "type" => "QUICK_REPLY", "title" => "Pedidos", "id" => "pedidos" },
+              { "type" => "QUICK_REPLY", "title" => "Consultas", "id" => "consultas" },
+              { "type" => "QUICK_REPLY", "title" => "Alertas", "id" => "alertas" },
+              { "type" => "QUICK_REPLY", "title" => "Checkouts", "id" => "checkouts" }
+            ]
+          }
+        }
       }
     }.freeze
 
     def self.fetch(key)
       new.fetch(key)
+    end
+
+    def self.supports_action?(content_sid, action_id)
+      new.supports_action?(content_sid, action_id)
     end
 
     def initialize(client: nil, cache: Rails.cache)
@@ -86,6 +120,34 @@ module Whatsapp
       nil
     end
 
+    def supports_action?(content_sid, action_id)
+      return false if content_sid.blank? || action_id.blank? || !@client.configured?
+
+      cache_key = "ayla/twilio-content-actions/#{@client.account_sid}/#{content_sid}"
+      action_ids = @cache.fetch(cache_key, expires_in: 12.hours) do
+        content = @client.list_contents.find { |item| item.to_h["sid"] == content_sid }
+        content_action_ids(content)
+      end
+      action_ids.include?(action_id.to_s)
+    rescue StandardError => error
+      ErrorReporter.report(error, source: "twilio_content_registry", severity: "warning", context: { content_sid: content_sid })
+      false
+    end
+
+    def provision_and_submit_owner_notice
+      sid = fetch(:owner_escalation_notice_with_checkouts)
+      raise "Twilio credentials are not configured" if sid.blank?
+
+      approval = @client.fetch_whatsapp_approval(sid)
+      approval = @client.submit_whatsapp_approval(
+        sid,
+        name: "owner_escalation_notice_with_checkouts_v1",
+        category: "UTILITY"
+      ) if approval.to_h["whatsapp"].blank?
+
+      { "sid" => sid, "approval" => approval }
+    end
+
     private
 
     def find_existing(definition)
@@ -95,12 +157,23 @@ module Whatsapp
       expected_type = definition.fetch("types").keys.first
       compatible = matches.find { |content| content.to_h.fetch("types", {}).key?(expected_type) }
       raise "Existing Twilio content #{definition.fetch('friendly_name')} has an incompatible type" unless compatible
+      expected_action_ids = content_action_ids(definition)
+      if expected_action_ids.present? && content_action_ids(compatible) != expected_action_ids
+        raise "Existing Twilio content #{definition.fetch('friendly_name')} has incompatible action IDs"
+      end
 
       compatible
     end
 
     def cache_key_for(definition)
       "ayla/twilio-content/#{@client.account_sid}/#{definition.fetch('friendly_name')}"
+    end
+
+    def content_action_ids(content)
+      types = content.to_h.fetch("types", {})
+      quick_replies = Array(types.dig("twilio/quick-reply", "actions"))
+      list_items = Array(types.dig("twilio/list-picker", "items"))
+      (quick_replies + list_items).filter_map { |action| action.to_h["id"].presence }.uniq
     end
 
     def with_creation_lock(friendly_name, &block)
@@ -143,6 +216,22 @@ module Whatsapp
 
       def create_content(definition)
         request(:post, CONTENTS_URL, body: definition)
+      end
+
+      def fetch_whatsapp_approval(content_sid)
+        request(:get, "#{CONTENTS_URL}/#{content_sid}/ApprovalRequests")
+      rescue StandardError => error
+        return {} if error.message.include?("status 404")
+
+        raise
+      end
+
+      def submit_whatsapp_approval(content_sid, name:, category:)
+        request(
+          :post,
+          "#{CONTENTS_URL}/#{content_sid}/ApprovalRequests/whatsapp",
+          body: { "name" => name, "category" => category }
+        )
       end
 
       private

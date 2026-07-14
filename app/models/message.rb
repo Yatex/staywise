@@ -5,6 +5,7 @@ class Message < ApplicationRecord
   belongs_to :conversation
   belongs_to :account, optional: true
   belongs_to :property, optional: true
+  has_one :checkout_event, foreign_key: :source_message_id, dependent: :restrict_with_exception
 
   validates :sender, inclusion: { in: SENDERS }
   validates :channel, inclusion: { in: CHANNELS }
