@@ -23,11 +23,13 @@ module AI
 
     def call
       reasons = []
-      reasons << "invalid_action" unless @decision.action.in?(%w[reply clarify create_owner_task])
+      reasons << "invalid_action" unless @decision.action.in?(%w[reply clarify create_owner_task no_action])
       reasons << "invalid_owner_task_kind" if @decision.owner_task_kind.present? && !@decision.owner_task_kind.in?(OwnerTask::KINDS)
       reasons << "owner_task_kind_required" if @decision.action == "create_owner_task" && @decision.owner_task_kind.blank?
       reasons << "owner_task_kind_not_allowed" if @decision.action != "create_owner_task" && @decision.owner_task_kind.present?
-      reasons << "empty_response" if @decision.response_text.blank?
+      reasons << "empty_response" if @decision.response_text.blank? && @decision.action != "no_action"
+      reasons << "no_action_must_not_have_response" if @decision.action == "no_action" && @decision.response_text.present?
+      reasons << "no_action_must_not_have_effects" if no_action_has_effects?
       reasons.concat(contract_reasons)
       reasons.concat(tool_mandatory_reasons)
       reasons << "missing_language" if @decision.language.blank?
@@ -49,6 +51,15 @@ module AI
     end
 
     private
+
+    def no_action_has_effects?
+      return false unless @decision.action == "no_action"
+
+      @decision.should_reply ||
+        @decision.owner_task_kind.present? ||
+        @decision.escalation_required ||
+        @decision.proposed_action.present?
+    end
 
     def reply_below_answer_confidence_threshold?
       @decision.action == "reply" &&
@@ -90,6 +101,7 @@ module AI
     end
 
     def tool_mandatory_reasons
+      return [] if @decision.action == "no_action"
       return [] if conversational_only_decision?
       return [] unless real_guest_message?
 

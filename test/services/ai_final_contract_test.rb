@@ -58,6 +58,62 @@ class AIFinalContractTest < ActiveSupport::TestCase
     assert_equal 0, @conversation.owner_tasks.count
   end
 
+  test "no_action is valid, audited, and has no outbound effects" do
+    message = guest_message("Gracias")
+    no_action = decision(action: "no_action", message: nil, confidence: 100)
+
+    assert validate(no_action).valid?
+    assert_equal "no_reply", no_action.outcome
+    assert_not no_action.should_reply
+
+    assert_difference -> { AIDecisionLog.count }, 1 do
+      result = service_with(no_action, message).call
+      assert_equal "no_action", result.action
+      assert_equal "no_reply", result.outcome
+      assert_nil result.response_text
+    end
+  end
+
+  test "no_action stores inbound message but sends and creates nothing" do
+    provider = MediaProvider.new
+    no_action = decision(action: "no_action", message: nil, confidence: 100)
+    previous_errors = OperationalError.count
+
+    result = nil
+    AI::DecisionService.stub(:call, no_action) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        { "From" => "whatsapp:+59899000333", "To" => "whatsapp:+59899000999", "Body" => "Gracias" },
+        provider: provider
+      ).call
+    end
+
+    assert_equal "Gracias", result.fetch(:message).body
+    assert_equal "no_action", result.fetch(:decision).action
+    assert_not result.fetch(:replied)
+    assert_empty provider.deliveries
+    assert_empty @conversation.owner_tasks
+    assert_empty @conversation.alerts
+    assert_empty @account.owner_whatsapp_sessions
+    assert_equal previous_errors, OperationalError.count
+  end
+
+  test "unknown action remains invalid" do
+    unknown = decision(action: "unexpected_action", message: nil, confidence: 100)
+
+    validation = validate(unknown)
+    assert_not validation.valid?
+    assert_includes validation.reasons, "invalid_action"
+  end
+
+  test "no_action with an attempted effect is rejected" do
+    invalid = decision(action: "no_action", message: nil, confidence: 100)
+    invalid.instance_variable_set(:@escalation_required, true)
+
+    validation = validate(invalid)
+    assert_not validation.valid?
+    assert_includes validation.reasons, "no_action_must_not_have_effects"
+  end
+
   test "technical fallback uses property phone and ignores AI safe fallback" do
     message = guest_message("¿Cuál es la red Wi-Fi?")
     rejected = decision(action: "reply", message: "Respuesta incorrecta", confidence: 84, evidence_ids: ["property.wifi_name"])

@@ -52,16 +52,30 @@ test("portuguese greeting is answered as small talk without evidence", () => {
   assert.doesNotMatch(result.decision.message_body, /address|check_in|Rua Teste|15:00/i);
 });
 
-test("thanks are answered as small talk without evidence", () => {
-  const result = buildGroundedDecision(unknownEscalation("es"), {
+test("model no_action for thanks remains silent without using unrelated evidence", () => {
+  const result = buildGroundedDecision({
+    outcome: "no_reply",
+    decision: "no_reply",
+    action: "no_action",
+    language: "es",
+    message_body: null,
+    response_text: null,
+    owner_task_kind: null,
+    evidence_ids: [],
+    used_source_ids: [],
+    escalation_required: false,
+    escalation: { required: false },
+    should_reply: false,
+  }, {
     guest_message: "ok gracias",
   }, catalogFromSource(propertyFact("address", "property.address", "Av. Siempre Viva 123")));
 
-  assert.equal(result.decision.outcome, "reply");
-  assert.equal(result.decision.detected_intents[0].type, "small_talk");
+  assert.equal(result.decision.outcome, "no_reply");
+  assert.equal(result.decision.action, "no_action");
+  assert.equal(result.decision.should_reply, false);
   assert.deepEqual(result.decision.evidence_ids, []);
-  assert.match(result.decision.message_body, /De nada|Perfecto/i);
-  assert.doesNotMatch(result.decision.message_body, /address|Av\./i);
+  assert.equal(result.decision.message_body, null);
+  assert.equal(result.override, null);
 });
 
 test("structured fact evidence answers check-in without unknown escalation", () => {

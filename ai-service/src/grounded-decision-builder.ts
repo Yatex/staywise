@@ -1,5 +1,5 @@
 import type { EvidenceCatalogEntry } from "./evidence-catalog.js";
-import { classifyConversationalOnly } from "./conversational-classifier.js";
+import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 
 export type GroundedDecisionBuild = {
   decision: any;
@@ -321,8 +321,9 @@ export function buildGroundedDecision(
   const guestMessage = payload?.guest_message || "";
   const thresholds = decisionThresholds(payload);
   const conversationalClassification = classifyConversationalOnly(guestMessage);
+  const bypassModel = shouldBypassModelForConversational(conversationalClassification);
   const repairDiagnostic = shouldRepairDecisionDiagnostic(decision);
-  const candidateAudit = conversationalClassification ? [] : rankedCandidateAudit(guestMessage, evidenceCatalog);
+  const candidateAudit = bypassModel ? [] : rankedCandidateAudit(guestMessage, evidenceCatalog);
   const clarificationIntent = inferredClarificationIntent(guestMessage);
   const attempts = clarificationAttempts(payload, clarificationIntent);
   const baseAudit = {
@@ -339,7 +340,7 @@ export function buildGroundedDecision(
     score_thresholds: thresholds,
   };
 
-  if (conversationalClassification) {
+  if (bypassModel && conversationalClassification) {
     return withGroundedAudit(
       conversationalOnlyBuild(decision, conversationalClassification),
       buildAudit(baseAudit, [], "conversational_only", null, {

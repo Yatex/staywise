@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decision-system-prompt.js";
+import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 
 test("decision prompts forbid source metadata in guest-facing replies", () => {
   for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
@@ -49,4 +50,30 @@ test("decision prompts troubleshoot property problems before creating inquiries"
     assert.match(prompt, /followed the instructions and the problem continues/i);
     assert.match(prompt, /new problem report by itself is not confirmation/i);
   }
+});
+
+test("decision prompt uses contextual no_action without hiding new needs", () => {
+  assert.match(DECISION_SYSTEM_PROMPT, /latest message and the conversation history/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /action no_action with message=null/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /also contains a new request, an unresolved problem/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /information answering Ayla's previous clarification/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /absence of a new need is not missing property knowledge/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /A short answer such as 'yes', 'for walking', or 'names only'/i);
+});
+
+test("decision prompt forbids unverified future searches and redundant clarification", () => {
+  assert.match(DECISION_SYSTEM_PROMPT, /Never offer or promise to search, look up, investigate/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /use it directly instead of asking permission/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /ask only for that missing input/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /never repeat a question already answered/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /no suitable tool or sufficient knowledge exists/i);
+});
+
+test("only unequivocal greetings bypass contextual model interpretation", () => {
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Hola")), true);
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Gracias")), false);
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Perfecto")), false);
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Súper")), false);
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Sí")), false);
+  assert.equal(shouldBypassModelForConversational(classifyConversationalOnly("Perfecto, necesito otra manta")), false);
 });

@@ -27,6 +27,23 @@ test("AylaDecision parses clarify without an owner task", () => {
   assert.equal(parsed.owner_task_kind, null);
 });
 
+test("AylaDecision accepts no_action only with a null message and no effects", () => {
+  const parsed = DecisionSchema.parse({
+    ...reply,
+    action: "no_action",
+    message: null,
+    answer_confidence: 100,
+    evidence_ids: [],
+  });
+
+  assert.equal(parsed.outcome, "no_reply");
+  assert.equal(parsed.message_body, null);
+  assert.equal(parsed.should_reply, false);
+  assert.equal(parsed.escalation_required, false);
+  assert.equal(parsed.owner_task_kind, null);
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "no_action", message: "De nada" }).success, false);
+});
+
 test("AylaDecision requires an explicit owner task kind", () => {
   assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_owner_task", task_summary: "Dos mantas" }).success, false);
   const parsed = DecisionSchema.parse({ ...reply, action: "create_owner_task", owner_task_kind: "request", task_summary: "Dos mantas", evidence_ids: [] });

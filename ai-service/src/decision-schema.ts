@@ -7,10 +7,10 @@ const AttachmentSchema = z.object({
 }).strict();
 
 const PublicDecisionSchema = z.object({
-  action: z.enum(["reply", "clarify", "create_owner_task"]),
+  action: z.enum(["reply", "clarify", "create_owner_task", "no_action"]),
   owner_task_kind: z.enum(["request", "inquiry"]).nullable().default(null),
   language: z.string().min(2),
-  message: z.string().min(1),
+  message: z.string().min(1).nullable(),
   task_summary: z.string().nullable().default(null),
   answer_confidence: z.number().min(0).max(100),
   evidence_ids: z.array(z.string()).default([]),
@@ -21,6 +21,12 @@ const PublicDecisionSchema = z.object({
   }
   if (decision.action !== "create_owner_task" && decision.owner_task_kind) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["owner_task_kind"], message: "owner_task_kind is only valid for create_owner_task" });
+  }
+  if (decision.action === "no_action" && decision.message !== null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message must be null for no_action" });
+  }
+  if (decision.action !== "no_action" && !decision.message) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message is required" });
   }
 });
 
@@ -42,7 +48,7 @@ export function toPublicDecision(decision: any) {
     action,
     owner_task_kind: ownerTaskKind,
     language: String(decision?.language || "").trim() || "es",
-    message: sanitizeGuestVisibleText(decision?.message || decision?.message_body || decision?.response_text || ""),
+    message: action === "no_action" ? null : sanitizeGuestVisibleText(decision?.message || decision?.message_body || decision?.response_text || ""),
     task_summary: action === "create_owner_task"
       ? String(decision?.task_summary || decision?.intent_summary || decision?.escalation?.summary_for_host || "").trim() || null
       : null,
@@ -64,7 +70,9 @@ export function recoverDecisionFromRawText(rawText: unknown) {
 }
 
 function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
-  const outcome = value.action === "clarify"
+  const outcome = value.action === "no_action"
+    ? "no_reply"
+    : value.action === "clarify"
     ? "ask_clarifying_question"
     : value.action === "create_owner_task" ? "propose_action" : "reply";
   const escalationRequired = value.action === "create_owner_task";
@@ -74,8 +82,8 @@ function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
     outcome,
     decision: outcome,
     language: value.language,
-    message_body: sanitizeGuestVisibleText(value.message),
-    response_text: sanitizeGuestVisibleText(value.message),
+    message_body: value.action === "no_action" ? null : sanitizeGuestVisibleText(value.message),
+    response_text: value.action === "no_action" ? null : sanitizeGuestVisibleText(value.message),
     intent_summary: value.task_summary || value.action,
     detected_intents: [],
     used_source_ids: value.evidence_ids,
@@ -92,10 +100,12 @@ function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
     missing_information: [],
     safety_flags: [],
     confidence: value.answer_confidence / 100,
+    should_reply: value.action !== "no_action",
   };
 }
 
 function publicAction(decision: any) {
+  if (decision?.action === "no_action" || decision?.outcome === "no_reply" || decision?.decision === "no_reply") return "no_action";
   if (decision?.action === "clarify" || decision?.outcome === "ask_clarifying_question") return "clarify";
   if (decision?.action === "create_owner_task" || decision?.owner_task_kind) return "create_owner_task";
   if (["escalate", "propose_action"].includes(String(decision?.outcome || decision?.decision))) return "create_owner_task";

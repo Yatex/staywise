@@ -17,7 +17,7 @@ import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decisio
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 import { safeFallbackResponseFor } from "./safe-fallback-response.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
-import { classifyConversationalOnly } from "./conversational-classifier.js";
+import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
@@ -98,7 +98,7 @@ const server = createServer(async (request, response) => {
     mandatoryTrace = newToolMandatoryTrace(payload);
 
     const conversationalClassification = classifyConversationalOnly(payload?.guest_message);
-    if (conversationalClassification) {
+    if (shouldBypassModelForConversational(conversationalClassification)) {
       mandatoryTrace.skip_reason = `conversational_only:${conversationalClassification.kind}`;
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
       sendJson(response, 200, toPublicDecision(conversationalOnlyDecision(payload, conversationalClassification)));

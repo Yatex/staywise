@@ -134,6 +134,10 @@ export function classifyConversationalOnly(message: unknown): ConversationalClas
   return { kind: "small_talk", language, response: acknowledgementResponse(language) };
 }
 
+export function shouldBypassModelForConversational(classification: ConversationalClassification | null) {
+  return classification?.kind === "greeting";
+}
+
 function containsSocialSignal(normalized: string) {
   return matchesAny(normalized, [
     ...GREETING_PATTERNS,
