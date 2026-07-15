@@ -87,6 +87,7 @@ es:
       guest_requests: "Pedidos"
       inquiries: "Consultas"
       alerts: "Alertas"
+      checkout_events: "Salidas"
       recommendations: "Recomendaciones"
       guests: "Huéspedes"
       subscriptions: "Suscripciones"
@@ -148,6 +149,10 @@ es:
       unknown_guest: "Huésped desconocido"
       empty: "Todavía no hay alertas."
       mark_done: "Marcar hecha"
+    checkout_events:
+      title: "Salidas"
+      subtitle: "Huéspedes que confirmaron que ya abandonaron la propiedad."
+      empty: "Todavía no hay salidas informadas."
     guests:
       title: "Huéspedes"
       subtitle: "Los huéspedes se crean automáticamente desde conversaciones de WhatsApp."

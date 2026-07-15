@@ -46,6 +46,7 @@ Rails.application.routes.draw do
   resources :alerts, only: [:index, :show, :update] do
     post :answer_question, on: :member
   end
+  resources :checkout_events, path: "salidas", only: [:index, :show, :update]
 
   resource :subscription, path: "subscriptions", only: [:show], controller: :billing do
     get :pricing

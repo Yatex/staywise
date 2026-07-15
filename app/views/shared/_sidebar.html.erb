@@ -14,6 +14,7 @@
     <%= link_to t("ui.nav.guest_requests"), guest_requests_path, class: nav_link_class(guest_requests_path) %>
     <%= link_to t("ui.nav.inquiries"), inquiries_path, class: nav_link_class(inquiries_path) %>
     <%= link_to t("ui.nav.alerts"), alerts_path, class: nav_link_class(alerts_path) %>
+    <%= link_to t("ui.nav.checkout_events"), checkout_events_path, class: nav_link_class(checkout_events_path) %>
   </nav>
 
   <% if current_user.admin? %>

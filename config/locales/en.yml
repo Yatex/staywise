@@ -106,6 +106,7 @@ en:
       properties: "Properties"
       conversations: "Conversations"
       alerts: "Alerts"
+      checkout_events: "Departures"
       guest_requests: "Requests"
       inquiries: "Inquiries"
       recommendations: "Recommendations"
@@ -169,6 +170,10 @@ en:
       unknown_guest: "Unknown guest"
       empty: "No alerts yet."
       mark_done: "Mark done"
+    checkout_events:
+      title: "Departures"
+      subtitle: "Guests who confirmed they have left the property."
+      empty: "No departures have been reported yet."
     guests:
       title: "Guests"
       subtitle: "Guests are created automatically from WhatsApp conversations."

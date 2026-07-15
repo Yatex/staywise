@@ -5,5 +5,6 @@ class DashboardController < ApplicationController
     @guest_requests = current_account.owner_tasks.requests.includes(:guest, :property, :conversation).open.pending_first.limit(5)
     @inquiries = current_account.owner_tasks.inquiries.includes(:guest, :property, :conversation).open.pending_first.limit(5)
     @alerts = alert_scope.includes(:guest, :property, :original_message).open.order(created_at: :desc).limit(5)
+    @checkout_events = current_account.checkout_events.pending.includes(:guest, :property).order(checked_out_at: :desc).limit(5)
   end
 end

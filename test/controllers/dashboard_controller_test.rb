@@ -92,6 +92,31 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "quiero un vino"
   end
 
+  test "shows pending departures with a link to the departures section" do
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Ya dejamos el apartamento.")
+    checkout_event = @account.checkout_events.create!(
+      property: @property,
+      guest: @guest,
+      conversation: @conversation,
+      source_message: message,
+      reservation_key: "reservation:dashboard",
+      guest_message_body: message.body,
+      checked_out_at: Time.current
+    )
+
+    get dashboard_path
+
+    assert_response :success
+    assert_includes response.body, "Salidas pendientes"
+    assert_includes response.body, checkout_event.guest_message_body
+    assert_select "a[href='#{checkout_events_path}']", text: /Ver todo|Salidas/
+    assert_select "a[href='#{checkout_event_path(checkout_event)}']"
+
+    checkout_event.mark_seen!
+    get dashboard_path
+    assert_not_includes response.body, checkout_event.guest_message_body
+  end
+
   test "shows inquiry created by ai escalation from whatsapp flow without alert" do
     decision = AI::DecisionResult.from_hash(
       decision: "escalate",

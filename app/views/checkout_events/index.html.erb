@@ -1,0 +1,50 @@
+<% content_for :page_title, t("ui.nav.checkout_events") %>
+
+<div class="space-y-6">
+  <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.checkout_events.title") %></h2>
+      <p class="mt-1 text-sm text-slate-500"><%= t("ui.checkout_events.subtitle") %></p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <%= link_to "Todas (#{@pending_count + @seen_count})", checkout_events_path, class: secondary_button_class %>
+      <%= link_to "Pendientes (#{@pending_count})", checkout_events_path(status: "pending"), class: secondary_button_class %>
+      <%= link_to "Vistas (#{@seen_count})", checkout_events_path(status: "seen"), class: secondary_button_class %>
+    </div>
+  </div>
+
+  <div class="<%= card_class %> overflow-hidden">
+    <div class="divide-y divide-slate-100">
+      <% @checkout_events.each do |checkout_event| %>
+        <%= link_to checkout_event_path(checkout_event), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p class="font-medium text-slate-950"><%= checkout_event.property.display_name %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= checkout_event.guest.display_name %> · <%= display_phone_number(checkout_event.guest.phone_number) %></p>
+              <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= checkout_event.guest_message_body %></p>
+              <p class="mt-2 text-xs font-medium text-slate-500">Salida informada: <%= l(checkout_event.checked_out_at, format: :long) %></p>
+            </div>
+            <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(checkout_event.status) %>"><%= checkout_event.pending? ? "Pendiente" : "Vista" %></span>
+          </div>
+        <% end %>
+      <% end %>
+      <% if @checkout_events.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500"><%= t("ui.checkout_events.empty") %></p>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @total_pages.to_i > 1 %>
+    <div class="flex items-center justify-between">
+      <p class="text-sm text-slate-500">Página <%= @current_page %> de <%= @total_pages %></p>
+      <div class="flex gap-2">
+        <% if @current_page > 1 %>
+          <%= link_to "Anterior", checkout_events_path(request.query_parameters.merge(page: @current_page - 1)), class: secondary_button_class %>
+        <% end %>
+        <% if @current_page < @total_pages %>
+          <%= link_to "Siguiente", checkout_events_path(request.query_parameters.merge(page: @current_page + 1)), class: secondary_button_class %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

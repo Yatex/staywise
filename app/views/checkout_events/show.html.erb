@@ -1,0 +1,47 @@
+<% content_for :page_title, "Salida #{@checkout_event.id}" %>
+
+<div class="mx-auto max-w-4xl space-y-6">
+  <section class="<%= card_class %> p-5">
+    <%= link_to "Volver a salidas", checkout_events_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+    <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h2 class="text-2xl font-semibold text-slate-950">Salida informada</h2>
+        <p class="mt-2 text-sm text-slate-500"><%= @checkout_event.property.display_name %> · Caso #CO-<%= @checkout_event.id %></p>
+      </div>
+      <div class="flex shrink-0 items-center gap-3">
+        <span class="w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(@checkout_event.status) %>"><%= @checkout_event.pending? ? "Pendiente" : "Vista" %></span>
+        <% if @checkout_event.pending? %>
+          <%= button_to "Marcar como vista", checkout_event_path(@checkout_event), method: :patch, class: primary_button_class %>
+        <% end %>
+      </div>
+    </div>
+
+    <dl class="mt-6 grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-2">
+      <div>
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Propiedad</dt>
+        <dd class="mt-1 text-sm font-medium text-slate-900"><%= @checkout_event.property.display_name %></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Huésped</dt>
+        <dd class="mt-1 text-sm font-medium text-slate-900"><%= @checkout_event.guest.display_name %> · <%= display_phone_number(@checkout_event.guest.phone_number) %></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Salida informada</dt>
+        <dd class="mt-1 text-sm font-medium text-slate-900"><%= l(@checkout_event.checked_out_at, format: :long) %></dd>
+      </div>
+      <% if @checkout_event.owner_seen_at.present? %>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Vista por el dueño</dt>
+          <dd class="mt-1 text-sm font-medium text-slate-900"><%= l(@checkout_event.owner_seen_at, format: :long) %></dd>
+        </div>
+      <% end %>
+    </dl>
+
+    <div class="mt-4 rounded-lg bg-slate-50 p-4">
+      <p class="text-sm font-semibold text-slate-900">Mensaje del huésped</p>
+      <p class="mt-2 whitespace-pre-line text-base leading-7 text-slate-700"><%= @checkout_event.guest_message_body %></p>
+    </div>
+
+    <p class="mt-4 text-sm font-medium text-emerald-700">La propiedad ya puede revisarse.</p>
+  </section>
+</div>
