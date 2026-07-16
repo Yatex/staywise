@@ -4,8 +4,12 @@ class OwnerWhatsappSession < ApplicationRecord
 
   belongs_to :account
   belongs_to :alert, optional: true
+  belongs_to :co_host, optional: true
 
   validates :state, inclusion: { in: STATES }
+  validates :actor_role, inclusion: { in: %w[owner co_host] }
+  validates :participant_phone, presence: true
+  before_validation :set_participant_identity
 
   scope :active, -> { where(state: ACTIVE_STATES) }
   scope :pending, -> { where(state: %w[queued on_hold]) }
@@ -37,5 +41,12 @@ class OwnerWhatsappSession < ApplicationRecord
         ]
       )
     )
+  end
+
+  private
+
+  def set_participant_identity
+    self.actor_role = co_host_id.present? ? "co_host" : "owner"
+    self.participant_phone ||= co_host&.whatsapp_number || account&.owner_whatsapp_number || "account:#{account_id}"
   end
 end

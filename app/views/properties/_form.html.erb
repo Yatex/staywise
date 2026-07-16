@@ -50,6 +50,27 @@
 
   <section class="<%= card_class %> p-5">
     <div class="flex items-start gap-4">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">CH</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-base font-semibold text-slate-950">Co-host de esta propiedad</h2>
+        <p class="mt-1 text-sm text-slate-500">Opcional. Recibirá y podrá gestionar por WhatsApp solamente los pendientes de esta propiedad.</p>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <%= label_tag "property_co_host_name", "Nombre del co-host", class: label_class %>
+            <%= text_field_tag "property[co_host_name]", @co_host_name, id: "property_co_host_name", class: field_class, placeholder: "María" %>
+          </div>
+          <div>
+            <%= label_tag "property_co_host_phone_number", "WhatsApp del co-host", class: label_class %>
+            <%= telephone_field_tag "property[co_host_phone_number]", @co_host_phone_number, id: "property_co_host_phone_number", class: field_class, placeholder: "+598..." %>
+          </div>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">Para eliminarlo, dejá ambos campos vacíos y guardá la propiedad.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <div class="flex items-start gap-4">
       <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">1</span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-slate-950">Datos básicos</h2>

@@ -42,10 +42,44 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Instrucciones de salida"
     assert_includes @response.body, "Electrodomésticos"
     assert_includes @response.body, "Recomendaciones locales"
+    assert_includes @response.body, "Co-host de esta propiedad"
 
     get new_property_knowledge_block_path(@property)
     assert_response :success
     assert_includes @response.body, "Link de YouTube opcional"
+  end
+
+  test "owner can assign change and remove one co-host from property edit" do
+    patch property_path(@property), params: {
+      property: { name: @property.name, co_host_name: "Maria", co_host_phone_number: "+59899112233" }
+    }
+    assert_redirected_to property_path(@property)
+    assert_equal "Maria", @property.reload.co_host.name
+    assert_equal "+59899112233", @property.co_host.whatsapp_number
+
+    patch property_path(@property), params: {
+      property: { name: @property.name, co_host_name: "Pedro", co_host_phone_number: "+59899445566" }
+    }
+    assert_redirected_to property_path(@property)
+    assert_equal "Pedro", @property.reload.co_host.name
+
+    patch property_path(@property), params: {
+      property: { name: @property.name, co_host_name: "", co_host_phone_number: "" }
+    }
+    assert_redirected_to property_path(@property)
+    assert_nil @property.reload.co_host
+  end
+
+  test "owner cannot assign their own whatsapp as co-host" do
+    @account.update!(owner_whatsapp_number: "+59899112233")
+
+    patch property_path(@property), params: {
+      property: { name: @property.name, co_host_name: "Duplicate", co_host_phone_number: "+59899112233" }
+    }
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "no puede usar el mismo WhatsApp"
+    assert_nil @property.reload.co_host
   end
 
   test "deleting property hides it from listings without removing the row" do

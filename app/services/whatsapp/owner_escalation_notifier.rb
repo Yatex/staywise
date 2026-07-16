@@ -2,10 +2,22 @@ module Whatsapp
   class OwnerEscalationNotifier
     Result = Struct.new(:sent?, :session, :error, keyword_init: true)
 
-    def self.call(alert: nil, item: nil, account: nil, provider: ProviderFactory.build)
+    def self.call(alert: nil, item: nil, account: nil, actor: nil, provider: ProviderFactory.build)
       item ||= alert
       account ||= item&.property&.account
-      new(account: account, provider: provider).call
+      if item.present? && actor.blank?
+        results = HostActor.for_property(item.property).map do |recipient|
+          new(actor: recipient, provider: provider).call
+        rescue StandardError => error
+          ErrorReporter.report(error, source: "owner_escalation_notifier", severity: "error", account: account,
+                               property: item.property, context: { recipient_role: recipient.role, recipient_phone: recipient.phone_number })
+          Result.new(sent?: false, session: nil, error: error.message)
+        end
+        return results.first || Result.new(sent?: false, session: nil, error: "no_recipients")
+      end
+
+      actor ||= HostActor.owner(account)
+      new(actor: actor, provider: provider).call
     end
 
     def self.drain_queue(account:, provider: ProviderFactory.build, except_session: nil)
@@ -20,24 +32,26 @@ module Whatsapp
       accounts.filter_map { |account| call(account: account, provider: provider) }.find(&:sent?)
     end
 
-    def initialize(account:, provider:)
-      @account = account
+    def initialize(actor:, provider:)
+      @actor = actor
+      @account = actor.account
       @provider = provider
     end
 
     def call
-      return Result.new(sent?: false, session: nil, error: "owner_whatsapp_not_configured") unless @account.owner_whatsapp_configured?
+      return Result.new(sent?: false, session: nil, error: "host_whatsapp_not_configured") if @actor.phone_number.blank?
 
       expire_active_session!
-      if (session = @account.owner_whatsapp_sessions.active.order(created_at: :desc).first)
+      if (session = participant_sessions.active.order(created_at: :desc).first)
         return Result.new(sent?: false, session: session, error: "owner_session_active")
       end
       return Result.new(sent?: false, session: nil, error: "nothing_pending") if pending_counts.values.sum.zero?
 
-      session = @account.owner_whatsapp_sessions.create!(state: "menu", started_at: Time.current, expires_at: 30.minutes.from_now)
+      session = participant_sessions.create!(state: "menu", started_at: Time.current, expires_at: 30.minutes.from_now,
+                                             actor_role: @actor.role, co_host: @actor.co_host)
       notify_session(session)
     rescue ActiveRecord::RecordNotUnique
-      session = @account.owner_whatsapp_sessions.active.order(created_at: :desc).first
+      session = participant_sessions.active.order(created_at: :desc).first
       Result.new(sent?: false, session: session, error: "owner_session_active")
     end
 
@@ -71,13 +85,13 @@ module Whatsapp
       template_sid = ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
       if template_sid.present? && @provider.respond_to?(:send_template)
         return @provider.send_template(
-          to: @account.owner_whatsapp_number,
+          to: @actor.phone_number,
           template_sid: template_sid,
           variables: initial_notice_variables(template_sid)
         )
       end
 
-      @provider.send_message(to: @account.owner_whatsapp_number, body: template_message)
+      @provider.send_message(to: @actor.phone_number, body: template_message)
     end
 
     def template_message
@@ -87,10 +101,10 @@ module Whatsapp
 
     def pending_counts
       @pending_counts ||= {
-        pedidos: @account.owner_tasks.open.requests.count,
-        consultas: @account.owner_tasks.open.inquiries.count,
-        alertas: Alert.joins(:property).where(properties: { account_id: @account.id }).open.count,
-        checkouts: @account.checkout_events.pending.count
+        pedidos: host_pending(@account.owner_tasks.open.requests.where(property_id: @actor.property_ids)).count,
+        consultas: host_pending(@account.owner_tasks.open.inquiries.where(property_id: @actor.property_ids)).count,
+        alertas: host_pending(Alert.where(property_id: @actor.property_ids).open).count,
+        checkouts: @account.checkout_events.pending.where(property_id: @actor.property_ids).count
       }
     end
 
@@ -104,14 +118,24 @@ module Whatsapp
       variables
     end
 
+    def host_pending(scope)
+      scope.where(response_delivery_state: "pending").or(
+        scope.where(response_delivery_state: "failed", resolved_by_actor_type: @actor.type, resolved_by_actor_id: @actor.id)
+      )
+    end
+
     def template_supports_checkouts?(template_sid)
       @provider.respond_to?(:template_supports_action?) && @provider.template_supports_action?(template_sid, "checkouts")
     end
 
     def expire_active_session!
-      @account.owner_whatsapp_sessions.active.where("expires_at <= ?", Time.current).find_each do |session|
+      participant_sessions.active.where("expires_at <= ?", Time.current).find_each do |session|
         session.update!(state: "resolved", resolved_at: Time.current, active_category: nil, active_item_type: nil, active_item_id: nil)
       end
+    end
+
+    def participant_sessions
+      @account.owner_whatsapp_sessions.where(participant_phone: @actor.phone_number)
     end
 
     def delivery_success?(delivery)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_16_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -105,6 +105,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.bigint "original_message_id"
     t.bigint "ai_decision_log_id"
     t.jsonb "metadata", default: {}, null: false
+    t.string "response_delivery_state", default: "pending", null: false
+    t.text "claimed_response_body"
+    t.text "final_response_body"
+    t.string "resolved_by_actor_type"
+    t.bigint "resolved_by_actor_id"
+    t.string "resolved_by_role"
+    t.string "source_owner_message_sid"
     t.index ["ai_decision_log_id"], name: "index_alerts_on_ai_decision_log_id"
     t.index ["alert_type", "priority"], name: "index_alerts_on_alert_type_and_priority"
     t.index ["conversation_id"], name: "index_alerts_on_conversation_id"
@@ -112,6 +119,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.index ["original_message_id"], name: "index_alerts_on_original_message_id"
     t.index ["property_id", "status"], name: "index_alerts_on_property_id_and_status"
     t.index ["property_id"], name: "index_alerts_on_property_id"
+    t.index ["response_delivery_state"], name: "index_alerts_on_response_delivery_state"
+    t.index ["source_owner_message_sid"], name: "index_alerts_on_source_owner_message_sid_unique", unique: true, where: "(source_owner_message_sid IS NOT NULL)"
+    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying, 'sending'::character varying, 'responded'::character varying, 'failed'::character varying]::text[])", name: "alerts_response_delivery_state_check"
   end
 
   create_table "billing_events", force: :cascade do |t|
@@ -147,6 +157,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.index ["property_id"], name: "index_checkout_events_on_property_id"
     t.index ["provider_message_sid"], name: "index_checkout_events_on_provider_message_sid", unique: true, where: "(provider_message_sid IS NOT NULL)"
     t.index ["source_message_id"], name: "index_checkout_events_on_source_message_id", unique: true
+  end
+
+  create_table "co_hosts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "whatsapp_number", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_co_hosts_on_account_id"
+    t.index ["whatsapp_number"], name: "index_co_hosts_on_whatsapp_number", unique: true
   end
 
   create_table "conversations", force: :cascade do |t|
@@ -212,6 +232,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.boolean "requires_owner_approval", default: false, null: false
     t.jsonb "structured_details", default: {}, null: false
     t.string "kind", default: "request", null: false
+    t.string "response_delivery_state", default: "pending", null: false
+    t.text "claimed_response_body"
+    t.text "final_response_body"
+    t.string "resolved_by_actor_type"
+    t.bigint "resolved_by_actor_id"
+    t.string "resolved_by_role"
+    t.string "source_owner_message_sid"
     t.index ["account_id", "kind", "status"], name: "index_owner_tasks_on_account_kind_status"
     t.index ["account_id", "status"], name: "index_guest_requests_on_account_id_and_status"
     t.index ["account_id"], name: "index_guest_requests_on_account_id"
@@ -224,7 +251,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.index ["message_id"], name: "index_guest_requests_on_message_id_unique", unique: true
     t.index ["property_id", "status"], name: "index_guest_requests_on_property_id_and_status"
     t.index ["property_id"], name: "index_guest_requests_on_property_id"
+    t.index ["response_delivery_state"], name: "index_guest_requests_on_response_delivery_state"
+    t.index ["source_owner_message_sid"], name: "index_guest_requests_on_source_owner_message_sid_unique", unique: true, where: "(source_owner_message_sid IS NOT NULL)"
     t.check_constraint "kind::text = ANY (ARRAY['request'::character varying, 'inquiry'::character varying]::text[])", name: "guest_requests_kind_check"
+    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying, 'sending'::character varying, 'responded'::character varying, 'failed'::character varying]::text[])", name: "guest_requests_response_delivery_state_check"
   end
 
   create_table "guests", force: :cascade do |t|
@@ -312,11 +342,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.text "draft_reply_body"
     t.string "draft_item_type"
     t.bigint "draft_item_id"
+    t.bigint "co_host_id"
+    t.string "participant_phone", null: false
+    t.string "actor_role", default: "owner", null: false
+    t.index ["account_id", "participant_phone"], name: "index_one_active_host_session_per_participant", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'viewing_item'::character varying, 'awaiting_reply_text'::character varying, 'awaiting_send_confirmation'::character varying, 'awaiting_learning_confirmation'::character varying])::text[]))"
     t.index ["account_id", "state"], name: "index_owner_whatsapp_sessions_on_account_id_and_state"
-    t.index ["account_id"], name: "index_one_active_owner_whatsapp_session_per_account", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'viewing_item'::character varying, 'awaiting_reply_text'::character varying, 'awaiting_send_confirmation'::character varying, 'awaiting_learning_confirmation'::character varying])::text[]))"
     t.index ["account_id"], name: "index_owner_whatsapp_sessions_on_account_id"
     t.index ["active_item_type", "active_item_id"], name: "index_owner_sessions_on_active_item"
     t.index ["alert_id"], name: "index_owner_whatsapp_sessions_on_alert_id", unique: true
+    t.index ["co_host_id"], name: "index_owner_whatsapp_sessions_on_co_host_id"
+    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying, 'co_host'::character varying]::text[])", name: "owner_sessions_actor_role_check"
   end
 
   create_table "properties", force: :cascade do |t|
@@ -343,8 +378,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
     t.text "checkout_instructions"
     t.datetime "deleted_at"
     t.string "owner_contact_phone"
+    t.bigint "co_host_id"
     t.index ["account_id", "name"], name: "index_properties_on_account_id_and_name"
     t.index ["account_id"], name: "index_properties_on_account_id"
+    t.index ["co_host_id"], name: "index_properties_on_co_host_id"
     t.index ["deleted_at"], name: "index_properties_on_deleted_at"
     t.index ["public_token"], name: "index_properties_on_public_token", unique: true
     t.index ["tags"], name: "index_properties_on_tags", using: :gin
@@ -439,6 +476,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
   add_foreign_key "checkout_events", "guests"
   add_foreign_key "checkout_events", "messages", column: "source_message_id"
   add_foreign_key "checkout_events", "properties"
+  add_foreign_key "co_hosts", "accounts"
   add_foreign_key "conversations", "guests"
   add_foreign_key "conversations", "properties"
   add_foreign_key "faqs", "alerts", column: "source_alert_id"
@@ -460,7 +498,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_180000) do
   add_foreign_key "operational_errors", "properties"
   add_foreign_key "owner_whatsapp_sessions", "accounts"
   add_foreign_key "owner_whatsapp_sessions", "alerts"
+  add_foreign_key "owner_whatsapp_sessions", "co_hosts"
   add_foreign_key "properties", "accounts"
+  add_foreign_key "properties", "co_hosts"
   add_foreign_key "property_sensitive_data", "alerts", column: "source_alert_id"
   add_foreign_key "property_sensitive_data", "properties"
   add_foreign_key "property_sensitive_data", "users", column: "created_by_id"

@@ -21,14 +21,15 @@ module Whatsapp
     MAX_CONTEXT_LENGTH = 3_500
 
     def self.owner_message?(parsed)
-      Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: parsed.from).exists?
+      HostActor.authorized_phone?(parsed.from)
     end
 
     def initialize(parsed, provider: ProviderFactory.build)
       @parsed = parsed
       @provider = provider
       @owner_whatsapp_number = parsed.from
-      @account = Account.find_by!(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: @owner_whatsapp_number)
+      @actor = HostActor.resolve(@owner_whatsapp_number)
+      @account = @actor.account
     end
 
     def call
@@ -136,32 +137,31 @@ module Whatsapp
     end
 
     def send_confirmed_reply(session)
-      item = validated_active_item(session)
+      item = session.active_item
       return invalid_active_item(session) unless item && session.draft_for_active_item?
+      return invalid_active_item(session) unless @actor.can_manage_property?(item.property)
       conversation = item.conversation
       return invalid_active_item(session) unless conversation&.property_id == item.property_id
       return invalid_active_item(session) unless conversation.guest_id == item.guest_id && conversation.guest&.phone_number.present?
 
-      draft = session.draft_reply_body
-      owner_message = conversation.messages.create!(
-        sender: "owner", channel: "whatsapp", body: draft,
-        metadata: { sent_via: "owner_whatsapp_queue", owner_phone_number: @owner_whatsapp_number,
-                    active_item_type: session.active_item_type, active_item_id: session.active_item_id,
-                    delivery_status: "pending", delivery_status_updated_at: Time.current.iso8601 }
-      )
-      delivery = @provider.send_message(to: conversation.guest.phone_number, body: draft)
-      unless delivery_success?(delivery)
-        owner_message.update!(metadata: owner_message.metadata.merge("delivery_status" => "failed", "delivery_error" => delivery_error(delivery)))
+      delivery = HostReplyDelivery.new(
+        item: item, actor: @actor, session: session, provider: @provider, source_message_sid: message_sid
+      ).call
+      if delivery.already_handled?
+        clear_draft!(session)
+        send_owner_message(already_responded_message(item))
+        return advance_or_finish(session)
+      end
+      unless delivery.sent?
         send_owner_message("No pude enviar esa respuesta. El pendiente sigue abierto y podés volver a intentar.")
         return handled(session, false)
       end
 
-      owner_message.update!(metadata: owner_message.metadata.merge("delivery_status" => "sent"))
-      item.update!(status: "resolved")
       session.update!(last_owner_message_at: Time.current, draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil)
       if session.active_category == "consultas"
         session.update!(state: "awaiting_learning_confirmation", metadata: session.metadata.merge(
-          "learning_item_id" => item.id, "learning_owner_message_id" => owner_message.id, "learning_answer" => draft
+          "learning_item_id" => item.id, "learning_owner_message_id" => delivery.owner_message.id,
+          "learning_answer" => item.final_response_body, "learning_actor_type" => @actor.type, "learning_actor_id" => @actor.id
         ))
         send_learning_options
         return handled(session, true)
@@ -363,6 +363,8 @@ module Whatsapp
     def create_approved_faq!(session)
       item = @account.owner_tasks.inquiries.find_by(id: session.metadata["learning_item_id"])
       return unless item
+      return unless @actor.can_manage_property?(item.property)
+      return unless session.metadata["learning_actor_type"] == @actor.type && session.metadata["learning_actor_id"] == @actor.id
       return if item.property.faqs.where("lower(question) = ?", item.current_guest_message.downcase).exists?
 
       item.property.faqs.create!(
@@ -374,11 +376,11 @@ module Whatsapp
     end
 
     def active_session
-      session = @account.owner_whatsapp_sessions.active.order(created_at: :desc).first
+      session = participant_sessions.active.order(created_at: :desc).first
       if session&.expires_at&.<=(Time.current)
         close_session!(session)
-        Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
-        return @account.owner_whatsapp_sessions.active.order(created_at: :desc).first
+        Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
+        return participant_sessions.active.order(created_at: :desc).first
       end
       session
     end
@@ -386,18 +388,19 @@ module Whatsapp
     def open_session_if_pending
       return if pending_counts.values.sum.zero?
 
-      session = @account.owner_whatsapp_sessions.where(state: %w[queued on_hold]).order(updated_at: :desc).first
+      session = participant_sessions.where(state: %w[queued on_hold]).order(updated_at: :desc).first
       if session
         session.update!(state: "menu", started_at: session.started_at || Time.current, expires_at: 30.minutes.from_now)
         return session
       end
 
-      @account.owner_whatsapp_sessions.create!(state: "menu", started_at: Time.current, expires_at: 30.minutes.from_now)
+      participant_sessions.create!(state: "menu", started_at: Time.current, expires_at: 30.minutes.from_now,
+                                   actor_role: @actor.role, co_host: @actor.co_host)
     end
 
     def duplicate_webhook?
       return false if message_sid.blank?
-      @account.owner_whatsapp_sessions.order(created_at: :desc).limit(20).any? do |session|
+      participant_sessions.order(created_at: :desc).limit(20).any? do |session|
         Array(session.processed_message_sids).include?(message_sid)
       end
     end
@@ -414,7 +417,7 @@ module Whatsapp
     def finish_session(session)
       close_session!(session)
       send_owner_message("Sesión finalizada.")
-      result = Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+      result = Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
       handled(result.session || session, true, finished: true, follow_up_sent: result.sent?)
     end
 
@@ -430,7 +433,7 @@ module Whatsapp
     def invalid_active_item(session)
       close_session!(session)
       send_owner_message("Ese pendiente ya no está disponible. No se envió ningún mensaje al huésped.")
-      Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+      Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
       handled(session, false)
     end
 
@@ -451,10 +454,10 @@ module Whatsapp
 
     def pending_items(category)
       case category
-      when "pedidos" then @account.owner_tasks.open.requests.order(:created_at)
-      when "consultas" then @account.owner_tasks.open.inquiries.order(:created_at)
-      when "alertas" then Alert.joins(:property).where(properties: { account_id: @account.id }).open.order(:created_at)
-      when "checkouts" then @account.checkout_events.pending.order(:created_at)
+      when "pedidos" then response_pending(@account.owner_tasks.open.requests.where(property_id: @actor.property_ids)).order(:created_at)
+      when "consultas" then response_pending(@account.owner_tasks.open.inquiries.where(property_id: @actor.property_ids)).order(:created_at)
+      when "alertas" then response_pending(Alert.where(property_id: @actor.property_ids).open).order(:created_at)
+      when "checkouts" then @account.checkout_events.pending.where(property_id: @actor.property_ids).order(:created_at)
       else OwnerTask.none
       end
     end
@@ -466,9 +469,34 @@ module Whatsapp
     def validated_active_item(session)
       item = session.active_item
       return unless item && (item.is_a?(CheckoutEvent) ? item.pending? : item.status == "open")
-      return unless item.property.account_id == @account.id
+      return unless @actor.can_manage_property?(item.property)
       return unless item.class.base_class.name == session.active_item_type
+      return if item.respond_to?(:response_delivery_state) && item.response_delivery_state.in?(%w[sending responded])
+      if item.respond_to?(:response_delivery_state) && item.response_delivery_state == "failed"
+        return unless item.resolved_by_actor_type == @actor.type && item.resolved_by_actor_id == @actor.id
+      end
       item
+    end
+
+    def response_pending(scope)
+      pending = scope.where(response_delivery_state: "pending")
+      retryable = scope.where(
+        response_delivery_state: "failed",
+        resolved_by_actor_type: @actor.type,
+        resolved_by_actor_id: @actor.id
+      )
+      pending.or(retryable)
+    end
+
+    def participant_sessions
+      @account.owner_whatsapp_sessions.where(participant_phone: @actor.phone_number)
+    end
+
+    def already_responded_message(item)
+      text = item.final_response_body.presence || item.claimed_response_body
+      message = "Este caso ya fue respondido por otra persona autorizada."
+      message += "\n\nRespuesta enviada:\n“#{text}”" if text.present? && item.response_delivery_state == "responded"
+      message
     end
 
     def initial_notice_variables(template_sid, counts)

@@ -36,6 +36,7 @@ class Account < ApplicationRecord
   has_many :owner_tasks, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
   has_many :checkout_events, dependent: :destroy
+  has_many :co_hosts, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true
@@ -47,6 +48,7 @@ class Account < ApplicationRecord
   validates :ai_max_clarification_attempts,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }
   validate :ai_decision_threshold_order
+  validate :owner_phone_is_not_a_co_host_phone
 
   before_validation :assign_slug, on: :create
   before_validation :normalize_ai_configuration
@@ -124,5 +126,12 @@ class Account < ApplicationRecord
     return if ai_high_score_threshold >= ai_medium_score_threshold
 
     errors.add(:ai_high_score_threshold, "debe ser mayor o igual al threshold medio")
+  end
+
+  def owner_phone_is_not_a_co_host_phone
+    return if owner_whatsapp_number.blank? || !defined?(CoHost)
+    return unless CoHost.where(whatsapp_number: owner_whatsapp_number).exists?
+
+    errors.add(:owner_whatsapp_number, "ya pertenece a un co-host")
   end
 end

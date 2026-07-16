@@ -32,6 +32,7 @@ class PropertiesController < ApplicationController
   def new
     @source_properties = current_account.properties.order(:name)
     @property = current_account.properties.new
+    set_co_host_fields
     @initial_faqs = blank_initial_faqs
     @initial_appliance_guides = blank_initial_appliance_guides
     @initial_recommendations = blank_initial_recommendations
@@ -40,6 +41,7 @@ class PropertiesController < ApplicationController
 
   def create
     @property = current_account.properties.new(property_params)
+    set_co_host_fields
     @initial_faqs = initial_faq_params
     @initial_appliance_guides = initial_appliance_guide_params
     @initial_recommendations = initial_recommendation_params
@@ -64,12 +66,14 @@ class PropertiesController < ApplicationController
   end
 
   def edit
+    set_co_host_fields
     @initial_faqs = blank_initial_faqs
     @initial_appliance_guides = blank_initial_appliance_guides
     @initial_recommendations = blank_initial_recommendations
   end
 
   def update
+    set_co_host_fields
     @initial_faqs = initial_faq_params
     @initial_appliance_guides = initial_appliance_guide_params
     @initial_recommendations = initial_recommendation_params
@@ -181,6 +185,20 @@ class PropertiesController < ApplicationController
     )
   end
 
+  def set_co_host_fields
+    submitted = params.fetch(:property, ActionController::Parameters.new)
+    @co_host_name = submitted.key?(:co_host_name) ? submitted[:co_host_name] : @property&.co_host&.name
+    @co_host_phone_number = submitted.key?(:co_host_phone_number) ? submitted[:co_host_phone_number] : @property&.co_host&.whatsapp_number
+  end
+
+  def assign_co_host
+    Properties::CoHostAssignment.call(
+      property: @property,
+      name: @co_host_name,
+      phone_number: @co_host_phone_number
+    )
+  end
+
   def initial_faq_params(default: blank_initial_faqs)
     permitted = params
       .fetch(:property, ActionController::Parameters.new)
@@ -283,6 +301,10 @@ class PropertiesController < ApplicationController
     Property.transaction do
       saved = @property.save
       raise ActiveRecord::Rollback unless saved
+      unless assign_co_host
+        saved = false
+        raise ActiveRecord::Rollback
+      end
 
       completed_initial_faqs.each do |row|
         @property.faqs.create!(
@@ -305,6 +327,10 @@ class PropertiesController < ApplicationController
     Property.transaction do
       saved = @property.update(property_params)
       raise ActiveRecord::Rollback unless saved
+      unless assign_co_host
+        saved = false
+        raise ActiveRecord::Rollback
+      end
 
       create_initial_faqs!
       create_initial_appliance_guides!

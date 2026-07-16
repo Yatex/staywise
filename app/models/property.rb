@@ -20,6 +20,7 @@ class Property < ApplicationRecord
   ].freeze
 
   belongs_to :account
+  belongs_to :co_host, optional: true
   has_many :knowledge_blocks, dependent: :destroy
   has_many :recommendations, dependent: :destroy
   has_many :sensitive_data, class_name: "PropertySensitiveDatum", dependent: :destroy
@@ -36,6 +37,7 @@ class Property < ApplicationRecord
   validates :public_token, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
   validate :account_property_limit, on: :create
+  validate :co_host_belongs_to_account
 
   has_secure_token :public_token
 
@@ -113,5 +115,11 @@ class Property < ApplicationRecord
     return if account.blank? || account.can_add_property?
 
     errors.add(:base, "Your current plan does not allow another property.")
+  end
+
+  def co_host_belongs_to_account
+    return if co_host.blank? || co_host.account_id == account_id
+
+    errors.add(:co_host, "debe pertenecer al mismo anfitrión")
   end
 end
