@@ -4,16 +4,18 @@ class PropertiesController < ApplicationController
   INITIAL_RECOMMENDATION_DEFAULT_ROWS = 1
   PER_PAGE = 30
 
-  before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr]
+  before_action :set_property, only: [:show, :edit, :update, :destroy, :copy_content, :whatsapp_qr, :update_co_host]
   before_action :ensure_property_limit!, only: [:new, :create]
 
   def index
     @available_tags = current_account.properties.pluck(:tags).flatten.compact_blank.uniq.sort
+    @known_co_hosts = current_account.co_hosts.order(:name).to_a
+    @available_co_hosts = current_account.co_hosts.joins(:properties).distinct.order(:name).to_a
     @current_page = [params[:page].to_i, 1].max
     scope = filtered_properties.order(:name)
     @total_count = scope.count
     @total_pages = (@total_count.to_f / PER_PAGE).ceil
-    @properties = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
+    @properties = scope.includes(:co_host).limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
     property_ids = @properties.map(&:id)
     @knowledge_block_counts = KnowledgeBlock.where(property_id: property_ids).group(:property_id).count
     @recommendation_counts = Recommendation.where(property_id: property_ids).group(:property_id).count
@@ -129,17 +131,40 @@ class PropertiesController < ApplicationController
       filename: "#{@property.display_name.parameterize.presence || "property"}-whatsapp-qr.svg"
   end
 
+  def update_co_host
+    co_host = current_account.co_hosts.find_by(id: params[:co_host_id]) if params[:co_host_id].present?
+    if params[:co_host_id].present? && co_host.blank?
+      redirect_back fallback_location: properties_path, alert: t("ui.properties.co_host_not_found")
+      return
+    end
+
+    submitted = params.fetch(:property, ActionController::Parameters.new)
+    name = co_host&.name || submitted[:co_host_name]
+    phone_number = co_host&.whatsapp_number || submitted[:co_host_phone_number]
+
+    if Properties::CoHostAssignment.call(property: @property, name: name, phone_number: phone_number)
+      redirect_back fallback_location: properties_path, notice: t("ui.properties.co_host_assigned", property: @property.display_name)
+    else
+      redirect_back fallback_location: properties_path, alert: @property.errors.full_messages.to_sentence
+    end
+  end
+
   private
 
   def filtered_properties
     scope = current_account.properties
     scope = scope.where(status: params[:status]) if params[:status].present? && params[:status] != "all"
     scope = scope.tagged_with(params[:tag]) if params[:tag].present?
+    if params[:co_host_id] == "none"
+      scope = scope.where(co_host_id: nil)
+    elsif params[:co_host_id].present?
+      scope = scope.where(co_host_id: params[:co_host_id])
+    end
 
     if params[:q].present?
       query = "%#{Property.sanitize_sql_like(params[:q].strip)}%"
-      scope = scope.where(
-        "properties.name ILIKE :query OR properties.internal_nickname ILIKE :query OR properties.address ILIKE :query",
+      scope = scope.left_joins(:co_host).where(
+        "properties.name ILIKE :query OR properties.internal_nickname ILIKE :query OR properties.address ILIKE :query OR co_hosts.name ILIKE :query OR co_hosts.whatsapp_number ILIKE :query",
         query: query
       )
     end

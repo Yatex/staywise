@@ -32,6 +32,7 @@ Rails.application.routes.draw do
   resources :properties do
     post :copy_content, on: :member
     get :whatsapp_qr, on: :member
+    patch :co_host, action: :update_co_host, on: :member
     resources :knowledge_blocks, except: [:show]
     resources :recommendations, except: [:show]
     resources :faqs, except: [:show]

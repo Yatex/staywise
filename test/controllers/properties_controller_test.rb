@@ -70,6 +70,63 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_nil @property.reload.co_host
   end
 
+  test "property cards show co-hosts and allow assigning one without opening edit" do
+    existing_property = @account.properties.create!(name: "Existing host property")
+    existing = @account.co_hosts.create!(name: "Maria", whatsapp_number: "+59899112233")
+    existing_property.update!(co_host: existing)
+
+    get properties_path
+    assert_response :success
+    assert_select "article", text: /Existing host property.*Maria.*\+59899112233/m
+    assert_select "form[action='#{co_host_property_path(@property)}']", minimum: 2
+
+    patch co_host_property_path(@property), params: { co_host_id: existing.id }
+    assert_redirected_to properties_path
+    assert_equal existing, @property.reload.co_host
+  end
+
+  test "owner can create a co-host directly from the property card" do
+    patch co_host_property_path(@property), params: {
+      property: { co_host_name: "Pedro", co_host_phone_number: "+59899445566" }
+    }
+
+    assert_redirected_to properties_path
+    assert_equal "Pedro", @property.reload.co_host.name
+    assert_equal "+59899445566", @property.co_host.whatsapp_number
+  end
+
+  test "co-host filter and search only return matching properties" do
+    maria_property = @account.properties.create!(name: "Maria apartment")
+    pedro_property = @account.properties.create!(name: "Pedro apartment")
+    maria = @account.co_hosts.create!(name: "Maria Host", whatsapp_number: "+59899112233")
+    pedro = @account.co_hosts.create!(name: "Pedro Host", whatsapp_number: "+59899445566")
+    maria_property.update!(co_host: maria)
+    pedro_property.update!(co_host: pedro)
+
+    get properties_path(co_host_id: maria.id)
+    assert_response :success
+    assert_select "article", count: 1, text: /Maria apartment/
+
+    get properties_path(co_host_id: "none")
+    assert_response :success
+    assert_select "article", count: 1, text: /Step Apartment/
+
+    get properties_path(q: "Pedro Host")
+    assert_response :success
+    assert_select "article", count: 1, text: /Pedro apartment/
+  end
+
+  test "quick assignment rejects a co-host owned by another account" do
+    other = Account.create!(name: "Other co-host owner")
+    foreign_co_host = other.co_hosts.create!(name: "Foreign", whatsapp_number: "+59899778899")
+
+    patch co_host_property_path(@property), params: { co_host_id: foreign_co_host.id }
+
+    assert_redirected_to properties_path
+    assert_equal "El co-host seleccionado no está disponible.", flash[:alert]
+    assert_nil @property.reload.co_host
+  end
+
   test "owner cannot assign their own whatsapp as co-host" do
     @account.update!(owner_whatsapp_number: "+59899112233")
 
