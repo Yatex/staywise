@@ -16,10 +16,6 @@ class PropertiesController < ApplicationController
     @total_count = scope.count
     @total_pages = (@total_count.to_f / PER_PAGE).ceil
     @properties = scope.includes(:co_host).limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
-    property_ids = @properties.map(&:id)
-    @knowledge_block_counts = KnowledgeBlock.where(property_id: property_ids).group(:property_id).count
-    @recommendation_counts = Recommendation.where(property_id: property_ids).group(:property_id).count
-    @open_alert_counts = Alert.operational.open.where(property_id: property_ids).group(:property_id).count
   end
 
   def show

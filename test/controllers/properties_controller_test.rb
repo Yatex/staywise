@@ -71,13 +71,26 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "property cards show co-hosts and allow assigning one without opening edit" do
+    @account.update!(owner_whatsapp_number: "+59899000000", owner_whatsapp_escalations_enabled: true)
     existing_property = @account.properties.create!(name: "Existing host property")
     existing = @account.co_hosts.create!(name: "Maria", whatsapp_number: "+59899112233")
     existing_property.update!(co_host: existing)
 
-    get properties_path
+    previous_whatsapp_from = ENV["TWILIO_WHATSAPP_FROM"]
+    ENV["TWILIO_WHATSAPP_FROM"] = "whatsapp:+59899000099"
+    begin
+      get properties_path
+    ensure
+      ENV["TWILIO_WHATSAPP_FROM"] = previous_whatsapp_from
+    end
     assert_response :success
-    assert_select "article", text: /Existing host property.*Maria.*\+59899112233/m
+    assert_select "article", text: /Existing host property.*Maria/m do
+      assert_select "a", text: "Abrir", count: 1
+      assert_select "button", text: "Copiar QR", count: 1
+      assert_select "a", text: "Descargar QR", count: 1
+      assert_select "button", text: "Copiar link de WhatsApp", count: 0
+      assert_select "p", text: /\+59899112233/, count: 0
+    end
     assert_select "form[action='#{co_host_property_path(@property)}']", minimum: 2
 
     patch co_host_property_path(@property), params: { co_host_id: existing.id }
