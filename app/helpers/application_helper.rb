@@ -1,10 +1,40 @@
 module ApplicationHelper
   def nav_link_class(path)
-    base = "block rounded-lg px-3 py-2 text-sm font-medium transition"
+    base = "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition"
     active = "bg-slate-900 text-white shadow-sm"
     inactive = "text-slate-600 hover:bg-white hover:text-slate-950"
 
     "#{base} #{current_page?(path) ? active : inactive}"
+  end
+
+  def sidebar_icon(name)
+    paths = {
+      dashboard: ["M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z", "M14 14h7v7h-7z"],
+      properties: ["M3 11.5 12 4l9 7.5", "M5.5 10.5V20h13v-9.5", "M9 20v-6h6v6"],
+      conversations: ["M4 5h16v11H9l-5 4z"],
+      requests: ["M8 4h8", "M9 3v3h6V3", "M6 5h12v16H6z", "m9 13 2 2 4-5"],
+      inquiries: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M9.5 9a2.5 2.5 0 1 1 3.6 2.25c-.8.45-1.1.85-1.1 1.75", "M12 17h.01"],
+      alerts: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9", "M10 21h4"],
+      checkouts: ["M5 3h10v18H5z", "M15 12h6", "m18 9 3 3-3 3", "M9 12h.01"],
+      users: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
+      stats: ["M4 20V10", "M10 20V4", "M16 20v-7", "M22 20V7"],
+      errors: ["M10.3 3.7 2.4 18h19.2L13.7 3.7a2 2 0 0 0-3.4 0Z", "M12 9v4", "M12 17h.01"],
+      ai_settings: ["m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2Z", "m19 14 .7 2.3L22 17l-2.3.7L19 20l-.7-2.3L16 17l2.3-.7Z", "M5 15v6", "M2 18h6"],
+      ai_trace: ["M3 12h4l2-6 4 12 2-6h6"]
+    }
+
+    content_tag(
+      :svg,
+      safe_join(paths.fetch(name).map { |path| tag.path(d: path) }),
+      class: "h-5 w-5 shrink-0",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": 1.8,
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": true
+    )
   end
 
   def pill_class(value)

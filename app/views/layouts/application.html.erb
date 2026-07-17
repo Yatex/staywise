@@ -15,10 +15,10 @@
 
   <body class="min-h-screen bg-slate-50 font-sans text-slate-950 antialiased">
     <% if authenticated? %>
-      <div class="min-h-screen lg:flex">
+      <div class="min-h-screen lg:flex" data-controller="sidebar">
         <%= render "shared/sidebar" %>
 
-        <div class="flex-1 lg:pl-72">
+        <div class="min-w-0 flex-1 transition-[padding] duration-200 lg:pl-72" data-sidebar-target="content">
           <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
             <div class="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div>

@@ -1,31 +1,63 @@
-<aside class="border-b border-slate-200 bg-slate-50 px-4 py-4 lg:fixed lg:inset-y-0 lg:left-0 lg:w-72 lg:border-b-0 lg:border-r lg:px-5">
-  <div class="flex items-center gap-3">
-    <%= image_tag "ayla-mark.svg", alt: "Ayla", class: "h-10 w-10 rounded-xl" %>
-    <div>
-      <p class="text-base font-semibold text-slate-950">Ayla Manager</p>
-      <p class="text-xs text-slate-500"><%= t("ui.layout.tagline") %></p>
+<aside class="border-b border-slate-200 bg-slate-50 px-4 py-4 transition-[width,padding] duration-200 lg:fixed lg:inset-y-0 lg:left-0 lg:w-72 lg:border-b-0 lg:border-r lg:px-5" data-sidebar-target="aside">
+  <div class="flex items-center justify-between gap-2" data-sidebar-target="header">
+    <div class="flex items-center gap-3">
+      <%= image_tag "ayla-mark.svg", alt: "Ayla", class: "h-10 w-10 shrink-0 rounded-xl" %>
+      <div data-sidebar-target="label">
+        <p class="whitespace-nowrap text-base font-semibold text-slate-950">Ayla Manager</p>
+        <p class="whitespace-nowrap text-xs text-slate-500"><%= t("ui.layout.tagline") %></p>
+      </div>
     </div>
+    <button
+      type="button"
+      class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-slate-950 lg:flex"
+      aria-label="Contraer menú"
+      aria-expanded="true"
+      title="Contraer menú"
+      data-sidebar-target="toggle"
+      data-action="sidebar#toggle"
+    >
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-sidebar-target="collapseIcon">
+        <path d="m15 18-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <svg class="hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-sidebar-target="expandIcon">
+        <path d="m9 18 6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
   </div>
 
   <nav class="mt-6 grid grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-1">
-    <%= link_to t("ui.nav.dashboard"), dashboard_path, class: nav_link_class(dashboard_path) %>
-    <%= link_to t("ui.nav.properties"), properties_path, class: nav_link_class(properties_path) %>
-    <%= link_to t("ui.nav.conversations"), conversations_path, class: nav_link_class(conversations_path) %>
-    <%= link_to t("ui.nav.guest_requests"), guest_requests_path, class: nav_link_class(guest_requests_path) %>
-    <%= link_to t("ui.nav.inquiries"), inquiries_path, class: nav_link_class(inquiries_path) %>
-    <%= link_to t("ui.nav.alerts"), alerts_path, class: nav_link_class(alerts_path) %>
-    <%= link_to t("ui.nav.checkout_events"), checkout_events_path, class: nav_link_class(checkout_events_path) %>
+    <% [
+      [t("ui.nav.dashboard"), dashboard_path, :dashboard],
+      [t("ui.nav.properties"), properties_path, :properties],
+      [t("ui.nav.conversations"), conversations_path, :conversations],
+      [t("ui.nav.guest_requests"), guest_requests_path, :requests],
+      [t("ui.nav.inquiries"), inquiries_path, :inquiries],
+      [t("ui.nav.alerts"), alerts_path, :alerts],
+      [t("ui.nav.checkout_events"), checkout_events_path, :checkouts]
+    ].each do |label, path, icon| %>
+      <%= link_to path, class: nav_link_class(path), title: label, aria: { label: label }, data: { sidebar_target: "link" } do %>
+        <%= sidebar_icon(icon) %>
+        <span class="whitespace-nowrap" data-sidebar-target="label"><%= label %></span>
+      <% end %>
+    <% end %>
   </nav>
 
   <% if current_user.admin? %>
     <div class="mt-6 border-t border-slate-200 pt-5">
-      <p class="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400"><%= t("ui.nav.admin") %></p>
+      <p class="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400" data-sidebar-target="label"><%= t("ui.nav.admin") %></p>
       <nav class="mt-2 grid gap-1">
-        <%= link_to t("ui.nav.users"), admin_users_path, class: nav_link_class(admin_users_path) %>
-        <%= link_to t("ui.nav.stats"), admin_stats_path, class: nav_link_class(admin_stats_path) %>
-        <%= link_to t("ui.nav.errors"), admin_errors_path, class: nav_link_class(admin_errors_path) %>
-        <%= link_to "IA Config", admin_ai_settings_path, class: nav_link_class(admin_ai_settings_path) %>
-        <%= link_to "AI Trace", admin_ai_traces_path, class: nav_link_class(admin_ai_traces_path) %>
+        <% [
+          [t("ui.nav.users"), admin_users_path, :users],
+          [t("ui.nav.stats"), admin_stats_path, :stats],
+          [t("ui.nav.errors"), admin_errors_path, :errors],
+          ["IA Config", admin_ai_settings_path, :ai_settings],
+          ["AI Trace", admin_ai_traces_path, :ai_trace]
+        ].each do |label, path, icon| %>
+          <%= link_to path, class: nav_link_class(path), title: label, aria: { label: label }, data: { sidebar_target: "link" } do %>
+            <%= sidebar_icon(icon) %>
+            <span class="whitespace-nowrap" data-sidebar-target="label"><%= label %></span>
+          <% end %>
+        <% end %>
       </nav>
     </div>
   <% end %>

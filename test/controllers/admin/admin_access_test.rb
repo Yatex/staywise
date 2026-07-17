@@ -51,8 +51,11 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_users_path
     assert_response :success
-    assert_includes response.body, "Prueba gratis"
+    assert_includes response.body, "Starter"
     assert_includes response.body, @owner_account.active_subscription.trial_ends_on.to_fs(:long)
+    assert_select "[data-controller='sidebar']", count: 1
+    assert_select "button[data-action='sidebar#toggle'][aria-expanded='true']", count: 1
+    assert_select "aside a[title='Propiedades'][aria-label='Propiedades']", count: 1
 
     get admin_stats_path
     assert_response :success
@@ -316,7 +319,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_nil @owner_account.reload.property_limit_override
   end
 
-  test "admin users page shows plan normal override effective and used limits" do
+  test "admin users page shows a compact plan and property limit editor" do
     @owner_account.active_subscription.update!(plan: "business", status: "active")
     @owner_account.update!(property_limit_override: 35)
     sign_in_as(@admin)
@@ -324,13 +327,14 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     get admin_users_path
 
     assert_response :success
-    assert_includes response.body, "Plan facturado: Business"
-    assert_includes response.body, "Límite del plan"
+    assert_includes response.body, "Business"
     assert_includes response.body, "Límite especial"
-    assert_includes response.body, "Límite efectivo"
-    assert_includes response.body, "Propiedades usadas"
+    assert_includes response.body, "Propiedades"
+    assert_includes response.body, "Huéspedes"
+    assert_includes response.body, "Conversaciones"
+    assert_not_includes response.body, ">Cuenta<"
     assert_select "input[name='property_limit_override'][value='35']"
-    assert_includes response.body, "no cambia el plan ni la facturación de Stripe"
+    assert_not_includes response.body, "Vacío usa el límite del plan"
   end
 
   test "admin rejects non-integer and negative overrides" do
