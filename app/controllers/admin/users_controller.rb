@@ -2,7 +2,7 @@ module Admin
   class UsersController < BaseController
     PER_PAGE = 25
 
-    before_action :set_user, only: [:extend_subscription, :update_role]
+    before_action :set_user, only: [:extend_subscription, :update_role, :update_property_limit]
 
     def index
       scope = User.includes(account: :subscriptions).order(created_at: :desc)
@@ -56,6 +56,27 @@ module Admin
       subscription.save!
 
       redirect_to admin_users_path(query_params), notice: "Plan de #{@user.email} extendido hasta #{end_date.to_fs(:long)}."
+    rescue ActiveRecord::RecordInvalid => error
+      redirect_to admin_users_path(query_params), alert: error.record.errors.full_messages.to_sentence
+    end
+
+    def update_property_limit
+      raw_value = params[:property_limit_override].to_s.strip
+      unless raw_value.blank? || raw_value.match?(/\A\d+\z/)
+        redirect_to admin_users_path(query_params), alert: "El límite especial debe ser un número entero igual o mayor a 0."
+        return
+      end
+
+      account = @user.account
+      previous_value = account.property_limit_override
+      account.update!(property_limit_override: raw_value.presence)
+      Rails.logger.info(
+        "[admin-property-limit-override] " \
+        "admin_user_id=#{current_user.id} account_id=#{account.id} " \
+        "previous=#{previous_value.inspect} new=#{account.property_limit_override.inspect}"
+      )
+
+      redirect_to admin_users_path(query_params), notice: "Límite especial actualizado para #{account.name}."
     rescue ActiveRecord::RecordInvalid => error
       redirect_to admin_users_path(query_params), alert: error.record.errors.full_messages.to_sentence
     end

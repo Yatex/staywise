@@ -279,6 +279,70 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert subscription.current_period_end > 40.days.from_now
   end
 
+  test "admin can create edit and remove a property limit override without changing stripe subscription" do
+    subscription = @owner_account.active_subscription
+    subscription.update!(
+      plan: "business",
+      status: "active",
+      stripe_customer_id: "cus_admin_override",
+      stripe_subscription_id: "sub_admin_override"
+    )
+    sign_in_as(@admin)
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "35" }
+    assert_redirected_to admin_users_path
+    assert_equal 35, @owner_account.reload.property_limit_override
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "25" }
+    assert_equal 25, @owner_account.reload.property_limit_override
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "" }
+    assert_nil @owner_account.reload.property_limit_override
+
+    subscription.reload
+    assert_equal "business", subscription.plan
+    assert_equal "active", subscription.status
+    assert_equal "cus_admin_override", subscription.stripe_customer_id
+    assert_equal "sub_admin_override", subscription.stripe_subscription_id
+    assert_nil subscription.current_period_end
+  end
+
+  test "normal user cannot update a property limit override" do
+    sign_in_as(@owner)
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "35" }
+
+    assert_redirected_to dashboard_path
+    assert_nil @owner_account.reload.property_limit_override
+  end
+
+  test "admin users page shows plan normal override effective and used limits" do
+    @owner_account.active_subscription.update!(plan: "business", status: "active")
+    @owner_account.update!(property_limit_override: 35)
+    sign_in_as(@admin)
+
+    get admin_users_path
+
+    assert_response :success
+    assert_includes response.body, "Plan facturado: Business"
+    assert_includes response.body, "Límite del plan"
+    assert_includes response.body, "Límite especial"
+    assert_includes response.body, "Límite efectivo"
+    assert_includes response.body, "Propiedades usadas"
+    assert_select "input[name='property_limit_override'][value='35']"
+    assert_includes response.body, "no cambia el plan ni la facturación de Stripe"
+  end
+
+  test "admin rejects non-integer and negative overrides" do
+    sign_in_as(@admin)
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "3.5" }
+    assert_nil @owner_account.reload.property_limit_override
+
+    patch update_property_limit_admin_user_path(@owner), params: { property_limit_override: "-1" }
+    assert_nil @owner_account.reload.property_limit_override
+  end
+
   test "admin can update another user's role" do
     sign_in_as(@admin)
 

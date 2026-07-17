@@ -47,6 +47,9 @@ class Account < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :ai_max_clarification_attempts,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }
+  validates :property_limit_override,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+    allow_nil: true
   validate :ai_decision_threshold_order
   validate :owner_phone_is_not_a_co_host_phone
 
@@ -58,12 +61,20 @@ class Account < ApplicationRecord
     subscriptions.order(created_at: :desc).first
   end
 
-  def property_limit
+  def plan_property_limit
     active_subscription&.property_limit || Subscription::PLAN_LIMITS.fetch("starter")
   end
 
+  def effective_property_limit
+    property_limit_override.nil? ? plan_property_limit : property_limit_override
+  end
+
+  def property_limit
+    effective_property_limit
+  end
+
   def can_add_property?
-    property_limit.nil? || properties.count < property_limit
+    properties.count < effective_property_limit
   end
 
   def ai_escalates?(alert_type)

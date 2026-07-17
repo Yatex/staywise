@@ -19,6 +19,7 @@ Rails.application.routes.draw do
       member do
         post :extend_subscription
         patch :update_role
+        patch :update_property_limit
       end
     end
     resources :errors, only: [:index, :show] do

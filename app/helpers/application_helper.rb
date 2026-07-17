@@ -132,9 +132,13 @@ module ApplicationHelper
   def subscription_commercial_label(subscription)
     return "Sin suscripción" if subscription.blank?
     return "Prueba gratis" if subscription.trialing?
-    return enum_label(subscription.plan) if subscription.paying?
+    return billing_plan_name(subscription.plan) if subscription.paying?
 
     enum_label(subscription.status)
+  end
+
+  def billing_plan_name(plan)
+    Billing::Plans.all.find { |definition| definition[:id] == plan.to_s }&.fetch(:name) || enum_label(plan)
   end
 
   def subscription_end_label(subscription)

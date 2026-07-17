@@ -112,9 +112,11 @@ class Property < ApplicationRecord
   end
 
   def account_property_limit
-    return if account.blank? || account.can_add_property?
+    return if account.blank?
 
-    errors.add(:base, "Your current plan does not allow another property.")
+    account.with_lock do
+      errors.add(:base, "Your current plan does not allow another property.") unless account.can_add_property?
+    end
   end
 
   def co_host_belongs_to_account

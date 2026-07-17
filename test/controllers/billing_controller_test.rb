@@ -35,6 +35,20 @@ class BillingControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, @account.active_subscription.trial_ends_on.to_fs(:long)
   end
 
+  test "client sees billed business plan and effective special limit without admin controls" do
+    @account.active_subscription.update!(plan: "business", status: "active")
+    @account.update!(property_limit_override: 35)
+    sign_in_as(@user)
+
+    get subscription_path
+
+    assert_response :success
+    assert_includes response.body, "Business"
+    assert_includes response.body, "Límite especial aplicado: 35 propiedades"
+    assert_not_includes response.body, "Plan facturado: Scale"
+    assert_select "input[name='property_limit_override']", count: 0
+  end
+
   private
 
   def sign_in_as(user)

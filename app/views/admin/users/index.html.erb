@@ -23,7 +23,7 @@
     </div>
     <div>
       <%= form.label :plan, class: label_class %>
-      <%= form.select :plan, [["Todos", ""]] + Subscription::PLANS.map { |plan| [enum_label(plan), plan] }, { selected: params[:plan] }, class: field_class %>
+      <%= form.select :plan, [["Todos", ""]] + Subscription::PLANS.map { |plan| [billing_plan_name(plan), plan] }, { selected: params[:plan] }, class: field_class %>
     </div>
     <div>
       <%= form.label :status, class: label_class %>
@@ -44,6 +44,7 @@
             <th class="px-5 py-3">Rol</th>
             <th class="px-5 py-3">Cuenta</th>
             <th class="px-5 py-3">Suscripción</th>
+            <th class="px-5 py-3">Límite de propiedades</th>
             <th class="px-5 py-3">Uso</th>
             <th class="px-5 py-3 text-right">Acciones</th>
           </tr>
@@ -51,6 +52,7 @@
         <tbody class="divide-y divide-slate-100 bg-white">
           <% @users.each do |user| %>
             <% subscription = user.account.active_subscription %>
+            <% properties_used = user.account.properties.count %>
             <% default_end_date = subscription&.current_period_end&.future? ? subscription.current_period_end.to_date : 1.month.from_now.to_date %>
             <tr>
               <td class="px-5 py-4">
@@ -68,15 +70,18 @@
               </td>
               <td class="px-5 py-4">
                 <p class="font-medium text-slate-900"><%= user.account.name %></p>
-                <p class="mt-1 text-xs text-slate-500"><%= user.account.properties.count %> propiedades</p>
+                <p class="mt-1 text-xs text-slate-500"><%= properties_used %> propiedades</p>
               </td>
               <td class="px-5 py-4">
                 <% if subscription.present? %>
                   <div class="flex flex-col gap-1">
                     <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-medium text-slate-900"><%= subscription_commercial_label(subscription) %></span>
+                      <span class="font-medium text-slate-900">Plan facturado: <%= billing_plan_name(subscription.plan) %></span>
                       <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(subscription.status) %>"><%= enum_label(subscription.status) %></span>
                     </div>
+                    <% if subscription.trialing? %>
+                      <p class="text-xs text-slate-500">Prueba gratis</p>
+                    <% end %>
                     <p class="text-xs text-slate-500"><%= subscription_end_label(subscription) %></p>
                     <% if subscription.trialing? && trial_days_label(subscription).present? %>
                       <p class="text-xs text-slate-400"><%= trial_days_label(subscription).capitalize %>.</p>
@@ -84,6 +89,47 @@
                   </div>
                 <% else %>
                   <span class="text-slate-400">Sin suscripción</span>
+                <% end %>
+              </td>
+              <td class="min-w-72 px-5 py-4">
+                <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-xs">
+                  <dt class="text-slate-500">Límite del plan</dt>
+                  <dd class="font-semibold text-slate-900"><%= user.account.plan_property_limit %></dd>
+                  <dt class="text-slate-500">Límite especial</dt>
+                  <dd class="font-semibold text-slate-900"><%= user.account.property_limit_override.nil? ? "Sin override" : user.account.property_limit_override %></dd>
+                  <dt class="text-slate-500">Límite efectivo</dt>
+                  <dd class="font-semibold text-slate-900"><%= user.account.effective_property_limit %></dd>
+                  <dt class="text-slate-500">Propiedades usadas</dt>
+                  <dd class="font-semibold text-slate-900"><%= properties_used %></dd>
+                </dl>
+                <%= form_with url: update_property_limit_admin_user_path(user), method: :patch,
+                  class: "mt-3 space-y-2",
+                  data: {
+                    controller: "property-limit-override",
+                    property_limit_override_used_value: properties_used,
+                    action: "submit->property-limit-override#confirm"
+                  } do |form| %>
+                  <% %i[q role plan status page].each do |param_name| %>
+                    <%= hidden_field_tag param_name, params[param_name] if params[param_name].present? %>
+                  <% end %>
+                  <%= form.label :property_limit_override, "Límite especial de propiedades", class: "block text-xs font-semibold text-slate-700" %>
+                  <div class="flex gap-2">
+                    <%= form.number_field :property_limit_override,
+                      value: user.account.property_limit_override,
+                      min: 0,
+                      step: 1,
+                      placeholder: user.account.plan_property_limit,
+                      class: field_class,
+                      data: {
+                        property_limit_override_target: "input",
+                        action: "input->property-limit-override#updateWarning"
+                      } %>
+                    <%= form.submit "Guardar", class: secondary_button_class %>
+                  </div>
+                  <p class="hidden text-xs font-semibold text-amber-700" data-property-limit-override-target="warning">
+                    Advertencia: este límite es menor que las propiedades usadas. No se borrará ninguna propiedad, pero no podrán crear nuevas.
+                  </p>
+                  <p class="text-xs text-slate-500">Vacío usa el límite del plan. Este valor modifica únicamente la cantidad máxima de propiedades; no cambia el plan ni la facturación de Stripe.</p>
                 <% end %>
               </td>
               <td class="px-5 py-4 text-slate-600">
@@ -96,7 +142,7 @@
                     <% %i[q role plan status page].each do |param_name| %>
                       <%= hidden_field_tag param_name, params[param_name] if params[param_name].present? %>
                     <% end %>
-                    <%= form.select :plan, Subscription::PLANS.map { |plan| [enum_label(plan), plan] }, { selected: subscription&.plan || "starter" }, class: field_class %>
+                    <%= form.select :plan, Subscription::PLANS.map { |plan| [billing_plan_name(plan), plan] }, { selected: subscription&.plan || "starter" }, class: field_class %>
                     <%= form.date_field :end_date, value: default_end_date, min: Date.current, class: field_class %>
                     <%= form.submit "Extender", class: primary_button_class %>
                   <% end %>

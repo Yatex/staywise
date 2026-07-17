@@ -18,7 +18,10 @@
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
         <p class="text-sm text-slate-500">Límite de propiedades</p>
-        <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.property_limit || "Ilimitado" %></p>
+        <p class="mt-2 text-lg font-semibold text-slate-950"><%= current_account.effective_property_limit %></p>
+        <% if current_account.property_limit_override.present? || current_account.property_limit_override == 0 %>
+          <p class="mt-1 text-xs text-slate-500">Límite especial aplicado: <%= current_account.property_limit_override %> propiedades.</p>
+        <% end %>
       </div>
       <div class="rounded-lg bg-slate-50 p-4">
         <p class="text-sm text-slate-500"><%= @subscription&.trialing? ? "Fin de prueba" : "Propiedades usadas" %></p>
