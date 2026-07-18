@@ -2,12 +2,12 @@ module Whatsapp
   class OwnerEscalationNotifier
     Result = Struct.new(:sent?, :session, :error, keyword_init: true)
 
-    def self.call(alert: nil, item: nil, account: nil, actor: nil, provider: ProviderFactory.build)
+    def self.call(alert: nil, item: nil, account: nil, actor: nil, provider: ProviderFactory.build, allow_after_observer: false)
       item ||= alert
       account ||= item&.property&.account
       if item.present? && actor.blank?
         results = HostActor.for_property(item.property).map do |recipient|
-          new(actor: recipient, provider: provider).call
+          new(actor: recipient, provider: provider, allow_after_observer: allow_after_observer).call
         rescue StandardError => error
           ErrorReporter.report(error, source: "owner_escalation_notifier", severity: "error", account: account,
                                property: item.property, context: { recipient_role: recipient.role, recipient_phone: recipient.phone_number })
@@ -17,7 +17,7 @@ module Whatsapp
       end
 
       actor ||= HostActor.owner(account)
-      new(actor: actor, provider: provider).call
+      new(actor: actor, provider: provider, allow_after_observer: allow_after_observer).call
     end
 
     def self.drain_queue(account:, provider: ProviderFactory.build, except_session: nil)
@@ -32,16 +32,23 @@ module Whatsapp
       accounts.filter_map { |account| call(account: account, provider: provider) }.find(&:sent?)
     end
 
-    def initialize(actor:, provider:)
+    def initialize(actor:, provider:, allow_after_observer: false)
       @actor = actor
       @account = actor.account
       @provider = provider
+      @allow_after_observer = allow_after_observer
     end
 
     def call
       return Result.new(sent?: false, session: nil, error: "host_whatsapp_not_configured") if @actor.phone_number.blank?
 
       expire_active_session!
+      if @account.observer_whatsapp_sessions.active.exists?(participant_phone: @actor.phone_number)
+        return Result.new(sent?: false, session: nil, error: "observer_session_active")
+      end
+      if !@allow_after_observer && observer_notice_recent?
+        return Result.new(sent?: false, session: nil, error: "observer_notice_recent")
+      end
       if (session = participant_sessions.active.order(created_at: :desc).first)
         return Result.new(sent?: false, session: session, error: "owner_session_active")
       end
@@ -136,6 +143,13 @@ module Whatsapp
 
     def participant_sessions
       @account.owner_whatsapp_sessions.where(participant_phone: @actor.phone_number)
+    end
+
+    def observer_notice_recent?
+      ConversationObserverActivity
+        .where(observer: @actor.observer, property_id: @actor.property_ids)
+        .where("observer_notified_at >= ?", ConversationObserverActivity::NOTIFICATION_WINDOW.ago)
+        .exists?
     end
 
     def delivery_success?(delivery)

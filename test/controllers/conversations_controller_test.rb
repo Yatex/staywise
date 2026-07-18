@@ -64,6 +64,37 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-conversation-refresh-target='status']"
   end
 
+  test "direct conversation link returns to the conversation after login" do
+    delete logout_path
+    get conversation_path(@conversation)
+
+    assert_redirected_to login_path
+
+    post login_path, params: { email: @user.email, password: "password123" }
+
+    assert_redirected_to conversation_path(@conversation)
+  end
+
+  test "observer indicators filter unread activity and opening marks only the owner activity seen" do
+    @account.update!(observer_mode_enabled: true, owner_whatsapp_number: "+59899220001")
+    @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "Respuesta observable")
+    activity = @account.conversation_observer_activities.find_by!(conversation: @conversation)
+
+    get conversations_path(filter: "unread")
+    assert_response :success
+    assert_includes response.body, "Con novedades"
+    assert_includes response.body, "Nueva actividad"
+    assert_includes response.body, "Ayla respondió"
+
+    get conversation_path(@conversation)
+    assert_response :success
+    assert activity.reload.observer_seen_at.present?
+    assert_equal 0, activity.unread_activity_count
+
+    get conversations_path(filter: "unread")
+    assert_not_includes response.body, "15550002000"
+  end
+
   test "refresh endpoint renders only live conversation fragments" do
     get refresh_conversation_path(@conversation)
 

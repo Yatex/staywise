@@ -1,15 +1,24 @@
 <% content_for :page_title, t("ui.nav.conversations") %>
 
 <div class="space-y-6">
-  <div>
-    <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.conversations.title") %></h2>
-    <p class="mt-1 text-sm text-slate-500"><%= t("ui.conversations.subtitle") %></p>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-950"><%= t("ui.conversations.title") %></h2>
+      <p class="mt-1 text-sm text-slate-500"><%= t("ui.conversations.subtitle") %></p>
+    </div>
+    <% if current_user.owner? || current_user.admin? %>
+      <div class="flex gap-2">
+        <%= link_to "Todas", conversations_path, class: params[:filter].blank? ? primary_button_class : secondary_button_class %>
+        <%= link_to "Con novedades", conversations_path(filter: "unread"), class: params[:filter] == "unread" ? primary_button_class : secondary_button_class %>
+      </div>
+    <% end %>
   </div>
 
   <div class="<%= card_class %> overflow-hidden">
     <div class="divide-y divide-slate-100">
       <% @conversations.each do |conversation| %>
         <% display_property = @conversation_display_properties[@conversation_display_property_ids[conversation.id]] || conversation.property %>
+        <% observer_activity = @observer_activities[conversation.id] %>
         <%= link_to conversation_path(conversation), class: "block px-5 py-4 transition hover:bg-slate-50" do %>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -17,9 +26,20 @@
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span class="<%= property_tag_class %>"><%= display_property.display_name %></span>
                 <span class="text-sm text-slate-500"><%= t("ui.conversations.messages_count", count: @message_counts[conversation.id].to_i) %></span>
+                <% if observer_activity.present? %>
+                  <span class="text-xs text-slate-500">Última actividad <%= time_ago_in_words(observer_activity.last_activity_at) %> atrás</span>
+                <% end %>
+                <% if @last_ai_responses[conversation.id].present? %>
+                  <span class="text-xs text-slate-500">Ayla respondió <%= time_ago_in_words(@last_ai_responses[conversation.id]) %> atrás</span>
+                <% end %>
               </div>
             </div>
             <div class="flex items-center gap-2">
+              <% if observer_activity&.observer_seen_at.nil? && observer_activity&.unread_activity_count.to_i.positive? %>
+                <span class="rounded-full bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">Nueva actividad · <%= observer_activity.unread_activity_count %></span>
+              <% elsif observer_activity&.observer_seen_at.present? %>
+                <span class="text-xs font-medium text-slate-400">Vista</span>
+              <% end %>
               <% unless conversation.ai_enabled? %>
                 <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"><%= t("ui.conversations.ai_off") %></span>
               <% end %>

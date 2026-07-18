@@ -63,6 +63,7 @@ Rails.application.routes.draw do
   end
 
   resource :settings, only: [:show, :update]
+  patch "settings/co_hosts/:id/observer_mode", to: "settings#update_co_host_observer_mode", as: :co_host_observer_mode
 
   namespace :webhooks do
     post :whatsapp, to: "whatsapp#create"

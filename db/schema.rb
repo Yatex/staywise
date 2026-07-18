@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_17_170200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -42,6 +42,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
     t.integer "ai_max_clarification_attempts", default: 2, null: false
     t.integer "ai_answer_confidence_threshold", default: 90, null: false
     t.integer "property_limit_override"
+    t.boolean "observer_mode_enabled", default: false, null: false
+    t.datetime "observer_mode_activated_at"
     t.index ["owner_whatsapp_number"], name: "index_accounts_on_owner_whatsapp_number"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
     t.check_constraint "property_limit_override IS NULL OR property_limit_override >= 0", name: "accounts_property_limit_override_non_negative"
@@ -167,8 +169,32 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
     t.string "whatsapp_number", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "observer_mode_enabled", default: false, null: false
+    t.datetime "observer_mode_activated_at"
     t.index ["account_id"], name: "index_co_hosts_on_account_id"
     t.index ["whatsapp_number"], name: "index_co_hosts_on_whatsapp_number", unique: true
+  end
+
+  create_table "conversation_observer_activities", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "property_id", null: false
+    t.string "observer_type", null: false
+    t.bigint "observer_id", null: false
+    t.datetime "last_activity_at", null: false
+    t.datetime "observer_notified_at"
+    t.datetime "observer_seen_at"
+    t.integer "unread_activity_count", default: 0, null: false
+    t.string "latest_message_direction", null: false
+    t.text "last_notification_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_conversation_observer_activities_on_account_id"
+    t.index ["conversation_id"], name: "index_conversation_observer_activities_on_conversation_id"
+    t.index ["observer_type", "observer_id", "conversation_id"], name: "index_observer_activities_unique_recipient_conversation", unique: true
+    t.index ["observer_type", "observer_id", "observer_seen_at", "last_activity_at"], name: "index_observer_activities_pending_by_recipient"
+    t.index ["property_id"], name: "index_conversation_observer_activities_on_property_id"
+    t.check_constraint "unread_activity_count >= 0", name: "observer_activities_unread_non_negative"
   end
 
   create_table "conversations", force: :cascade do |t|
@@ -305,6 +331,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["property_id"], name: "index_messages_on_property_id"
     t.index ["sender"], name: "index_messages_on_sender"
+  end
+
+  create_table "observer_whatsapp_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "co_host_id"
+    t.bigint "current_activity_id"
+    t.string "participant_phone", null: false
+    t.string "actor_role", null: false
+    t.string "state", default: "active", null: false
+    t.datetime "started_at", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "last_prompted_at"
+    t.datetime "resolved_at"
+    t.jsonb "processed_message_sids", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "participant_phone"], name: "index_one_active_observer_session_per_participant", unique: true, where: "((state)::text = 'active'::text)"
+    t.index ["account_id"], name: "index_observer_whatsapp_sessions_on_account_id"
+    t.index ["co_host_id"], name: "index_observer_whatsapp_sessions_on_co_host_id"
+    t.index ["current_activity_id"], name: "index_observer_whatsapp_sessions_on_current_activity_id"
+    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying, 'co_host'::character varying]::text[])", name: "observer_sessions_actor_role_check"
+    t.check_constraint "state::text = ANY (ARRAY['active'::character varying, 'resolved'::character varying]::text[])", name: "observer_sessions_state_check"
   end
 
   create_table "operational_errors", force: :cascade do |t|
@@ -479,6 +527,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
   add_foreign_key "checkout_events", "messages", column: "source_message_id"
   add_foreign_key "checkout_events", "properties"
   add_foreign_key "co_hosts", "accounts"
+  add_foreign_key "conversation_observer_activities", "accounts"
+  add_foreign_key "conversation_observer_activities", "conversations"
+  add_foreign_key "conversation_observer_activities", "properties"
   add_foreign_key "conversations", "guests"
   add_foreign_key "conversations", "properties"
   add_foreign_key "faqs", "alerts", column: "source_alert_id"
@@ -496,6 +547,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_150000) do
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "properties"
+  add_foreign_key "observer_whatsapp_sessions", "accounts"
+  add_foreign_key "observer_whatsapp_sessions", "co_hosts"
+  add_foreign_key "observer_whatsapp_sessions", "conversation_observer_activities", column: "current_activity_id"
   add_foreign_key "operational_errors", "accounts"
   add_foreign_key "operational_errors", "properties"
   add_foreign_key "owner_whatsapp_sessions", "accounts"

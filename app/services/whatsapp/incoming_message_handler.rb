@@ -10,9 +10,14 @@ module Whatsapp
 
     def call
       parsed = InboundMessageParser.new(@params).call
-      raise ArgumentError, "El mensaje entrante de WhatsApp está vacío." if parsed.body.blank?
+      if parsed.body.blank? && parsed.interactive_action_id.blank? && !media_message?(parsed)
+        raise ArgumentError, "El mensaje entrante de WhatsApp está vacío."
+      end
 
       if OwnerInboundMessageHandler.owner_message?(parsed)
+        observer_handler = ObserverInboundMessageHandler.new(parsed, provider: @provider)
+        return observer_handler.call if observer_handler.handle?
+
         return OwnerInboundMessageHandler.new(parsed, provider: @provider).call
       end
 
@@ -25,7 +30,7 @@ module Whatsapp
       guest_message = conversation.messages.create!(
         sender: "guest",
         channel: "whatsapp",
-        body: parsed.body,
+        body: parsed.body.presence || "Archivo multimedia recibido.",
         metadata: guest_message_metadata(parsed, property)
       )
 
@@ -36,6 +41,10 @@ module Whatsapp
           "handled_by" => "whatsapp_routing"
         )
         guest_message.save!
+      end
+
+      if parsed.body.blank? && media_message?(parsed)
+        return { conversation: conversation, message: guest_message, decision: nil, alert: nil, replied: false }
       end
 
       unless account.ai_active? && property.ai_enabled?
@@ -61,6 +70,11 @@ module Whatsapp
     end
 
     private
+
+    def media_message?(parsed)
+      metadata = parsed.metadata.to_h
+      metadata["NumMedia"].to_i.positive? || metadata.keys.any? { |key| key.to_s.match?(/\AMediaUrl\d+\z/) }
+    end
 
     def resolve_property(parsed)
       if parsed.property_token.present?

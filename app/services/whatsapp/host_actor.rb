@@ -12,7 +12,8 @@ module Whatsapp
 
     def self.resolve(phone_number)
       phone = normalize(phone_number)
-      owner_accounts = Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: phone).to_a
+      owner_accounts = Account.where(owner_whatsapp_number: phone)
+        .where("owner_whatsapp_escalations_enabled = ? OR observer_mode_enabled = ?", true, true).to_a
       co_hosts = CoHost.joins(:properties).where(whatsapp_number: phone).distinct.includes(:account).to_a
       actors = owner_accounts.map { |account| owner(account) } + co_hosts.map { |co_host| self.co_host(co_host) }
       raise ActiveRecord::RecordNotFound, "WhatsApp host identity is ambiguous" unless actors.one?
@@ -22,14 +23,15 @@ module Whatsapp
 
     def self.for_property(property)
       actors = []
-      actors << owner(property.account) if property.account.owner_whatsapp_configured?
+      actors << owner(property.account) if property.account.owner_whatsapp_configured? || property.account.observer_mode_configured?
       actors << co_host(property.co_host) if property.co_host.present?
       actors.uniq { |actor| normalize(actor.phone_number) }
     end
 
     def self.authorized_phone?(phone_number)
       phone = normalize(phone_number)
-      Account.where(owner_whatsapp_escalations_enabled: true, owner_whatsapp_number: phone).exists? ||
+      Account.where(owner_whatsapp_number: phone)
+        .where("owner_whatsapp_escalations_enabled = ? OR observer_mode_enabled = ?", true, true).exists? ||
         CoHost.joins(:properties).where(whatsapp_number: phone).exists?
     end
 
@@ -62,6 +64,18 @@ module Whatsapp
 
     def can_manage_property?(property)
       property.account_id == account.id && (owner? || property.co_host_id == co_host.id)
+    end
+
+    def observer
+      owner? ? account : co_host
+    end
+
+    def observer_mode_enabled?
+      observer.observer_mode_enabled?
+    end
+
+    def observer_mode_activated_at
+      observer.observer_mode_activated_at
     end
   end
 end

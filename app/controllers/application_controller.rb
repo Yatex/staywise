@@ -30,7 +30,10 @@ class ApplicationController < ActionController::Base
   end
 
   def require_authentication
-    redirect_to login_path unless authenticated?
+    return if authenticated?
+
+    session[:return_to_after_login] = request.fullpath if request.get? && request.format.html?
+    redirect_to login_path
   end
 
   def sign_in(user)

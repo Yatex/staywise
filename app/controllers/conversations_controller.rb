@@ -6,6 +6,9 @@ class ConversationsController < ApplicationController
     scope = scoped_conversations
       .includes(:guest, :property)
       .recent
+    if params[:filter] == "unread" && observer_for_current_user.present?
+      scope = scope.where(id: observer_for_current_user.conversation_observer_activities.unseen.select(:conversation_id))
+    end
     @total_count = scope.count
     @total_pages = (@total_count.to_f / PER_PAGE).ceil
     @conversations = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
@@ -18,14 +21,19 @@ class ConversationsController < ApplicationController
       .each_with_object({}) { |(conversation_id, property_id), memo| memo[conversation_id] ||= property_id }
     @conversation_display_properties = Property.where(id: latest_property_ids.values.compact.uniq).index_by(&:id)
     @conversation_display_property_ids = latest_property_ids
+    @observer_activities = observer_activities_for(conversation_ids).index_by(&:conversation_id)
+    @last_ai_responses = Message.where(account_id: current_account.id, conversation_id: conversation_ids, sender: "ai")
+      .group(:conversation_id).maximum(:created_at)
   end
 
   def show
     set_conversation
+    mark_observer_activity_seen!
   end
 
   def refresh
     set_conversation
+    mark_observer_activity_seen!
     render partial: "refresh", locals: { conversation: @conversation, messages: @messages, alerts: @alerts, guest_requests: @guest_requests }
   end
 
@@ -91,5 +99,22 @@ class ConversationsController < ApplicationController
     return conversation.property if conversation.property.account_id == current_account.id
 
     Property.find_by(id: conversation.messages.where(account_id: current_account.id).order(created_at: :desc, id: :desc).pick(:property_id))
+  end
+
+  def observer_for_current_user
+    return unless current_user.owner? || current_user.admin?
+
+    current_account
+  end
+
+  def observer_activities_for(conversation_ids)
+    return ConversationObserverActivity.none if observer_for_current_user.blank?
+
+    observer_for_current_user.conversation_observer_activities.where(conversation_id: conversation_ids)
+  end
+
+  def mark_observer_activity_seen!
+    activity = observer_activities_for([@conversation.id]).find_by(conversation_id: @conversation.id)
+    activity&.mark_seen! if activity&.observer_seen_at.nil? || activity&.unread_activity_count.to_i.positive?
   end
 end

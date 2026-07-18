@@ -9,6 +9,7 @@ class SettingsController < ApplicationController
   def update
     @account = current_account
     @user = current_user
+    return head :forbidden if observer_preference_submitted? && !observer_preference_authorized?
 
     Account.transaction do
       @account.update!(account_params) if params[:account].present?
@@ -24,10 +25,18 @@ class SettingsController < ApplicationController
     render :show, status: :unprocessable_entity
   end
 
+  def update_co_host_observer_mode
+    return head :forbidden unless observer_preference_authorized?
+
+    co_host = current_account.co_hosts.find(params[:id])
+    co_host.update!(observer_mode_enabled: ActiveModel::Type::Boolean.new.cast(params[:observer_mode_enabled]))
+    redirect_to settings_path, notice: "Modo observador del co-host actualizado."
+  end
+
   private
 
   def account_params
-    params.require(:account).permit(:ai_active, :owner_whatsapp_number, :owner_whatsapp_escalations_enabled)
+    params.require(:account).permit(:ai_active, :owner_whatsapp_number, :owner_whatsapp_escalations_enabled, :observer_mode_enabled)
   end
 
   def update_user!
@@ -47,5 +56,13 @@ class SettingsController < ApplicationController
 
   def password_change_requested?(permitted)
     permitted.values_at(:current_password, :password, :password_confirmation).any?(&:present?)
+  end
+
+  def observer_preference_submitted?
+    params[:account].respond_to?(:key?) && params[:account].key?(:observer_mode_enabled)
+  end
+
+  def observer_preference_authorized?
+    current_user.owner? || current_user.admin?
   end
 end

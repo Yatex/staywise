@@ -14,8 +14,9 @@ class SessionsController < ApplicationController
         return
       end
 
+      return_to = session.delete(:return_to_after_login)
       sign_in(user)
-      redirect_to dashboard_path, notice: "Sesión iniciada."
+      redirect_to(return_to.presence || dashboard_path, notice: "Sesión iniciada.")
     else
       flash.now[:alert] = "El email o la contraseña son incorrectos."
       render :new, status: :unprocessable_entity
