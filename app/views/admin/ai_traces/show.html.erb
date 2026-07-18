@@ -77,36 +77,117 @@
   </section>
 
   <section class="<%= card_class %> p-5">
-    <h3 class="text-base font-semibold text-slate-950">Tools llamadas</h3>
+    <h3 class="text-base font-semibold text-slate-950">Tool Requests</h3>
+    <p class="mt-1 text-sm text-slate-500">Contexto resuelto por Rails, request exacto, respuesta sanitizada completa y evidencia asociada a cada ejecución.</p>
     <% if @trace.tool_calls.present? %>
-      <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
-        <table class="min-w-full divide-y divide-slate-200 text-sm">
-          <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th class="px-3 py-2">Tool</th>
-              <th class="px-3 py-2">Timestamp</th>
-              <th class="px-3 py-2">Latencia</th>
-              <th class="px-3 py-2">Estado</th>
-              <th class="px-3 py-2">Debug</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 bg-white">
-            <% @trace.tool_calls.each do |tool| %>
-              <tr>
-                <td class="px-3 py-3 font-medium text-slate-950"><%= tool["tool_name"] || tool["toolName"] || "tool" %></td>
-                <td class="px-3 py-3 text-slate-600"><%= tool["timestamp"] || tool["called_at"] || "Sin datos" %></td>
-                <td class="px-3 py-3 text-slate-600"><%= tool["latency_ms"].present? ? "#{tool["latency_ms"]} ms" : "Sin datos" %></td>
-                <td class="px-3 py-3 text-slate-600"><%= tool["error"].present? ? "Error" : "OK" %></td>
-                <td class="px-3 py-3">
-                  <details>
-                    <summary class="cursor-pointer font-semibold text-slate-700">Input/output</summary>
-                    <pre class="mt-2 max-w-xl overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(tool) %></pre>
+      <div class="mt-4 space-y-4">
+        <% @trace.tool_calls.each do |tool| %>
+          <% tool = tool.to_h %>
+          <% tool_context = tool["context"].to_h %>
+          <% tool_request = tool["request"].presence || tool["input"].presence || {} %>
+          <% tool_response = tool.key?("response") ? tool["response"] : tool["output_summary"] %>
+          <% returned_evidence = Array(tool["evidence_returned"]) %>
+          <% referenced_evidence = Array(tool["evidence_referenced"]) %>
+          <article class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div class="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-sm font-semibold text-slate-950"><%= tool["tool_name"] || tool["toolName"] || "tool" %></span>
+                <span class="rounded-full px-2 py-0.5 text-xs font-semibold <%= tool["error"].present? ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700" %>"><%= tool["error"].present? ? "Error" : "OK" %></span>
+              </div>
+              <p class="text-xs text-slate-500">
+                <%= tool["timestamp"] || tool["called_at"] || "Sin timestamp" %>
+                · <%= tool["latency_ms"].present? ? "#{tool["latency_ms"]} ms" : "Sin latencia" %>
+              </p>
+            </div>
+
+            <div class="space-y-5 p-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Contexto resuelto por Rails</p>
+                <% if tool_context.present? %>
+                  <dl class="mt-2 grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                    <div><dt class="text-xs text-slate-500">Conversation ID</dt><dd class="font-semibold text-slate-900"><%= tool_context["conversation_id"] || "Sin datos" %></dd></div>
+                    <div><dt class="text-xs text-slate-500">Reservation ID</dt><dd class="font-semibold text-slate-900"><%= tool_context["reservation_id"].presence || "Sin reserva" %></dd></div>
+                    <div><dt class="text-xs text-slate-500">Property</dt><dd class="font-semibold text-slate-900"><%= tool_context["property_name"] || "Sin datos" %> · ID <%= tool_context["property_id"] || "N/A" %></dd></div>
+                    <div><dt class="text-xs text-slate-500">Account</dt><dd class="font-semibold text-slate-900"><%= tool_context["account_name"] || "Sin datos" %> · ID <%= tool_context["account_id"] || "N/A" %></dd></div>
+                    <div class="sm:col-span-2 xl:col-span-4"><dt class="text-xs text-slate-500">Decision Context ID</dt><dd class="break-all font-mono text-xs font-semibold text-slate-900"><%= tool_context["decision_context_fingerprint"] || "Sin datos" %></dd></div>
+                  </dl>
+                <% else %>
+                  <p class="mt-2 text-sm text-slate-500">Este trace es anterior a la captura de contexto por tool.</p>
+                <% end %>
+              </div>
+
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Request de la AI</p>
+                  <pre class="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(tool_request) %></pre>
+                </div>
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tool Response</p>
+                  <details class="mt-2 rounded-lg border border-slate-200 p-3">
+                    <summary class="cursor-pointer text-sm font-semibold text-slate-700">Ver respuesta completa</summary>
+                    <pre class="mt-3 max-h-[36rem] overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(tool_response) %></pre>
                   </details>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Evidence returned · <%= returned_evidence.size %></p>
+                  <p class="text-xs font-semibold text-indigo-700">Evidence referenced · <%= referenced_evidence.size %></p>
+                </div>
+                <% if returned_evidence.present? %>
+                  <div class="mt-2 space-y-2">
+                    <% returned_evidence.each do |evidence| %>
+                      <% evidence = evidence.to_h %>
+                      <details class="rounded-lg border border-slate-200 p-3">
+                        <summary class="cursor-pointer list-none">
+                          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p class="font-mono text-xs font-semibold text-slate-900"><%= evidence["evidence_id"] || "Sin Evidence ID" %></p>
+                              <p class="mt-1 text-sm font-semibold text-slate-950"><%= evidence["title"].presence || "Sin título" %></p>
+                              <p class="mt-1 text-xs text-slate-500">
+                                Tipo: <%= evidence["type"].presence || "N/A" %>
+                                · Scope: <%= evidence["scope"].presence || "N/A" %>
+                                · Property: <%= evidence["property_name"].presence || "N/A" %> (#<%= evidence["property_id"].presence || "N/A" %>)
+                                · Account: <%= evidence["account_name"].presence || "N/A" %> (#<%= evidence["account_id"].presence || "N/A" %>)
+                              </p>
+                            </div>
+                            <div class="flex shrink-0 flex-wrap gap-2">
+                              <span class="rounded-full px-2 py-1 text-xs font-semibold <%= evidence["referenced"] ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600" %>"><%= evidence["referenced"] ? "Referenced" : "Returned only" %></span>
+                              <% unless evidence["validation_passed"].nil? %>
+                                <span class="rounded-full px-2 py-1 text-xs font-semibold <%= evidence["validation_passed"] ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700" %>"><%= evidence["validation_passed"] ? "✓ Validada" : "✗ Rechazada" %></span>
+                              <% end %>
+                            </div>
+                          </div>
+                        </summary>
+                        <div class="mt-3 border-t border-slate-100 pt-3">
+                          <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Contenido completo recibido por la AI</p>
+                          <pre class="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-3 text-sm text-slate-800"><%= evidence["content"].presence || "Sin contenido" %></pre>
+                          <p class="mt-3 text-sm <%= evidence["validation_passed"] == false ? "text-rose-700" : "text-slate-600" %>">
+                            Validación Rails: <strong><%= evidence["validation_label"].presence || "Sin datos" %></strong>
+                          </p>
+                          <% if evidence["validation"].present? %>
+                            <details class="mt-2">
+                              <summary class="cursor-pointer text-xs font-semibold text-slate-600">Ver validación completa</summary>
+                              <pre class="mt-2 overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(evidence["validation"]) %></pre>
+                            </details>
+                          <% end %>
+                        </div>
+                      </details>
+                    <% end %>
+                  </div>
+                <% else %>
+                  <p class="mt-2 text-sm text-slate-500">La tool no devolvió evidencia catalogable o el trace es anterior a esta observabilidad.</p>
+                <% end %>
+              </div>
+
+              <details class="rounded-lg border border-slate-200 p-3">
+                <summary class="cursor-pointer text-xs font-semibold text-slate-600">Ver registro completo de la tool</summary>
+                <pre class="mt-2 max-h-[40rem] overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-100"><%= trace_json(tool) %></pre>
+              </details>
+            </div>
+          </article>
+        <% end %>
       </div>
     <% else %>
       <p class="mt-3 text-sm text-slate-500">No se registraron tools para esta decisión.</p>
@@ -114,7 +195,8 @@
   </section>
 
   <section class="<%= card_class %> p-5">
-    <h3 class="text-base font-semibold text-slate-950">Evidence</h3>
+    <h3 class="text-base font-semibold text-slate-950">Evidence referenced</h3>
+    <p class="mt-1 text-sm text-slate-500">Evidencia citada por la decisión final y validada por Rails.</p>
     <% if evidence_trace.present? %>
       <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
         <table class="min-w-full divide-y divide-slate-200 text-sm">

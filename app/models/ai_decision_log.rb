@@ -1,6 +1,7 @@
 class AIDecisionLog < ApplicationRecord
   SENSITIVE_KEYS = /(authorization|token|secret|password|wifi_password|auth|api_key|key|code|lockbox|access_code|door_code)/i
   SENSITIVE_TEXT_KEYS = /(password|wifi|wi-fi|contrase|clave|code|c[oó]digo|lockbox|access|acceso|door|puerta|key|llave)/i
+  SENSITIVE_EVIDENCE_DESCRIPTOR = /(sensitive|password|wifi_(?:name|password)|contrase|clave|(?:access|door|gate|alarm|lockbox|building_access)_code|access_instructions|key_location|device_password|c[oó]digo)/i
   CHECKIN_PATTERN = /(check[\s-]?in|checkin|ingreso|entrada|arriv[ée]e|arrivée)/i
   REDACTED = "[REDACTED]".freeze
 
@@ -21,9 +22,14 @@ class AIDecisionLog < ApplicationRecord
   def self.sanitize_trace(value, parent_key = nil)
     case value
     when Hash
+      sensitive_evidence = sensitive_evidence_hash?(value)
       value.to_h.each_with_object({}) do |(key, item), result|
         key_string = key.to_s
-        result[key_string] = sensitive_key?(key_string) ? REDACTED : sanitize_trace(item, key_string)
+        result[key_string] = if sensitive_key?(key_string) || (sensitive_evidence && evidence_content_key?(key_string))
+          REDACTED
+        else
+          sanitize_trace(item, key_string)
+        end
       end
     when Array
       value.map { |item| sanitize_trace(item, parent_key) }
@@ -51,7 +57,25 @@ class AIDecisionLog < ApplicationRecord
   private_class_method def self.sensitive_key?(key)
     return false if key.to_s.in?(%w[authorized provenance_authorized])
 
-    key.to_s.match?(SENSITIVE_KEYS)
+    key.to_s == "decision_context_id" || key.to_s.match?(SENSITIVE_KEYS)
+  end
+
+  private_class_method def self.sensitive_evidence_hash?(value)
+    hash = value.to_h.stringify_keys
+    descriptor = [
+      hash["field"],
+      hash["label"],
+      hash["title"],
+      hash["source_type"],
+      hash["type"],
+      hash["sensitivity"]
+    ].compact.join(" ")
+
+    descriptor.match?(SENSITIVE_EVIDENCE_DESCRIPTOR)
+  end
+
+  private_class_method def self.evidence_content_key?(key)
+    key.to_s.in?(%w[value content excerpt text preview])
   end
 
   private_class_method def self.sensitive_text_key?(key)

@@ -195,6 +195,16 @@ module AI
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       original_decision = rejected_decision || decision
       evidence_ids = decision_evidence_ids(original_decision)
+      @tool_calls = ToolTraceEnricher.new(
+        conversation: @conversation,
+        guest_message: @guest_message,
+        tool_calls: @tool_calls,
+        evidence_catalog: @ai_response_payload.to_h.deep_stringify_keys.dig("audit", "evidence_catalog"),
+        referenced_evidence_ids: evidence_ids,
+        validation_results: validation_results,
+        decision_context_id: @ai_request_payload.to_h.dig(:tool_endpoint, :decision_context_id) ||
+          @ai_request_payload.to_h.dig("tool_endpoint", "decision_context_id")
+      ).call
       payload = {
         message_id: @guest_message.id,
         original_message_id: @guest_message.id,
@@ -259,7 +269,7 @@ module AI
         safety_flags: decision.safety_flags,
         ai_request_payload: AIDecisionLog.sanitize_trace(compact_trace_payload(@ai_request_payload)),
         ai_response_payload: AIDecisionLog.sanitize_trace(compact_trace_payload(@ai_response_payload)),
-        tool_calls: AIDecisionLog.sanitize_trace(compact_trace_payload(payload[:tool_calls] || [], 0, "tool_calls")),
+        tool_calls: AIDecisionLog.sanitize_trace(payload[:tool_calls] || []),
         validation_results: AIDecisionLog.sanitize_trace(payload[:validation_results] || {}),
         fallback_reason: payload[:fallback_reason],
         final_outcome: payload[:final_outcome],

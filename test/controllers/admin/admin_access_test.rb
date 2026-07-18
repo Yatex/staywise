@@ -261,8 +261,46 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
         {
           "tool_name" => "stay_facts",
           "timestamp" => Time.current.iso8601,
-          "input" => { "decision_context_id" => "ctx_123" },
+          "input" => { "requested_fields" => ["check_in_time"] },
+          "context" => {
+            "conversation_id" => conversation.id,
+            "reservation_id" => "RES-44",
+            "property_id" => @property.id,
+            "property_name" => @property.display_name,
+            "account_id" => @owner_account.id,
+            "account_name" => @owner_account.name,
+            "decision_context_fingerprint" => "sha256:1234567890abcdef"
+          },
+          "request" => { "requested_fields" => ["check_in_time"] },
+          "response" => [{
+            "evidence_id" => "property.check_in_time",
+            "type" => "property_fact",
+            "title" => "check_in_time",
+            "content" => "15:00"
+          }],
           "output_summary" => { "check_in_time" => "15:00", "wifi_password" => "SuperSecret123" },
+          "evidence_returned" => [{
+            "evidence_id" => "property.check_in_time",
+            "type" => "property_fact",
+            "title" => "Horario de check-in",
+            "content" => "15:00",
+            "property_id" => @property.id,
+            "property_name" => @property.display_name,
+            "account_id" => @owner_account.id,
+            "account_name" => @owner_account.name,
+            "scope" => "property",
+            "referenced" => true,
+            "validation_passed" => true,
+            "validation_label" => "Property matches conversation",
+            "validation" => {
+              "authorized" => true,
+              "valid" => true,
+              "provenance_reason" => "property_match"
+            }
+          }],
+          "evidence_referenced" => [{
+            "evidence_id" => "property.check_in_time"
+          }],
           "latency_ms" => 42
         }
       ].then { |value| AIDecisionLog.sanitize_trace(value) },
@@ -337,6 +375,17 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Respuesta final de Rails"
     assert_includes response.body, "Decisión original de la AI"
     assert_includes response.body, "Procedencia Rails"
+    assert_includes response.body, "Tool Requests"
+    assert_includes response.body, "Contexto resuelto por Rails"
+    assert_includes response.body, "Decision Context ID"
+    assert_includes response.body, "sha256:1234567890abcdef"
+    assert_includes response.body, "Request de la AI"
+    assert_includes response.body, "Tool Response"
+    assert_includes response.body, "Evidence returned · 1"
+    assert_includes response.body, "Evidence referenced · 1"
+    assert_includes response.body, "Contenido completo recibido por la AI"
+    assert_includes response.body, "Property matches conversation"
+    assert_includes response.body, "Owner Apartment"
     assert_includes response.body, "autorizada: true"
     assert_includes response.body, "conversación: #{@property.id}"
     assert_includes response.body, "evidencia: #{@property.id}"

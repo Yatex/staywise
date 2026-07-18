@@ -69,6 +69,73 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "es", @guest.reload.language
   end
 
+  test "persists enriched tool requests with full returned and referenced evidence" do
+    faq = @property.faqs.create!(
+      question: "¿Cómo ingreso?",
+      answer: "Ingresá por la puerta lateral.",
+      category: "building_access",
+      active: true,
+      status: "approved",
+      source_type: "manual"
+    )
+    message = @conversation.messages.create!(sender: "guest", body: "¿Cómo ingreso?", channel: "whatsapp")
+    evidence_id = "faq.#{faq.id}"
+    audit = {
+      tool_calls: [{
+        tool_name: "property_brain",
+        input: { guest_message: "¿Cómo ingreso?", limit: 8 },
+        output: {
+          matched_sources: [{
+            evidence_id: evidence_id,
+            title: faq.question,
+            content: faq.answer,
+            property_id: @property.id,
+            account_id: @account.id,
+            scope: "property"
+          }]
+        },
+        output_summary: { evidence_ids: [evidence_id] },
+        error: nil,
+        latency_ms: 3
+      }],
+      evidence_catalog: [{
+        evidence_id: evidence_id,
+        raw_id: evidence_id,
+        label: faq.question,
+        source_type: "faq",
+        value: faq.answer,
+        tool_name: "property_brain",
+        metadata: {
+          property_id: @property.id,
+          account_id: @account.id,
+          scope: "property"
+        }
+      }]
+    }
+
+    run_with_remote_decision(message, ai_reply(
+      language: "es",
+      message_body: faq.answer,
+      evidence_ids: [evidence_id],
+      detected_intents: [{ type: "building_access", status: "answered" }],
+      audit: audit
+    ))
+
+    tool = AIDecisionLog.where(message: message).last.tool_calls.fetch(0)
+    assert_equal @conversation.id, tool.dig("context", "conversation_id")
+    assert_equal @property.id, tool.dig("context", "property_id")
+    assert_equal @property.display_name, tool.dig("context", "property_name")
+    assert_equal @account.id, tool.dig("context", "account_id")
+    assert_equal @account.name, tool.dig("context", "account_name")
+    assert_equal "¿Cómo ingreso?", tool.dig("request", "guest_message")
+    assert_equal faq.answer, tool.dig("response", "matched_sources", 0, "content")
+    assert_equal evidence_id, tool.dig("evidence_returned", 0, "evidence_id")
+    assert_equal faq.answer, tool.dig("evidence_returned", 0, "content")
+    assert_equal true, tool.dig("evidence_returned", 0, "referenced")
+    assert_equal true, tool.dig("evidence_returned", 0, "validation_passed")
+    assert_equal evidence_id, tool.dig("evidence_referenced", 0, "evidence_id")
+  end
+
   test "french check in question uses mandatory tools and answers in french" do
     message = @conversation.messages.create!(sender: "guest", body: "À quelle heure est le check-in ?", channel: "whatsapp")
 
