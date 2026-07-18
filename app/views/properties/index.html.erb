@@ -81,10 +81,10 @@
             </div>
           </details>
         <% end %>
-        <div class="mt-auto flex flex-wrap gap-2 border-t border-slate-100 pt-4" data-controller="clipboard" data-clipboard-url-value="<%= whatsapp_qr_property_path(property, format: :svg) %>">
+        <div class="mt-auto flex flex-wrap gap-2 border-t border-slate-100 pt-4" data-controller="clipboard" data-clipboard-text-value="<%= whatsapp_link %>">
           <%= link_to t("ui.actions.open"), property_path(property), class: primary_button_class %>
           <% if whatsapp_link.present? %>
-            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage"><%= t("ui.properties.copy_qr") %></button>
+            <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText"><%= t("ui.properties.copy_whatsapp_link") %></button>
             <%= link_to t("ui.properties.download_qr"), whatsapp_qr_property_path(property, format: :svg, download: 1), class: secondary_button_class %>
           <% else %>
             <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"><%= t("ui.properties.whatsapp_not_configured") %></span>

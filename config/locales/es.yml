@@ -137,7 +137,7 @@ es:
       no_address: "Dirección sin configurar"
       guide_count: "Guía"
       places_count: "Lugares"
-      copy_whatsapp_link: "Copiar link de WhatsApp"
+      copy_whatsapp_link: "Copiar link"
       copy_qr: "Copiar QR"
       download_qr: "Descargar QR"
       whatsapp_not_configured: "WhatsApp sin configurar"

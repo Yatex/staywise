@@ -158,7 +158,7 @@ en:
       no_address: "No address configured"
       guide_count: "Guide"
       places_count: "Places"
-      copy_whatsapp_link: "Copy WhatsApp link"
+      copy_whatsapp_link: "Copy link"
       copy_qr: "Copy QR"
       download_qr: "Download QR"
       whatsapp_not_configured: "WhatsApp not configured"
