@@ -39,6 +39,9 @@
       <% whatsapp_link = Whatsapp::PropertyDeepLink.call(property) %>
       <article class="<%= card_class %> flex h-full flex-col p-5 transition hover:border-slate-300 hover:shadow-md">
         <p class="text-lg font-semibold text-slate-950"><%= property.display_name %></p>
+        <% unless property_editable?(property) %>
+          <p class="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400"><%= property.account.name %></p>
+        <% end %>
         <p class="mt-2 text-sm text-slate-500"><%= property.address.presence || t("ui.properties.no_address") %></p>
         <% if property.tags.any? %>
           <div class="mt-3 flex flex-wrap gap-2">
@@ -51,6 +54,10 @@
           <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
             <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700"><%= t("ui.properties.co_host_label") %></p>
             <%= link_to property.co_host.name, properties_path(co_host_id: property.co_host_id), class: "mt-0.5 block truncate text-sm font-semibold text-slate-950 hover:text-emerald-700" %>
+          </div>
+        <% elsif !property_editable?(property) %>
+          <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <p class="text-sm font-semibold text-amber-900"><%= t("ui.properties.no_co_host") %></p>
           </div>
         <% else %>
           <details class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">

@@ -22,20 +22,22 @@
 
     <%= render "messages", messages: @messages, guest_request_message_ids: @guest_request_message_ids %>
 
-    <div class="border-t border-slate-200 bg-white px-5 py-5">
-      <h3 class="text-base font-semibold text-slate-950">Responder al huésped</h3>
-      <p class="mt-1 text-sm text-slate-500">El mensaje se envía por WhatsApp desde Ayla. El huésped no ve tu número personal.</p>
-      <%= form_with scope: :reply, url: reply_conversation_path(@conversation), class: "mt-4 space-y-3" do |form| %>
-        <%= form.text_area :body,
-          rows: 4,
-          class: field_class,
-          required: true,
-          placeholder: "Escribí la respuesta para el huésped..." %>
-        <div class="flex justify-end">
-          <%= form.submit "Enviar por WhatsApp", class: primary_button_class %>
-        </div>
-      <% end %>
-    </div>
+    <% if @can_reply %>
+      <div class="border-t border-slate-200 bg-white px-5 py-5">
+        <h3 class="text-base font-semibold text-slate-950">Responder al huésped</h3>
+        <p class="mt-1 text-sm text-slate-500">El mensaje se envía por WhatsApp desde Ayla. El huésped no ve tu número personal.</p>
+        <%= form_with scope: :reply, url: reply_conversation_path(@conversation), class: "mt-4 space-y-3" do |form| %>
+          <%= form.text_area :body,
+            rows: 4,
+            class: field_class,
+            required: true,
+            placeholder: "Escribí la respuesta para el huésped..." %>
+          <div class="flex justify-end">
+            <%= form.submit "Enviar por WhatsApp", class: primary_button_class %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
 
   </section>
 

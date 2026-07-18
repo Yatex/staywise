@@ -73,6 +73,78 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Configuración IA"
   end
 
+  test "admin can inspect conversations from other accounts without replying" do
+    guest = @owner_account.guests.create!(phone_number: "+59899112233", property: @property)
+    conversation = guest.conversations.create!(property: @property)
+    conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "No funciona la cerradura"
+    )
+    conversation.messages.create!(
+      sender: "ai",
+      channel: "whatsapp",
+      body: "Estoy revisando el problema."
+    )
+
+    sign_in_as(@admin)
+
+    get conversations_path
+    assert_response :success
+    assert_includes response.body, "59899112233"
+    assert_select "a[href='#{conversation_path(conversation)}']", count: 1
+
+    get conversation_path(conversation)
+    assert_response :success
+    assert_includes response.body, "No funciona la cerradura"
+    assert_includes response.body, "Estoy revisando el problema."
+    assert_not_includes response.body, "Responder al huésped"
+    assert_select "form[action='#{reply_conversation_path(conversation)}']", count: 0
+  end
+
+  test "admin can inspect properties from other accounts without editing" do
+    @property.update!(
+      address: "Calle Diagnóstico 123",
+      wifi_name: "Owner WiFi",
+      tags: ["diagnostico"]
+    )
+    @property.knowledge_blocks.create!(
+      title: "Aire acondicionado",
+      category: "appliances",
+      content: "Instrucciones visibles para diagnóstico.",
+      status: "active"
+    )
+    @property.faqs.create!(
+      question: "¿Cómo ingreso?",
+      answer: "Usá el código informado.",
+      category: "building_access",
+      active: true,
+      status: "approved",
+      source_type: "manual"
+    )
+
+    sign_in_as(@admin)
+
+    get properties_path
+    assert_response :success
+    assert_includes response.body, "Owner Apartment"
+    assert_select "a[href='#{property_path(@property)}']", count: 1
+    assert_select "form[action='#{co_host_property_path(@property)}']", count: 0
+
+    get property_path(@property)
+    assert_response :success
+    assert_includes response.body, "Vista administrativa · Owner Account"
+    assert_includes response.body, "Aire acondicionado"
+    assert_includes response.body, "¿Cómo ingreso?"
+    assert_not_includes response.body, "Editar propiedad"
+    assert_not_includes response.body, "Eliminar propiedad"
+    assert_not_includes response.body, "Agregar FAQ"
+    assert_not_includes response.body, "Editar configuración"
+
+    get whatsapp_qr_property_path(@property, format: :svg)
+    assert_response :success
+  end
+
   test "admin can update ai decision score settings" do
     sign_in_as(@admin)
 

@@ -8,14 +8,14 @@ class PropertiesController < ApplicationController
   before_action :ensure_property_limit!, only: [:new, :create]
 
   def index
-    @available_tags = current_account.properties.pluck(:tags).flatten.compact_blank.uniq.sort
+    @available_tags = readable_properties.pluck(:tags).flatten.compact_blank.uniq.sort
     @known_co_hosts = current_account.co_hosts.order(:name).to_a
-    @available_co_hosts = current_account.co_hosts.joins(:properties).distinct.order(:name).to_a
+    @available_co_hosts = readable_co_hosts.joins(:properties).distinct.order(:name).to_a
     @current_page = [params[:page].to_i, 1].max
     scope = filtered_properties.order(:name)
     @total_count = scope.count
     @total_pages = (@total_count.to_f / PER_PAGE).ceil
-    @properties = scope.includes(:co_host).limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
+    @properties = scope.includes(:account, :co_host).limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
   end
 
   def show
@@ -148,7 +148,7 @@ class PropertiesController < ApplicationController
   private
 
   def filtered_properties
-    scope = current_account.properties
+    scope = readable_properties
     scope = scope.where(status: params[:status]) if params[:status].present? && params[:status] != "all"
     scope = scope.tagged_with(params[:tag]) if params[:tag].present?
     if params[:co_host_id] == "none"
@@ -169,9 +169,29 @@ class PropertiesController < ApplicationController
   end
 
   def set_property
-    scope = action_name == "destroy" ? current_account.properties.with_deleted : current_account.properties
+    scope = if current_user.admin? && action_name.in?(%w[show whatsapp_qr])
+      Property.all
+    elsif action_name == "destroy"
+      current_account.properties.with_deleted
+    else
+      current_account.properties
+    end
     @property = scope.find(params[:id])
+    @property_read_only = @property.account_id != current_account.id
   end
+
+  def readable_properties
+    current_user.admin? ? Property.all : current_account.properties
+  end
+
+  def readable_co_hosts
+    current_user.admin? ? CoHost.all : current_account.co_hosts
+  end
+
+  def property_editable?(property)
+    property.account_id == current_account.id
+  end
+  helper_method :property_editable?
 
   def apply_property_template
     source = current_account.properties.find_by(id: params[:copy_from_id])
