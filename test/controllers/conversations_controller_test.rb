@@ -95,6 +95,22 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "15550002000"
   end
 
+  test "index omits escalation tags and renders relative times in spanish" do
+    @conversation.messages.create!(
+      sender: "ai",
+      channel: "whatsapp",
+      body: "Respuesta anterior",
+      created_at: 2.days.ago
+    )
+
+    get conversations_path
+
+    assert_response :success
+    assert_not_includes response.body, "Escalado"
+    assert_not_includes response.body, "Translation missing"
+    assert_includes response.body, "Ayla respondió 2 días atrás"
+  end
+
   test "refresh endpoint renders only live conversation fragments" do
     get refresh_conversation_path(@conversation)
 
