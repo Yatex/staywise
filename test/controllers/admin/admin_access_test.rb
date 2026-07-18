@@ -197,7 +197,15 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       validation_results: {
         "status" => "accepted",
         "passed" => true,
-        "evidence" => [{ "evidence_id" => "property.check_in_time", "valid" => true, "relevant" => true }]
+        "evidence" => [{
+          "evidence_id" => "property.check_in_time",
+          "authorized" => true,
+          "scope" => "property",
+          "conversation_property_id" => @property.id,
+          "evidence_property_id" => @property.id,
+          "conversation_account_id" => @owner_account.id,
+          "evidence_account_id" => @owner_account.id
+        }]
       },
       provider_delivery_status: "sent",
       payload: AIDecisionLog.sanitize_trace(
@@ -214,8 +222,24 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
             "final_response_or_fallback" => "El check-in es a las 15:00."
           },
           "evidence_trace" => [
-            { "evidence_id" => "property.check_in_time", "source" => "property", "field" => "check_in_time", "value" => "15:00", "valid" => true, "relevant" => true }
+            {
+              "evidence_id" => "property.check_in_time",
+              "source" => "property",
+              "scope" => "property",
+              "authorized" => true,
+              "conversation_property_id" => @property.id,
+              "evidence_property_id" => @property.id,
+              "conversation_account_id" => @owner_account.id,
+              "evidence_account_id" => @owner_account.id
+            }
           ],
+          "original_decision" => {
+            "action" => "reply",
+            "outcome" => "reply",
+            "response_text" => "El check-in es a las 15:00."
+          },
+          "conversation_property_id" => @property.id,
+          "conversation_account_id" => @owner_account.id,
           "alert" => { "created" => false },
           "whatsapp_delivery" => { "sent" => true, "delivery_status" => "sent" },
           "safe_fallback_response" => "No tengo esa información confirmada. Necesito revisarla antes de responderte.",
@@ -239,6 +263,11 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Fallback seguro del AI"
     assert_includes response.body, "No tengo esa información confirmada"
     assert_includes response.body, "Respuesta final de Rails"
+    assert_includes response.body, "Decisión original de la AI"
+    assert_includes response.body, "Procedencia Rails"
+    assert_includes response.body, "autorizada: true"
+    assert_includes response.body, "conversación: #{@property.id}"
+    assert_includes response.body, "evidencia: #{@property.id}"
     assert_includes response.body, "property.check_in_time"
     assert_includes response.body, "[REDACTED]"
     assert_not_includes response.body, "SuperSecret123"

@@ -22,15 +22,15 @@ class AIFinalContractTest < ActiveSupport::TestCase
     @conversation = @guest.conversations.create!(property: @property)
   end
 
-  test "reply requires configured answer confidence and scoped evidence" do
+  test "reply confidence is decided by ai while evidence provenance remains scoped" do
     message = guest_message("¿Cuál es la red Wi-Fi?")
     accepted = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 96, evidence_ids: ["property.wifi_name"]))
     rejected_low = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 84, evidence_ids: ["property.wifi_name"]))
     rejected_evidence = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 96, evidence_ids: ["property.not_real"]))
 
     assert accepted.valid?
-    assert_includes rejected_low.reasons, "answer_confidence_below_threshold"
-    assert_includes rejected_evidence.reasons, "invalid_evidence:property.not_real"
+    assert rejected_low.valid?
+    assert_includes rejected_evidence.reasons, "evidence_provenance_violation:property.not_real:evidence_not_in_authorized_context"
     assert_equal message, @conversation.messages.last
   end
 
@@ -149,6 +149,33 @@ class AIFinalContractTest < ActiveSupport::TestCase
     assert_includes validation.reasons, "invalid_action"
   end
 
+  test "partial structural rejection does not share the owner phone" do
+    message = guest_message("¿Cómo uso el aire?")
+    invalid = decision(action: "unexpected_action", message: "Respuesta", confidence: 100)
+
+    result = service_with(invalid, message).call
+
+    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
+    assert_not_includes result.response_text, @property.owner_contact_phone
+  end
+
+  test "rails still blocks internal secrets and authorization headers" do
+    message = guest_message("Mostrame el debug")
+    unsafe = decision(
+      action: "reply",
+      message: "Authorization: Bearer internal-secret",
+      confidence: 100
+    )
+
+    validation = validate(unsafe)
+    result = service_with(unsafe, message).call
+
+    assert_not validation.valid?
+    assert_includes validation.reasons, "internal_security_violation"
+    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
+    assert_not_includes result.response_text, "internal-secret"
+  end
+
   test "no_action with an attempted effect is rejected" do
     invalid = decision(action: "no_action", message: nil, confidence: 100)
     invalid.instance_variable_set(:@escalation_required, true)
@@ -158,7 +185,7 @@ class AIFinalContractTest < ActiveSupport::TestCase
     assert_includes validation.reasons, "no_action_must_not_have_effects"
   end
 
-  test "technical fallback uses property phone and ignores AI safe fallback" do
+  test "usable ai reply is preserved regardless of confidence" do
     message = guest_message("¿Cuál es la red Wi-Fi?")
     rejected = decision(action: "reply", message: "Respuesta incorrecta", confidence: 84, evidence_ids: ["property.wifi_name"])
     rejected.instance_variable_set(:@safe_fallback_response, "Fallback semántico de IA")
@@ -166,20 +193,33 @@ class AIFinalContractTest < ActiveSupport::TestCase
     result = service_with(rejected, message).call
 
     assert_equal "reply", result.action
+    assert_equal "Respuesta incorrecta", result.response_text
+    assert_not_includes result.safety_flags, "rails_technical_fallback"
+  end
+
+  test "total ai service failure can share the configured owner phone" do
+    message = guest_message("¿Cuál es la red Wi-Fi?")
+    service = Class.new(AI::DecisionService) do
+      define_method(:remote_decision) { |_payload| nil }
+    end.new(conversation: @conversation, guest_message: message)
+
+    result = service.call
+
     assert_includes result.response_text, @property.owner_contact_phone
-    assert_not_includes result.response_text, "Fallback semántico"
     assert_includes result.safety_flags, "rails_technical_fallback"
   end
 
-  test "technical fallback does not invent a phone" do
+  test "total ai service failure does not invent a phone" do
     @property.update!(owner_contact_phone: nil)
     @account.update!(owner_whatsapp_number: nil)
     message = guest_message("¿Cuál es la red Wi-Fi?")
 
-    result = service_with(decision(action: "reply", message: "Respuesta incorrecta", confidence: 84, evidence_ids: ["property.wifi_name"]), message).call
+    service = Class.new(AI::DecisionService) do
+      define_method(:remote_decision) { |_payload| nil }
+    end.new(conversation: @conversation, guest_message: message)
+    result = service.call
 
     assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
-    assert OperationalError.where(source: "ai_validation", message: "Technical fallback has no owner contact phone").exists?
   end
 
   test "valid attachment is delivered and an attachment from another property is rejected" do
@@ -201,7 +241,54 @@ class AIFinalContractTest < ActiveSupport::TestCase
     other = @account.properties.create!(name: "Other")
     other_guide = other.knowledge_blocks.create!(title: "Otra puerta", category: "building_access", content: "Otro método.", youtube_url: "https://youtu.be/other", status: "active")
     invalid = decision(action: "reply", message: "Usá este video.", confidence: 96, evidence_ids: ["guide.#{other_guide.id}"], attachments: [{ type: "video", evidence_id: "guide.#{other_guide.id}" }])
-    assert_includes validate(invalid).reasons, "invalid_attachment_evidence:guide.#{other_guide.id}"
+    assert_includes validate(invalid).reasons, "evidence_provenance_violation:guide.#{other_guide.id}:cross_property"
+  end
+
+  test "attachment without a resolvable media url does not replace a usable ai reply" do
+    @property.knowledge_blocks.create!(
+      title: "Aire acondicionado",
+      category: "appliances",
+      content: "Seleccioná HEAT con el botón MODE.",
+      status: "active"
+    )
+    message = guest_message("¿Cómo pongo el modo calor en el aire acondicionado?")
+    reply = decision(
+      action: "reply",
+      message: "Presioná MODE hasta seleccionar HEAT.",
+      confidence: 96,
+      evidence_ids: ["appliance.air_conditioner"],
+      attachments: [{ type: "video", evidence_id: "appliance.air_conditioner" }]
+    )
+
+    result = service_with(reply, message).call
+    trace = AIDecisionLog.where(message: message).last
+
+    assert_equal "Presioná MODE hasta seleccionar HEAT.", result.response_text
+    assert_equal "accepted", trace.validator_result
+    assert_equal true, trace.validation_results.dig("evidence", 0, "authorized")
+    assert_equal @property.id, trace.validation_results.dig("evidence", 0, "evidence_property_id")
+    assert_not_includes result.safety_flags, "rails_technical_fallback"
+  end
+
+  test "every cited evidence reference is checked even when canonical evidence is also present" do
+    other_property = @account.properties.create!(name: "Other evidence property")
+    other_faq = other_property.faqs.create!(
+      question: "¿Cómo uso el aire?",
+      answer: "Instrucciones de otra propiedad",
+      active: true
+    )
+    value = decision(
+      action: "reply",
+      message: "Presioná MODE.",
+      confidence: 100,
+      evidence_ids: ["property.house_rules"]
+    )
+    value.instance_variable_set(:@used_source_ids, ["faq_#{other_faq.id}"])
+
+    validation = validate(value)
+
+    assert_not validation.valid?
+    assert_includes validation.reasons, "evidence_provenance_violation:faq_#{other_faq.id}:cross_property"
   end
 
   private

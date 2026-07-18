@@ -36,6 +36,7 @@ module AI
         end
 
         Rails.logger.warn("[ai-audit] rejected decision=#{decision.to_h.except(:response_text).to_json} reasons=#{validation.reasons.join(",")}")
+        report_evidence_provenance_failure(decision, validation) if validation.reasons.any? { |reason| reason.start_with?("evidence_provenance_violation:") }
         if validation.contract_failed?
           report_contract_validation_failure(decision, validation)
           fallback = technical_fallback("AI contract validation failed: #{validation.reasons.join(", ")}")
@@ -47,23 +48,6 @@ module AI
             rejection_reason: validation.reasons.join(", "),
             rejected_decision: decision,
             fallback_reason: "contract_validation_failed",
-            rails_fallback_source: "rails_technical_fallback",
-            validation_results: validation_payload(validation, decision)
-          )
-          return fallback
-        end
-
-        if validation.tool_mandatory_failed?
-          report_tool_mandatory_failure(decision, validation)
-          fallback = technical_fallback("AI mandatory tool validation failed: #{validation.reasons.join(", ")}")
-          audit(
-            "remote_ai_tool_mandatory_rejected",
-            fallback,
-            started_at,
-            validator_result: "tool_mandatory_failed",
-            rejection_reason: validation.reasons.join(", "),
-            rejected_decision: decision,
-            fallback_reason: "tool_mandatory_failed",
             rails_fallback_source: "rails_technical_fallback",
             validation_results: validation_payload(validation, decision)
           )
@@ -85,7 +69,7 @@ module AI
         return fallback
       end
 
-      fallback = technical_fallback("AI service unavailable.")
+      fallback = technical_fallback("AI service unavailable.", share_owner_contact: true)
       audit("local_fallback", fallback, started_at, fallback_reason: @fallback_reason || "ai_service_unavailable", validation_results: { status: "skipped" })
       fallback
     end
@@ -150,34 +134,6 @@ module AI
       )
     end
 
-    def report_tool_mandatory_failure(decision, validation)
-      tool_metrics_for(validation).each do |metric|
-        ErrorReporter.report(
-          source: "ai_tools",
-          severity: "warning",
-          account: @property.account,
-          property: @property,
-          message: metric,
-          context: ai_context.merge(
-            decision: decision.outcome,
-            alert_type: decision.alert_type,
-            reasons: validation.reasons,
-            rejected_decision: rejected_decision_payload(decision),
-            tool_calls: @tool_calls
-          )
-        )
-      end
-    end
-
-    def tool_metrics_for(validation)
-      metrics = []
-      metrics << "real_guest_message_without_tools" if validation.reasons.include?("tool_mandatory_failed:real_guest_message_without_tools")
-      metrics << "unknown_intent_without_tools" if validation.reasons.include?("tool_mandatory_failed:unknown_intent_without_tools")
-      metrics << "escalation_without_tools" if validation.reasons.include?("tool_mandatory_failed:escalation_without_tools")
-      metrics << "tool_mandatory_failed" if metrics.blank?
-      metrics
-    end
-
     def report_contract_validation_failure(decision, validation)
       ErrorReporter.report(
         source: "ai_contract",
@@ -194,19 +150,28 @@ module AI
       )
     end
 
-    def technical_fallback(description)
-      phone = @property.owner_contact_phone.presence || @property.account.owner_whatsapp_number.presence
+    def report_evidence_provenance_failure(decision, validation)
+      ErrorReporter.report(
+        source: "ai_evidence_provenance",
+        severity: "error",
+        account: @property.account,
+        property: @property,
+        message: "AI evidence provenance validation failed",
+        context: ai_context.merge(
+          decision: decision.outcome,
+          conversation_property_id: @property.id,
+          conversation_account_id: @property.account_id,
+          reasons: validation.reasons,
+          evidence: evidence_validation(decision)
+        )
+      )
+    end
+
+    def technical_fallback(description, share_owner_contact: false)
+      phone = share_owner_contact ? (@property.owner_contact_phone.presence || @property.account.owner_whatsapp_number.presence) : nil
       message = if phone.present?
         "No pude procesar tu mensaje en este momento. Podés comunicarte con el anfitrión al #{phone}."
       else
-        ErrorReporter.report(
-          source: "ai_validation",
-          severity: "warning",
-          account: @property.account,
-          property: @property,
-          message: "Technical fallback has no owner contact phone",
-          context: ai_context.merge(reason: description)
-        )
         "No pude procesar tu mensaje en este momento."
       end
 
@@ -228,14 +193,18 @@ module AI
     def audit(route, decision, started_at, validator_result: nil, rejection_reason: nil, rejected_decision: nil, validation_results: nil, fallback_reason: nil, rails_fallback_source: nil)
       persist_decision_language(decision)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
-      evidence_ids = decision.evidence_ids.presence || decision.evidence.map { |item| item["evidence_id"].presence || item["source_id"] }
+      original_decision = rejected_decision || decision
+      evidence_ids = decision_evidence_ids(original_decision)
       payload = {
         message_id: @guest_message.id,
         original_message_id: @guest_message.id,
         conversation_id: @conversation.id,
         guest_id: @conversation.guest_id,
         property_id: @property.id,
+        conversation_property_id: @property.id,
+        conversation_account_id: @property.account_id,
         route: route,
+        original_decision: rejected_decision_payload(original_decision),
         outcome: decision.outcome,
         final_outcome: decision.outcome,
         final_response_text: decision.response_text,
@@ -389,6 +358,7 @@ module AI
       return if decision.blank?
 
       decision.to_h.slice(
+        :action,
         :outcome,
         :response_text,
         :safe_fallback_response,
@@ -401,6 +371,9 @@ module AI
         :confidence,
         :escalation_required,
         :alert_type,
+        :owner_task_kind,
+        :task_summary,
+        :attachments,
         :proposed_action,
         :sensitive_info_used
       )
@@ -411,8 +384,10 @@ module AI
         "accepted"
       elsif validation.contract_failed?
         "contract_validation_failed"
-      elsif validation.tool_mandatory_failed?
-        "tool_mandatory_failed"
+      elsif validation.reasons.any? { |reason| reason.start_with?("evidence_provenance_violation:") }
+        "evidence_provenance_rejected"
+      elsif validation.reasons.any? { |reason| reason.in?(%w[internal_metadata_visible internal_security_violation sensitive_access_without_authorization]) }
+        "security_rejected"
       else
         "rejected"
       end
@@ -422,7 +397,6 @@ module AI
         passed: validation.valid?,
         failed: !validation.valid?,
         contract_failed: validation.contract_failed?,
-        tool_mandatory_failed: validation.tool_mandatory_failed?,
         reasons: validation.reasons,
         warnings: validation.warnings,
         evidence: evidence_validation(decision)
@@ -431,17 +405,25 @@ module AI
 
     def evidence_validation(decision)
       registry = SourceRegistry.new(conversation: @conversation, guest_message: @guest_message)
-      refs = decision.evidence.presence ||
-        decision.used_source_ids.map { |source_id| { "id" => source_id } }.presence ||
-        decision.evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } }
+      refs = Array(decision.evidence) +
+        decision.evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } } +
+        decision.used_source_ids.map { |source_id| { "id" => source_id } }
+      attachment_refs = decision.attachments.map { |attachment| { "evidence_id" => attachment["evidence_id"] } }
 
-      refs.map do |item|
+      (Array(refs) + attachment_refs).uniq { |item| item.to_h.stringify_keys.values_at("id", "evidence_id", "source_id").compact_blank.first }.map do |item|
         evidence_id = item.to_h["id"].presence || item.to_h["evidence_id"].presence || item.to_h["source_id"]
         source = registry.source_for_evidence_id(evidence_id)
+        provenance = registry.evidence_provenance(item)
         {
           evidence_id: evidence_id,
-          valid: registry.valid_evidence?(item),
-          relevant: ai_marked_evidence_relevant?(decision, evidence_id),
+          authorized: provenance[:authorized],
+          valid: provenance[:authorized],
+          provenance_reason: provenance[:reason],
+          scope: provenance[:scope],
+          conversation_property_id: provenance[:conversation_property_id],
+          evidence_property_id: provenance[:property_id],
+          conversation_account_id: provenance[:conversation_account_id],
+          evidence_account_id: provenance[:account_id],
           source: source&.dig("source_type") || source&.dig("type"),
           field: source&.dig("field"),
           value: source&.dig("value")
@@ -461,56 +443,24 @@ module AI
           source: source&.dig("source_type") || source&.dig("type"),
           field: source&.dig("field"),
           value: source&.dig("value"),
+          authorized: validation.fetch(:authorized, validation.fetch("authorized", nil)),
+          provenance_reason: validation.fetch(:provenance_reason, validation.fetch("provenance_reason", nil)),
+          scope: validation.fetch(:scope, validation.fetch("scope", nil)),
+          conversation_property_id: validation.fetch(:conversation_property_id, validation.fetch("conversation_property_id", @property.id)),
+          evidence_property_id: validation.fetch(:evidence_property_id, validation.fetch("evidence_property_id", nil)),
+          conversation_account_id: validation.fetch(:conversation_account_id, validation.fetch("conversation_account_id", @property.account_id)),
+          evidence_account_id: validation.fetch(:evidence_account_id, validation.fetch("evidence_account_id", nil)),
           valid: validation.fetch(:valid, validation.fetch("valid", nil)),
-          relevant: validation.fetch(:relevant, validation.fetch("relevant", nil))
         }
       end
     end
 
-    def ai_marked_evidence_relevant?(decision, evidence_id)
-      audit = decision.audit.to_h["grounded_decision_builder"] || decision.audit.to_h[:grounded_decision_builder]
-      return nil if audit.blank?
-
-      canonical_id = canonical_evidence_reference(evidence_id)
-      sufficient_ids = Array(audit["sufficient_candidates"] || audit[:sufficient_candidates]).filter_map do |candidate|
-        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id])
-      end
-      return true if sufficient_ids.include?(canonical_id)
-
-      candidates = Array(audit["ranked_candidates"] || audit[:ranked_candidates]) |
-        Array(audit["evidence_candidates_ranked"] || audit[:evidence_candidates_ranked])
-      candidates.any? do |candidate|
-        canonical_evidence_reference(candidate.to_h["evidence_id"] || candidate.to_h[:evidence_id]) == canonical_id &&
-          (candidate.to_h["score"] || candidate.to_h[:score]).to_f.positive?
-      end
-    end
-
-    def canonical_evidence_reference(reference)
-      value = reference.to_s
-      return if value.blank?
-
-      case value
-      when /\Aproperty_fact:(.+)\z/
-        "property.#{$1}"
-      when /\Aproperty_(.+)\z/
-        "property.#{$1}"
-      when /\Asensitive_(.+)\z/
-        "property.#{$1}"
-      when /\Areservation_fact:(.+)\z/
-        "reservation.#{$1}"
-      when /\Areservation_(.+)\z/
-        "reservation.#{$1}"
-      when /\Afaq_(\d+)\z/
-        "faq.#{$1}"
-      when /\Aguide_(\d+)\z/
-        "guide.#{$1}"
-      when /\Arecommendation_(\d+)\z/
-        "recommendation.#{$1}"
-      when /\Apolicy_(.+)\z/
-        "policy.#{$1}"
-      else
-        value.tr(":", ".")
-      end
+    def decision_evidence_ids(decision)
+      ids = decision.evidence_ids +
+        decision.used_source_ids +
+        decision.evidence.map { |item| item["id"].presence || item["evidence_id"].presence || item["source_id"] } +
+        decision.attachments.map { |attachment| attachment["evidence_id"] }
+      ids.compact_blank.uniq
     end
 
     def checkin_trace(decision, evidence_ids, validation_results, fallback_reason)

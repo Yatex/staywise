@@ -13,7 +13,10 @@ class AIDecisionLog < ApplicationRecord
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :with_fallback, -> { where.not(fallback_reason: [nil, ""]) }
-  scope :validation_failed, -> { where("validation_results ->> 'status' = ?", "rejected").or(where(validator_result: "rejected")) }
+  scope :validation_failed, -> {
+    where("validation_results ->> 'failed' = ?", "true")
+      .or(where(validator_result: %w[rejected contract_validation_failed]))
+  }
 
   def self.sanitize_trace(value, parent_key = nil)
     case value
@@ -36,7 +39,9 @@ class AIDecisionLog < ApplicationRecord
   end
 
   def validation_failed?
-    validator_result == "rejected" || validation_results.to_h["status"] == "rejected"
+    validation_results.to_h["failed"] == true ||
+      validator_result.in?(%w[rejected contract_validation_failed]) ||
+      validation_results.to_h["status"].in?(%w[rejected contract_validation_failed evidence_provenance_rejected security_rejected])
   end
 
   def checkin_trace
@@ -44,6 +49,8 @@ class AIDecisionLog < ApplicationRecord
   end
 
   private_class_method def self.sensitive_key?(key)
+    return false if key.to_s.in?(%w[authorized provenance_authorized])
+
     key.to_s.match?(SENSITIVE_KEYS)
   end
 

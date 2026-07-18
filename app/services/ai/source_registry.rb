@@ -256,36 +256,7 @@ module AI
     end
 
     def valid_evidence?(item)
-      item = item.to_h.stringify_keys
-      source_type = item["source_type"]
-      source_id = item["source_id"].to_s
-      evidence_id = item["id"].presence || item["evidence_id"].presence || source_id
-
-      case source_type.presence || source_type_from_evidence_id(evidence_id)
-      when "property_fact"
-        field = property_field_from_reference(evidence_id)
-        property_fact(field).present? || structured_sensitive_source_for(field).present?
-      when "reservation_fact"
-        field = reservation_field_from_reference(evidence_id)
-        reservation_fact(field).present?
-      when "faq"
-        id = record_id_from_reference(evidence_id, "faq")
-        @property.faqs.active.exists?(id: id)
-      when "knowledge_block"
-        if evidence_id.to_s.start_with?("appliance.")
-          appliance_block_for_reference(evidence_id).present?
-        else
-          id = record_id_from_reference(evidence_id, "guide", "knowledge_block")
-          @property.knowledge_blocks.exists?(id: id)
-        end
-      when "recommendation"
-        id = record_id_from_reference(evidence_id, "recommendation")
-        active_recommendations.exists?(id: id)
-      when "policy"
-        policy_field_from_reference(evidence_id).present?
-      else
-        false
-      end
+      evidence_provenance(item)[:authorized]
     end
 
     def valid_evidence_id?(evidence_id)
@@ -294,6 +265,65 @@ module AI
 
     def source_for_evidence_id(evidence_id)
       evidence_source("evidence_id" => evidence_id)
+    end
+
+    def evidence_provenance(item)
+      item = item.to_h.stringify_keys
+      source_id = item["source_id"].to_s
+      evidence_id = item["id"].presence || item["evidence_id"].presence || source_id
+      source_type = item["source_type"].presence || source_type_from_evidence_id(evidence_id)
+      base = {
+        evidence_id: evidence_id,
+        source_type: source_type,
+        conversation_property_id: @property.id,
+        conversation_account_id: @property.account_id
+      }
+
+      return base.merge(authorized: false, reason: "unrecognized_evidence_type") if source_type.blank?
+
+      source = evidence_source(item)
+      record = evidence_record(source_type, evidence_id)
+      property_id = source&.dig("property_id") || record&.try(:property_id)
+      account_id = source&.dig("account_id") || evidence_account_id(record)
+      scope = source&.dig("scope") || (source_type == "policy" ? "account" : "property")
+
+      if record.present? && property_id.present? && property_id != @property.id
+        return base.merge(
+          authorized: false,
+          reason: "cross_property",
+          scope: scope,
+          property_id: property_id,
+          account_id: account_id
+        )
+      end
+
+      if scope == "account" && account_id.present? && account_id != @property.account_id
+        return base.merge(
+          authorized: false,
+          reason: "cross_account",
+          scope: scope,
+          property_id: property_id,
+          account_id: account_id
+        )
+      end
+
+      if source.blank?
+        return base.merge(
+          authorized: false,
+          reason: sensitive_reference?(evidence_id) ? "sensitive_access_unauthorized" : "evidence_not_in_authorized_context",
+          scope: scope,
+          property_id: property_id,
+          account_id: account_id
+        )
+      end
+
+      base.merge(
+        authorized: true,
+        reason: nil,
+        scope: scope,
+        property_id: property_id || @property.id,
+        account_id: account_id || @property.account_id
+      )
     end
 
     def attachment_for_evidence_id(evidence_id, type:)
@@ -489,6 +519,7 @@ module AI
         "website_url",
         "phone_number",
         "property_id",
+        "account_id",
         "active",
         "sensitive_type",
         "sensitivity",
@@ -603,6 +634,7 @@ module AI
     def source(type, id, label, value, record: nil, evidence_id: nil)
       evidence = evidence_id.presence || id
       modern_id = modern_source_id(type, evidence, label)
+      scope = type.to_s == "policy" ? "account" : "property"
       {
         "id" => modern_id,
         "type" => type,
@@ -616,9 +648,41 @@ module AI
         "field" => label,
         "value" => value.to_s,
         "excerpt" => value.to_s,
-        "scope" => type.to_s.in?(%w[reservation_fact]) ? "reservation" : "property",
+        "scope" => scope,
+        "property_id" => scope == "property" ? @property.id : nil,
+        "account_id" => @property.account_id,
         "updated_at" => (record&.updated_at || @property.updated_at).iso8601
-      }
+      }.compact
+    end
+
+    def evidence_record(source_type, evidence_id)
+      case source_type
+      when "faq"
+        Faq.find_by(id: record_id_from_reference(evidence_id, "faq"))
+      when "knowledge_block"
+        return appliance_block_for_reference(evidence_id) if evidence_id.to_s.start_with?("appliance.")
+
+        KnowledgeBlock.find_by(id: record_id_from_reference(evidence_id, "guide", "knowledge_block"))
+      when "recommendation"
+        Recommendation.find_by(id: record_id_from_reference(evidence_id, "recommendation"))
+      when "property_fact"
+        field = property_field_from_reference(evidence_id)
+        @property.sensitive_data.find_by(kind: field) if PropertySensitiveDatum::KINDS.include?(field)
+      end
+    end
+
+    def evidence_account_id(record)
+      return @property.account_id if record.blank?
+      return record.account_id if record.respond_to?(:account_id)
+
+      record.try(:property)&.account_id
+    end
+
+    def sensitive_reference?(evidence_id)
+      field = property_field_from_reference(evidence_id)
+      SENSITIVE_PROPERTY_FACTS.key?(field) ||
+        PropertySensitiveDatum::KINDS.include?(field) ||
+        evidence_id.to_s.start_with?("sensitive_")
     end
 
     def modern_source_id(type, evidence_id, label)

@@ -376,7 +376,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       assert_equal "accepted", audit.validator_result, item.fetch(:guest_message)
       assert_empty audit.validation_results["reasons"], item.fetch(:guest_message)
       item.fetch(:evidence_ids).each do |evidence_id|
-        assert_includes audit.validation_results["warnings"], "semantic_relevance_unverified:#{evidence_id}", item.fetch(:guest_message)
+        assert_empty audit.validation_results["warnings"], item.fetch(:guest_message)
         assert_not_includes audit.validation_results["reasons"], "irrelevant_evidence:#{evidence_id}", item.fetch(:guest_message)
       end
     end
@@ -418,7 +418,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     assert_equal "reply", decision.outcome
     assert_equal "accepted", audit.validator_result
-    assert_equal true, audit.validation_results.dig("evidence", 0, "relevant")
+    assert_equal true, audit.validation_results.dig("evidence", 0, "authorized")
     assert_not_includes audit.validation_results["reasons"], "invalid_evidence:property.access_instructions"
   end
 
@@ -448,7 +448,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     assert_equal "reply", decision.outcome
     assert_equal "accepted", audit.validator_result
-    assert_equal true, audit.validation_results.dig("evidence", 0, "relevant")
+    assert_equal true, audit.validation_results.dig("evidence", 0, "authorized")
     assert_not_includes audit.validation_results["reasons"], "invalid_evidence:appliance.washer"
     assert_no_match(/Fuente|Source|property\.|evidence_id|source_id/i, decision.response_text)
   end
@@ -489,7 +489,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     assert_equal "reply", decision.outcome
     assert_includes decision.response_text, "No pude procesar"
-    assert_includes audit.validation_results["reasons"], "invalid_evidence:property.not_real"
+    assert_includes audit.validation_results["reasons"], "evidence_provenance_violation:property.not_real:evidence_not_in_authorized_context"
   end
 
   test "validator rejects direct contradiction of exact evidence value" do
@@ -536,7 +536,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_includes audit.validation_results["reasons"], "internal_metadata_visible"
   end
 
-  test "validator rejects automatic early check in approval" do
+  test "validator does not override ai automatic early check in decision" do
     message = @conversation.messages.create!(sender: "guest", body: "puedo entrar antes?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_reply(
@@ -554,8 +554,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_includes audit.validation_results["reasons"], "sensitive_action_auto_approval"
+    assert_equal "Sí, podés entrar antes.", decision.response_text
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
   end
 
   test "validator accepts check in answer with conditional host consult offer" do
@@ -606,7 +607,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
   end
 
-  test "validator blocks host consult already in progress without action" do
+  test "validator does not reinterpret host consult wording" do
     message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo entrar al depto?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_reply(
@@ -624,13 +625,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_equal "contract_validation_failed", audit.validator_result
-    assert_includes audit.validation_results["reasons"], "contract_reply_claims_host_consult_without_alert_or_action"
-    assert_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
+    assert_includes decision.response_text, "Estoy consultando"
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
   end
 
-  test "validator blocks completed owner notification claim without action" do
+  test "validator does not reinterpret completed owner notification wording" do
     message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo entrar al depto?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_reply(
@@ -648,10 +648,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_equal "contract_validation_failed", audit.validator_result
-    assert_includes audit.validation_results["reasons"], "contract_reply_claims_host_consult_without_alert_or_action"
-    assert_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
+    assert_includes decision.response_text, "Le avisé al dueño"
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
   end
 
   test "authorized guest can receive wifi details from ai with evidence" do
@@ -907,7 +906,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_not_includes audit.validation_results["reasons"], "contract_host_mention_requires_alert_or_valid_action"
   end
 
-  test "blocks real guest decision without mandatory tools" do
+  test "rails executes a structurally valid ai decision without rechecking tool choice" do
     message = @conversation.messages.create!(sender: "guest", body: "a que hora es el check in?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_reply(
@@ -921,14 +920,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_equal "remote_ai_tool_mandatory_rejected", audit.route
-    assert_equal "tool_mandatory_failed", audit.validator_result
-    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
-    assert OperationalError.where(source: "ai_tools", message: "real_guest_message_without_tools").exists?
+    assert_equal "El check-in es a las 3:00 PM.", decision.response_text
+    assert_equal "remote_ai", audit.route
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
   end
 
-  test "blocks unknown escalation without tools and records metrics" do
+  test "rails executes ai escalation without rechecking tool choice" do
     message = @conversation.messages.create!(sender: "guest", body: "when is check-in?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_escalation(
@@ -941,13 +939,11 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     audit = AIDecisionLog.where(message: message).last
 
-    assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_equal "remote_ai_tool_mandatory_rejected", audit.route
-    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:unknown_intent_without_tools"
-    assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:escalation_without_tools"
-    assert OperationalError.where(source: "ai_tools", message: "unknown_intent_without_tools").exists?
-    assert OperationalError.where(source: "ai_tools", message: "escalation_without_tools").exists?
+    assert_equal "escalate", decision.outcome
+    assert_includes decision.response_text, "checking this with the host"
+    assert_equal "remote_ai", audit.route
+    assert_equal "accepted", audit.validator_result
+    assert_empty audit.validation_results["reasons"]
   end
 
   test "contract failure blocks escalate when escalation required is not true" do
@@ -1118,13 +1114,17 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test "blocks non-success ai service fallback response when mandatory tools are missing" do
+  test "non-success ai response is executed when it still contains a usable decision" do
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     message = @conversation.messages.create!(sender: "guest", body: "Quisiera saber si hay piscina", channel: "whatsapp")
     response = Struct.new(:code, :body).new(
       "500",
       {
+        action: "create_owner_task",
         outcome: "escalate",
+        owner_task_kind: "inquiry",
+        task_summary: "El huésped preguntó si hay piscina.",
+        language: "es",
         response_text: "Gracias por tu mensaje. Lo estoy consultando con el anfitrión y te responderé en breve.",
         should_reply: true,
         confidence: 0.25,
@@ -1147,21 +1147,22 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
       audit = AIDecisionLog.where(message: message).last
 
-      assert_equal "reply", decision.outcome
+      assert_equal "escalate", decision.outcome
       assert decision.should_reply
-      assert_includes decision.response_text, "No pude procesar"
-      assert_equal "remote_ai_tool_mandatory_rejected", audit.route
-      assert_equal "tool_mandatory_failed", audit.validator_result
-      assert_includes audit.validation_results["reasons"], "tool_mandatory_failed:real_guest_message_without_tools"
+      assert_includes decision.response_text, "Lo estoy consultando"
+      assert_equal "remote_ai", audit.route
+      assert_equal "accepted", audit.validator_result
+      assert_empty audit.validation_results["reasons"]
     ensure
       Net::HTTP.define_singleton_method(:post, original_post)
     end
   end
 
-  test "ai reply without evidence is rejected and falls back safely" do
+  test "ai reply without evidence is executed when structurally usable" do
     decision = AI::DecisionResult.from_hash(
       outcome: "reply",
       response_text: "Use HDMI 1.",
+      language: "en",
       confidence: 0.9,
       evidence: [],
       escalation: { required: false, category: nil, urgency: nil, summary: nil },
@@ -1181,15 +1182,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "reply", result.outcome
     assert result.should_reply
     assert_not result.escalation_required
-    assert_includes result.response_text, "No pude procesar"
+    assert_equal "Use HDMI 1.", result.response_text
     audit = AIDecisionLog.order(:created_at).last
-    assert_equal "remote_ai_rejected", audit.route
-    assert_equal "Use HDMI 1.", audit.payload["rejected_candidate"]["response_text"]
-    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
-    assert audit.payload["rails_used_technical_fallback"]
+    assert_equal "remote_ai", audit.route
+    assert_equal "Use HDMI 1.", audit.payload.dig("original_decision", "response_text")
+    assert_not audit.payload["rails_used_technical_fallback"]
   end
 
-  test "uses spanish safe fallback from ai when Rails rejects the candidate" do
+  test "rails preserves usable spanish ai reply instead of its fallback" do
     message = @conversation.messages.create!(sender: "guest", body: "¿Cómo uso el televisor?", channel: "whatsapp")
     safe_fallback = "No tengo esa información confirmada. Necesito revisarla antes de responderte."
 
@@ -1204,13 +1204,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_equal "No pude procesar tu mensaje en este momento.", decision.response_text
+    assert_equal "Usá HDMI 1.", decision.response_text
     assert_not_includes decision.response_text, "Thanks"
-    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
+    assert_nil audit.payload["rails_fallback_source"]
     assert_equal "es", audit.payload["fallback_language"]
   end
 
-  test "uses french safe fallback from ai when Rails rejects the candidate" do
+  test "rails preserves usable french ai reply instead of its fallback" do
     message = @conversation.messages.create!(sender: "guest", body: "Comment utiliser la télévision ?", channel: "whatsapp")
     safe_fallback = "Je n'ai pas cette information confirmée. Je dois la vérifier avant de vous répondre."
 
@@ -1225,19 +1225,21 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_equal "No pude procesar tu mensaje en este momento.", decision.response_text
+    assert_equal "Utilisez HDMI 1.", decision.response_text
     assert_not_includes decision.response_text, "Thanks"
-    assert_equal "rails_technical_fallback", audit.payload["rails_fallback_source"]
-    assert_equal "es", audit.payload["fallback_language"]
+    assert_nil audit.payload["rails_fallback_source"]
+    assert_equal "fr", audit.payload["fallback_language"]
   end
 
   test "ai reply with evidence from another property is rejected" do
+    @property.update!(owner_contact_phone: "+59899007777")
     other_property = @account.properties.create!(name: "Other")
     other_faq = other_property.faqs.create!(question: "Where is the gym?", answer: "Other gym", active: true)
     message = @conversation.messages.create!(sender: "guest", body: "Where is the gym?", channel: "whatsapp")
     decision = AI::DecisionResult.from_hash(
       outcome: "reply",
       response_text: "Other gym",
+      language: "en",
       confidence: 0.9,
       evidence: [{ source_type: "faq", source_id: "faq:#{other_faq.id}", claim: "Gym information" }],
       escalation: { required: false, category: nil, urgency: nil, summary: nil },
@@ -1253,10 +1255,16 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     service = service_class.new(conversation: @conversation, guest_message: message)
 
     result = service.call
+    trace = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", result.outcome
-    assert_includes result.response_text, "No pude procesar"
+    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
+    assert_not_includes result.response_text, @property.owner_contact_phone.to_s
     assert_not result.escalation_required
+    assert_equal @property.id, trace.payload["conversation_property_id"]
+    assert_equal other_property.id, trace.validation_results.dig("evidence", 0, "evidence_property_id")
+    assert_equal "cross_property", trace.validation_results.dig("evidence", 0, "provenance_reason")
+    assert OperationalError.where(source: "ai_evidence_provenance", message: "AI evidence provenance validation failed").exists?
   end
 
   test "validator does not act as semantic judge for valid scoped recommendation evidence" do

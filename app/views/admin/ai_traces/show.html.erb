@@ -5,7 +5,8 @@
 <% evidence_trace = payload["evidence_trace"].presence || validation.to_h["evidence"].presence || [] %>
 <% alert_trace = payload["alert"].presence || { "created" => false } %>
 <% whatsapp_trace = payload["whatsapp_delivery"].presence || {} %>
-<% generated_response = @trace.ai_response_payload.to_h["response_text"].presence || @trace.ai_response_payload.to_h["message_body"].presence || payload["rejected_candidate"].to_h["response_text"].presence || payload["outcome"].presence %>
+<% original_decision = payload["original_decision"].presence || payload["rejected_candidate"].presence || @trace.ai_response_payload.to_h %>
+<% generated_response = original_decision.to_h["response_text"].presence || original_decision.to_h["message_body"].presence || payload["outcome"].presence %>
 <% safe_fallback_response = payload["safe_fallback_response"].presence || @trace.ai_response_payload.to_h["safe_fallback_response"].presence || payload["rejected_candidate"].to_h["safe_fallback_response"].presence %>
 <% final_response = payload["final_response_text"].presence %>
 
@@ -121,9 +122,10 @@
             <tr>
               <th class="px-3 py-2">Evidence ID</th>
               <th class="px-3 py-2">Fuente</th>
-              <th class="px-3 py-2">Campo</th>
-              <th class="px-3 py-2">Valor</th>
-              <th class="px-3 py-2">Rails</th>
+              <th class="px-3 py-2">Scope</th>
+              <th class="px-3 py-2">Propiedad</th>
+              <th class="px-3 py-2">Cuenta</th>
+              <th class="px-3 py-2">Procedencia Rails</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 bg-white">
@@ -131,12 +133,23 @@
               <% evidence = evidence.to_h %>
               <tr>
                 <td class="px-3 py-3 font-mono text-xs text-slate-800"><%= evidence["evidence_id"] || evidence[:evidence_id] %></td>
-                <td class="px-3 py-3 text-slate-600"><%= evidence["source"] || evidence[:source] || "Sin fuente" %></td>
-                <td class="px-3 py-3 text-slate-600"><%= evidence["field"] || evidence[:field] || "Sin campo" %></td>
-                <td class="max-w-sm px-3 py-3 text-slate-600"><%= trace_evidence_value(evidence) %></td>
+                <td class="max-w-sm px-3 py-3 text-slate-600">
+                  <span class="font-medium"><%= evidence["source"] || evidence[:source] || "Sin fuente" %></span><br>
+                  <span class="text-xs">campo: <%= evidence["field"] || evidence[:field] || "Sin campo" %></span><br>
+                  <span class="text-xs">valor: <%= trace_evidence_value(evidence) %></span>
+                </td>
+                <td class="px-3 py-3 text-slate-600"><%= evidence["scope"] || evidence[:scope] || "Sin scope" %></td>
                 <td class="px-3 py-3 text-slate-600">
-                  válido: <%= evidence["valid"].nil? ? "sin datos" : evidence["valid"] %><br>
-                  relevante: <%= evidence["relevant"].nil? ? "sin datos" : evidence["relevant"] %>
+                  conversación: <%= evidence["conversation_property_id"] || evidence[:conversation_property_id] || payload["conversation_property_id"] || @trace.property_id %><br>
+                  evidencia: <%= evidence["evidence_property_id"] || evidence[:evidence_property_id] || "N/A" %>
+                </td>
+                <td class="px-3 py-3 text-slate-600">
+                  conversación: <%= evidence["conversation_account_id"] || evidence[:conversation_account_id] || payload["conversation_account_id"] || @trace.account_id %><br>
+                  evidencia: <%= evidence["evidence_account_id"] || evidence[:evidence_account_id] || "N/A" %>
+                </td>
+                <td class="px-3 py-3 text-slate-600">
+                  autorizada: <%= (evidence["authorized"].nil? ? evidence[:authorized] : evidence["authorized"]).nil? ? "sin datos" : (evidence["authorized"].nil? ? evidence[:authorized] : evidence["authorized"]) %><br>
+                  motivo: <%= evidence["provenance_reason"] || evidence[:provenance_reason] || "sin observaciones" %>
                 </td>
               </tr>
             <% end %>
@@ -152,8 +165,9 @@
     <h3 class="text-base font-semibold text-slate-950">Respuesta y validaciones</h3>
     <div class="mt-4 grid gap-4 lg:grid-cols-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Respuesta candidata</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Decisión original de la AI</p>
         <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= generated_response.presence || "Sin respuesta generada" %></p>
+        <p class="mt-2 text-xs text-slate-500">Acción: <%= original_decision.to_h["action"] || original_decision.to_h["outcome"] || "Sin datos" %></p>
       </div>
       <div>
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Fallback seguro del AI</p>
