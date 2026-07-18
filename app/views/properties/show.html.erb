@@ -50,7 +50,7 @@
       <h3 class="text-base font-semibold text-slate-950">QR de WhatsApp de la propiedad</h3>
       <p class="mt-1 text-sm text-slate-500">Los huéspedes lo escanean para hacer preguntas sobre esta propiedad.</p>
       <% if @whatsapp_link.present? %>
-        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div class="mt-4 w-64 max-w-full rounded-xl border border-slate-200 bg-white p-4">
           <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} QR de WhatsApp", class: "aspect-square w-full rounded-lg bg-slate-50" %>
         </div>
         <div class="mt-4 flex flex-wrap gap-2" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(@property, format: :svg) %>">

@@ -2,12 +2,14 @@ module Whatsapp
   class HostReplyDelivery
     Result = Struct.new(:sent?, :already_handled?, :owner_message, :error, keyword_init: true)
 
-    def initialize(item:, actor:, session:, provider:, source_message_sid:)
+    def initialize(item:, actor:, session:, provider:, source_message_sid:, on_success: nil, on_failure: nil)
       @item = item
       @actor = actor
       @session = session
       @provider = provider
       @source_message_sid = source_message_sid
+      @on_success = on_success
+      @on_failure = on_failure
     end
 
     def call
@@ -36,6 +38,7 @@ module Whatsapp
         @item.update!(
           response_delivery_state: "responded", status: "resolved", resolved_at: Time.current, final_response_body: draft
         )
+        @on_success&.call(@item, owner_message)
       end
       owner_message.update!(metadata: owner_message.metadata.merge("delivery_status" => "sent"))
       Result.new(sent?: true, already_handled?: false, owner_message: owner_message)
@@ -70,7 +73,10 @@ module Whatsapp
 
     def fail_claim!(delivery)
       @item.with_lock do
-        @item.update!(response_delivery_state: "failed") if @item.response_delivery_state == "sending" && same_actor?
+        if @item.response_delivery_state == "sending" && same_actor?
+          @item.update!(response_delivery_state: "failed")
+          @on_failure&.call(@item)
+        end
       end
       ErrorReporter.report(
         source: "owner_whatsapp_reply",

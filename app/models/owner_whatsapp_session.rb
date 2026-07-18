@@ -1,6 +1,14 @@
 class OwnerWhatsappSession < ApplicationRecord
-  STATES = %w[queued awaiting_ack awaiting_answer on_hold menu awaiting_owner_reply viewing_item awaiting_reply_text awaiting_send_confirmation awaiting_learning_confirmation resolved failed].freeze
-  ACTIVE_STATES = %w[menu viewing_item awaiting_reply_text awaiting_send_confirmation awaiting_learning_confirmation].freeze
+  STATES = %w[
+    queued awaiting_ack awaiting_answer on_hold menu awaiting_owner_reply
+    viewing_item awaiting_reply_text awaiting_send_confirmation
+    sending_guest_message awaiting_learning_confirmation loading_next_case
+    resolved failed
+  ].freeze
+  ACTIVE_STATES = %w[
+    menu viewing_item awaiting_reply_text awaiting_send_confirmation
+    sending_guest_message awaiting_learning_confirmation loading_next_case
+  ].freeze
 
   belongs_to :account
   belongs_to :alert, optional: true

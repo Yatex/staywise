@@ -206,7 +206,11 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     inbound("Responder", "SM20A", action_id: "responder")
     inbound("Girando la perilla roja.", "SM21")
     inbound("Enviar", "SM21A", action_id: "enviar")
-    assert_equal "awaiting_learning_confirmation", @account.owner_whatsapp_sessions.active.first.state
+    learning_session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "awaiting_learning_confirmation", learning_session.state
+    assert_nil learning_session.active_item_type
+    assert_nil learning_session.active_item_id
+    assert_nil learning_session.draft_reply_body
     inbound("Sí, recordar", "SM22", action_id: "recordar")
 
     faq = @property.faqs.find_by!(question: inquiry.current_guest_message)
@@ -222,6 +226,63 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     inbound("Enviar", "SM24A", action_id: "enviar")
     inbound("No recordar", "SM25", action_id: "no_recordar")
     assert_nil @property.faqs.find_by(question: second.current_guest_message)
+  end
+
+  test "sending resolves the case clears its context and reaches no more pending" do
+    task = create_task("request", "Necesito una almohada")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-LIFECYCLE-1", action_id: "pedidos")
+    inbound("Responder", "SM-LIFECYCLE-2", action_id: "responder")
+    inbound("La dejamos en la puerta.", "SM-LIFECYCLE-3")
+    inbound("Enviar", "SM-LIFECYCLE-4", action_id: "enviar")
+
+    session = @account.owner_whatsapp_sessions.order(:created_at).last
+    assert_equal "resolved", task.reload.status
+    assert_equal "responded", task.response_delivery_state
+    assert_equal "resolved", session.reload.state
+    assert_nil session.active_item_type
+    assert_nil session.active_item_id
+    assert_nil session.draft_reply_body
+    assert_equal 0, @account.owner_tasks.open.count
+    assert @provider.sent_messages.any? { |message| message[:body] == "No hay más pendientes en pedidos." }
+  end
+
+  test "next recalculates from the database when the previous case was resolved elsewhere" do
+    first = create_task("request", "Primer caso")
+    second = create_task("request", "Segundo caso")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-STALE-1", action_id: "pedidos")
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal first.id, session.active_item_id
+
+    first.update!(status: "resolved", response_delivery_state: "responded", final_response_body: "Resuelto externamente")
+    inbound("Siguiente", "SM-STALE-2", action_id: "siguiente")
+
+    assert_equal "viewing_item", session.reload.state
+    assert_equal second.id, session.active_item_id
+    assert_equal "open", second.reload.status
+  end
+
+  test "a resolved case never appears again while cycling through remaining pending cases" do
+    first = create_task("request", "Primero")
+    second = create_task("request", "Segundo")
+    third = create_task("request", "Tercero")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-NOREPEAT-1", action_id: "pedidos")
+    inbound("Responder", "SM-NOREPEAT-2", action_id: "responder")
+    inbound("Resuelto.", "SM-NOREPEAT-3")
+    inbound("Enviar", "SM-NOREPEAT-4", action_id: "enviar")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal second.id, session.active_item_id
+    inbound("Siguiente", "SM-NOREPEAT-5", action_id: "siguiente")
+    assert_equal third.id, session.reload.active_item_id
+    inbound("Siguiente", "SM-NOREPEAT-6", action_id: "siguiente")
+
+    assert_equal second.id, session.reload.active_item_id
+    assert_equal "resolved", first.reload.status
+    assert_not_equal first.id, session.active_item_id
+    assert_equal [second.id, third.id], @account.owner_tasks.open.order(:created_at).pluck(:id)
   end
 
   test "item view includes original request clarifications recent conversation and last guest message" do

@@ -33,27 +33,41 @@ module Whatsapp
     end
 
     def call
-      @account.with_lock do
+      delivery_session_id = nil
+      result = @account.with_lock do
         return handled(active_session, true, duplicate: true) if duplicate_webhook?
 
         session = active_session || open_session_if_pending
         return handled(nil, send_owner_message("No tenés pendientes en Ayla.")) unless session
 
         remember_webhook!(session)
+        @current_action = resolve_action(session)
         return handle_menu(session) if session.state == "menu"
         return handle_viewing_item(session) if session.state == "viewing_item"
         return capture_reply_draft(session) if session.state == "awaiting_reply_text"
+        if session.state == "awaiting_send_confirmation" && @current_action == ACTION_IDS[:enviar]
+          if prepare_confirmed_reply!(session)
+            delivery_session_id = session.id
+            next handled(session, true, sending: true)
+          end
+          return invalid_active_item(session)
+        end
         return handle_send_confirmation(session) if session.state == "awaiting_send_confirmation"
+        return handle_sending_message(session) if session.state == "sending_guest_message"
         return handle_learning(session) if session.state == "awaiting_learning_confirmation"
+        return load_next_case(session) if session.state == "loading_next_case"
 
         show_menu(session)
       end
+      return deliver_confirmed_reply(delivery_session_id) if delivery_session_id
+
+      result
     end
 
     private
 
     def handle_menu(session)
-      category = action_id
+      category = @current_action
       return select_category(session, category) if category.in?(CATEGORIES)
       return finish_session(session) if category == ACTION_IDS[:salir]
 
@@ -63,7 +77,7 @@ module Whatsapp
     def handle_viewing_item(session)
       return handle_checkout_item(session) if session.active_category == "checkouts"
 
-      case action_id
+      case @current_action
       when ACTION_IDS[:responder]
         session.update!(state: "awaiting_reply_text", draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
         send_owner_message("Escribí el mensaje exacto que querés enviarle al huésped.")
@@ -80,7 +94,7 @@ module Whatsapp
     end
 
     def handle_checkout_item(session)
-      case action_id
+      case @current_action
       when ACTION_IDS[:checkout_visto]
         event = validated_active_item(session)
         return invalid_active_item(session) unless event
@@ -119,9 +133,7 @@ module Whatsapp
     end
 
     def handle_send_confirmation(session)
-      case action_id
-      when ACTION_IDS[:enviar]
-        send_confirmed_reply(session)
+      case @current_action
       when ACTION_IDS[:editar]
         session.update!(state: "awaiting_reply_text", draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
         send_owner_message("Escribí nuevamente el mensaje que querés enviar.")
@@ -136,49 +148,61 @@ module Whatsapp
       end
     end
 
-    def send_confirmed_reply(session)
+    def handle_sending_message(session)
+      send_owner_message("Estoy enviando la respuesta anterior. No hace falta que vuelvas a tocar Enviar.")
+      handled(session, true, sending: true)
+    end
+
+    def prepare_confirmed_reply!(session)
       item = session.active_item
-      return invalid_active_item(session) unless item && session.draft_for_active_item?
-      return invalid_active_item(session) unless @actor.can_manage_property?(item.property)
+      return false unless item && session.draft_for_active_item?
+      return false unless @actor.can_manage_property?(item.property)
       conversation = item.conversation
-      return invalid_active_item(session) unless conversation&.property_id == item.property_id
-      return invalid_active_item(session) unless conversation.guest_id == item.guest_id && conversation.guest&.phone_number.present?
+      return false unless conversation&.property_id == item.property_id
+      return false unless conversation.guest_id == item.guest_id && conversation.guest&.phone_number.present?
+
+      session.update!(state: "sending_guest_message", expires_at: 30.minutes.from_now)
+      true
+    end
+
+    def deliver_confirmed_reply(session_id)
+      session = participant_sessions.find(session_id)
+      item = session.active_item
+      return invalid_active_item(session) unless item && session.state == "sending_guest_message" && session.draft_for_active_item?
+      category = session.active_category
 
       delivery = HostReplyDelivery.new(
-        item: item, actor: @actor, session: session, provider: @provider, source_message_sid: message_sid
+        item: item, actor: @actor, session: session, provider: @provider, source_message_sid: message_sid,
+        on_success: ->(resolved_item, owner_message) { finalize_sent_case!(session, resolved_item, owner_message, category) },
+        on_failure: ->(_failed_item) { restore_failed_confirmation!(session) }
       ).call
       if delivery.already_handled?
-        clear_draft!(session)
         send_owner_message(already_responded_message(item))
-        return advance_or_finish(session)
+        return reconcile_already_handled_case(session, item)
       end
       unless delivery.sent?
         send_owner_message("No pude enviar esa respuesta. El pendiente sigue abierto y podés volver a intentar.")
         return handled(session, false)
       end
 
-      session.update!(last_owner_message_at: Time.current, draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil)
-      if session.active_category == "consultas"
-        session.update!(state: "awaiting_learning_confirmation", metadata: session.metadata.merge(
-          "learning_item_id" => item.id, "learning_owner_message_id" => delivery.owner_message.id,
-          "learning_answer" => item.final_response_body, "learning_actor_type" => @actor.type, "learning_actor_id" => @actor.id
-        ))
+      if category == "consultas"
         send_learning_options
         return handled(session, true)
       end
 
-      advance_or_finish(session)
+      load_next_case(session)
     end
 
     def handle_learning(session)
-      unless action_id.in?(LEARNING_ACTIONS)
+      unless @current_action.in?(LEARNING_ACTIONS)
         send_owner_message("Elegí si querés que Ayla recuerde esta respuesta.")
         send_learning_options
         return handled(session, true)
       end
 
-      create_approved_faq!(session) if action_id == ACTION_IDS[:recordar]
-      advance_or_finish(session)
+      create_approved_faq!(session) if @current_action == ACTION_IDS[:recordar]
+      prepare_loading_next!(session)
+      load_next_case(session)
     end
 
     def select_category(session, category)
@@ -193,24 +217,103 @@ module Whatsapp
     end
 
     def show_next_item(session)
-      current = validated_active_item(session)
-      return invalid_active_item(session) unless current
-      scope = pending_items(session.active_category).where.not(id: session.active_item_id)
-      table = current.class.base_class.table_name
-      item = scope.where("#{table}.created_at > ?", current.created_at).first || scope.first
-      return finish_session(session) unless item
+      category = session.active_category
+      previous_id = session.active_item_id
+      previous_item = session.active_item
+      scope = pending_items(category).where.not(id: previous_id)
+      item = if previous_item
+        table = previous_item.class.base_class.table_name
+        scope.where("#{table}.created_at > ?", previous_item.created_at).first || scope.first
+      else
+        scope.first
+      end
+      unless item
+        if pending_items(category).where(id: previous_id).exists?
+          send_owner_message("No hay otro pendiente en #{category}. Este caso sigue abierto.")
+          session.active_category == "checkouts" ? send_checkout_actions : send_item_actions
+          return handled(session, true)
+        end
 
-      activate_item!(session, item, session.active_category)
+        prepare_loading_next!(session)
+        return load_next_case(session)
+      end
+
+      activate_item!(session, item, category)
       show_active_item(session)
     end
 
     def advance_or_finish(session)
-      item = pending_items(session.active_category).first
-      return finish_session(session) unless item
+      prepare_loading_next!(session)
+      load_next_case(session)
+    end
 
-      activate_item!(session, item, session.active_category)
-      session.update!(metadata: session.metadata.except("learning_item_id", "learning_owner_message_id", "learning_answer"))
+    def load_next_case(session)
+      session.reload
+      category = session.active_category
+      item = pending_items(category).first
+      return finish_session(session, no_more: true, category: category) unless item
+
+      activate_item!(session, item, category)
       show_active_item(session)
+    end
+
+    def prepare_loading_next!(session)
+      session.update!(
+        state: "loading_next_case",
+        active_item_type: nil,
+        active_item_id: nil,
+        draft_reply_body: nil,
+        draft_item_type: nil,
+        draft_item_id: nil,
+        metadata: session.metadata.except(
+          "learning_item_id", "learning_owner_message_id", "learning_answer",
+          "learning_actor_type", "learning_actor_id"
+        ),
+        expires_at: 30.minutes.from_now
+      )
+    end
+
+    def finalize_sent_case!(session, item, owner_message, category)
+      attributes = {
+        last_owner_message_at: Time.current,
+        active_item_type: nil,
+        active_item_id: nil,
+        draft_reply_body: nil,
+        draft_item_type: nil,
+        draft_item_id: nil,
+        expires_at: 30.minutes.from_now
+      }
+      if category == "consultas"
+        attributes[:state] = "awaiting_learning_confirmation"
+        attributes[:metadata] = session.metadata.merge(
+          "learning_item_id" => item.id,
+          "learning_owner_message_id" => owner_message.id,
+          "learning_answer" => item.final_response_body,
+          "learning_actor_type" => @actor.type,
+          "learning_actor_id" => @actor.id
+        )
+      else
+        attributes[:state] = "loading_next_case"
+      end
+      session.update!(attributes)
+    end
+
+    def restore_failed_confirmation!(session)
+      session.reload
+      return unless session.state == "sending_guest_message"
+
+      session.update!(state: "awaiting_send_confirmation", expires_at: 30.minutes.from_now)
+    end
+
+    def reconcile_already_handled_case(session, item)
+      item.reload
+      if item.response_delivery_state.in?(%w[sending responded]) || item.status == "resolved"
+        prepare_loading_next!(session)
+        load_next_case(session)
+      else
+        restore_failed_confirmation!(session)
+        handled(session, false)
+      end
     end
 
     def activate_item!(session, item, category)
@@ -345,14 +448,14 @@ module Whatsapp
       delivery_success?(delivery)
     end
 
-    def action_id
+    def resolve_action(session)
       interactive = @parsed.interactive_action_id.to_s.strip.downcase
       return interactive if (ACTION_IDS.values + CATEGORIES).include?(interactive)
 
       typed = @parsed.body.to_s.strip.downcase
-      allowed = case active_session&.state
+      allowed = case session.state
       when "menu" then CATEGORIES + [ACTION_IDS[:salir]]
-      when "viewing_item" then active_session&.active_category == "checkouts" ? CHECKOUT_ACTIONS : ITEM_ACTIONS
+      when "viewing_item" then session.active_category == "checkouts" ? CHECKOUT_ACTIONS : ITEM_ACTIONS
       when "awaiting_send_confirmation" then CONFIRMATION_ACTIONS
       when "awaiting_learning_confirmation" then LEARNING_ACTIONS
       else []
@@ -414,9 +517,14 @@ module Whatsapp
       @parsed.metadata.to_h["MessageSid"].presence || @parsed.metadata.to_h["SmsMessageSid"].presence
     end
 
-    def finish_session(session)
+    def finish_session(session, no_more: false, category: nil)
       close_session!(session)
-      send_owner_message("Sesión finalizada.")
+      if no_more
+        label = category.presence || "esta categoría"
+        send_owner_message("No hay más pendientes en #{label}.")
+      else
+        send_owner_message("Sesión finalizada.")
+      end
       result = Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
       Whatsapp::ObserverNotifier.call(actor: @actor, provider: @provider) unless result.sent?
       handled(result.session || session, true, finished: true, follow_up_sent: result.sent?)
@@ -424,7 +532,11 @@ module Whatsapp
 
     def close_session!(session)
       session.update!(state: "resolved", resolved_at: Time.current, active_category: nil, active_item_type: nil, active_item_id: nil,
-                      draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil)
+                      draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil,
+                      metadata: session.metadata.except(
+                        "learning_item_id", "learning_owner_message_id", "learning_answer",
+                        "learning_actor_type", "learning_actor_id"
+                      ))
     end
 
     def clear_draft!(session)

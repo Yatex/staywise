@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_17_170200) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_18_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -395,7 +395,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_17_170200) do
     t.bigint "co_host_id"
     t.string "participant_phone", null: false
     t.string "actor_role", default: "owner", null: false
-    t.index ["account_id", "participant_phone"], name: "index_one_active_host_session_per_participant", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'viewing_item'::character varying, 'awaiting_reply_text'::character varying, 'awaiting_send_confirmation'::character varying, 'awaiting_learning_confirmation'::character varying])::text[]))"
+    t.index ["account_id", "participant_phone"], name: "index_one_active_host_session_per_participant", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'viewing_item'::character varying, 'awaiting_reply_text'::character varying, 'awaiting_send_confirmation'::character varying, 'sending_guest_message'::character varying, 'awaiting_learning_confirmation'::character varying, 'loading_next_case'::character varying])::text[]))"
     t.index ["account_id", "state"], name: "index_owner_whatsapp_sessions_on_account_id_and_state"
     t.index ["account_id"], name: "index_owner_whatsapp_sessions_on_account_id"
     t.index ["active_item_type", "active_item_id"], name: "index_owner_sessions_on_active_item"
