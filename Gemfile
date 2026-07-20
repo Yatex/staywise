@@ -17,7 +17,7 @@ gem "puma", ">= 5.0"
 # Error and performance monitoring. Initialization remains disabled without SENTRY_DSN.
 gem "sentry-ruby", "~> 6.6"
 gem "sentry-rails", "~> 6.6"
-gem "stackprof", require: false
+gem "stackprof"
 
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
 gem "importmap-rails"
