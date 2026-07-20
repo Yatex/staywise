@@ -2,13 +2,18 @@
   "name": "ayla-manager-ai-service",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
   "scripts": {
     "dev": "tsx src/server.ts",
-    "start": "tsx src/server.ts",
-    "test": "tsx --test src/rails-tool-client.test.ts src/evidence-catalog.test.ts src/grounded-decision-builder.test.ts src/decision-schema.test.ts src/guest-message-sanitizer.test.ts src/decision-system-prompt.test.ts src/safe-fallback-response.test.ts src/property-import-schema.test.ts",
+    "start": "node --import tsx --import ./src/sentry.ts src/server.ts",
+    "test": "tsx --test src/rails-tool-client.test.ts src/evidence-catalog.test.ts src/grounded-decision-builder.test.ts src/decision-schema.test.ts src/guest-message-sanitizer.test.ts src/decision-system-prompt.test.ts src/safe-fallback-response.test.ts src/property-import-schema.test.ts src/sentry.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sentry/node": "^10.67.0",
+    "@sentry/profiling-node": "^10.67.0",
     "ai": "^5.0.0",
     "tsx": "^4.20.0",
     "zod": "^3.25.0"

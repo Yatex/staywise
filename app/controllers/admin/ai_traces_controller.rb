@@ -16,7 +16,7 @@ module Admin
     before_action :set_trace, only: :show
 
     def index
-      scope = AIDecisionLog.includes(:property, :conversation, :message, :original_message).recent
+      scope = AIDecisionLog.includes(:property).recent
       scope = scope.where(conversation_id: params[:conversation_id]) if params[:conversation_id].present?
       scope = scope.where(property_id: params[:property_id]) if params[:property_id].present?
       scope = scope.where(decision: params[:decision]) if params[:decision].present?
@@ -31,32 +31,44 @@ module Admin
       @traces = scope
         .select(
           :id,
-          :account_id,
           :property_id,
-          :guest_id,
           :conversation_id,
-          :message_id,
-          :original_message_id,
           :route,
           :decision,
           :language,
-          :validator_result,
-          :rejection_reason,
-          :escalation_required,
-          :replied_candidate,
-          :latency_ms,
-          :model,
-          :detected_intents,
-          :evidence_ids,
-          :missing_information,
-          :safety_flags,
-          :tool_calls,
-          :validation_results,
-          :fallback_reason,
           :final_outcome,
           :provider_delivery_status,
           :created_at,
-          :updated_at
+          Arel.sql(<<~SQL.squish),
+            COALESCE(
+              ARRAY(
+                SELECT DISTINCT COALESCE(tool ->> 'tool_name', tool ->> 'toolName')
+                FROM jsonb_array_elements(COALESCE(ai_decision_logs.tool_calls, '[]'::jsonb)) AS tool
+                WHERE COALESCE(tool ->> 'tool_name', tool ->> 'toolName') IS NOT NULL
+              ),
+              ARRAY[]::text[]
+            ) AS tool_names
+          SQL
+          Arel.sql("jsonb_array_length(COALESCE(ai_decision_logs.evidence_ids, '[]'::jsonb)) AS evidence_count"),
+          Arel.sql(<<~SQL.squish),
+            (
+              COALESCE(ai_decision_logs.fallback_reason, '') <> ''
+              OR COALESCE(ai_decision_logs.route, '') LIKE '%fallback%'
+              OR COALESCE(ai_decision_logs.safety_flags, '[]'::jsonb) ? 'fallback'
+            ) AS fallback_summary
+          SQL
+          Arel.sql(<<~SQL.squish)
+            (
+              ai_decision_logs.validation_results ->> 'failed' = 'true'
+              OR ai_decision_logs.validator_result IN ('rejected', 'contract_validation_failed')
+              OR ai_decision_logs.validation_results ->> 'status' IN (
+                'rejected',
+                'contract_validation_failed',
+                'evidence_provenance_rejected',
+                'security_rejected'
+              )
+            ) AS validation_failed_summary
+          SQL
         )
         .limit(PER_PAGE)
         .offset((@current_page - 1) * PER_PAGE)

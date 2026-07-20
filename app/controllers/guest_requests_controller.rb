@@ -1,5 +1,5 @@
 class GuestRequestsController < ApplicationController
-  PER_PAGE = 30
+  PER_PAGE = 25
 
   def index
     scope = scoped_guest_requests.includes(:guest, :property, :conversation).pending_first

@@ -137,7 +137,50 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href='#{inquiry_path(inquiry)}']"
   end
 
+  test "requests and inquiries are paginated at twenty five and preserve filters" do
+    25.times { |index| create_task(kind: "request", index: index, prefix: "Pedido paginado") }
+    26.times { |index| create_task(kind: "inquiry", index: index, prefix: "Consulta paginada") }
+
+    get guest_requests_path(status: "open")
+    assert_response :success
+    assert_equal 25, response.body.scan(/Pedido paginado \d+/).uniq.size
+    assert_select "a", text: "Siguiente", count: 1 do |links|
+      assert_includes links.first["href"], "page=2"
+      assert_includes links.first["href"], "status=open"
+    end
+
+    get inquiries_path(status: "open", page: 2)
+    assert_response :success
+    assert_equal 1, response.body.scan(/Consulta paginada \d+/).uniq.size
+    assert_select "a", text: "Anterior", count: 1 do |links|
+      assert_includes links.first["href"], "status=open"
+    end
+  end
+
   private
+
+  def create_task(kind:, index:, prefix:)
+    message = @conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "#{prefix} #{index}"
+    )
+    @conversation.owner_tasks.create!(
+      account: @account,
+      property: @property,
+      guest: @guest,
+      message: message,
+      kind: kind,
+      guest_phone: @guest.phone_number,
+      property_name: @property.display_name,
+      category: "other",
+      title: "#{prefix} #{index}",
+      description: message.body,
+      status: "open",
+      priority: "normal",
+      source_channel: "whatsapp"
+    )
+  end
 
   def sign_in_as(user)
     post login_path, params: { email: user.email, password: "password123" }

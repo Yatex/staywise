@@ -111,15 +111,27 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Ayla respondió 2 días atrás"
   end
 
-  test "refresh endpoint renders only live conversation fragments" do
-    get refresh_conversation_path(@conversation)
+  test "refresh endpoint returns only messages after the last known message" do
+    known = @conversation.messages.order(:id).last
+    first_new = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Nuevo uno")
+    second_new = @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "Nuevo dos")
 
+    get refresh_conversation_path(@conversation, after_message_id: known.id)
     assert_response :success
-    assert_select "[data-conversation-refresh-target='messages']"
-    assert_select "[data-conversation-refresh-target='alerts']"
-    assert_select "[data-conversation-refresh-target='guestRequests']"
-    assert_select "[data-conversation-refresh-target='status']"
-    assert_not_includes @response.body, "Responder al huésped"
+    assert_select "#message-#{first_new.id}", count: 1
+    assert_select "#message-#{second_new.id}", count: 1
+    assert_select "#message-#{known.id}", count: 0
+    assert_not_includes response.body, "Alertas de la conversación"
+    assert_not_includes response.body, "Pedidos de la conversación"
+  end
+
+  test "empty refresh returns no content without rendering conversation history" do
+    known = @conversation.messages.order(:id).last
+
+    get refresh_conversation_path(@conversation, after_message_id: known.id)
+
+    assert_response :no_content
+    assert_empty response.body
   end
 
   test "show page uses phone number as chat title and property as tag" do
@@ -231,7 +243,8 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "Pedido creado"
   end
 
-  test "refresh endpoint includes guest requests fragment" do
+  test "refresh marks a new request message without rendering the request panel" do
+    known = @conversation.messages.order(:id).last
     message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "necesito una cama extra")
     @conversation.guest_requests.create!(
       account: @account,
@@ -248,11 +261,12 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
       source_channel: "whatsapp"
     )
 
-    get refresh_conversation_path(@conversation)
+    get refresh_conversation_path(@conversation, after_message_id: known.id)
 
     assert_response :success
-    assert_select "[data-conversation-refresh-target='guestRequests']"
-    assert_includes @response.body, "Pedido de cama extra"
+    assert_select "#message-#{message.id}", count: 1
+    assert_includes @response.body, "Pedido creado"
+    assert_not_includes @response.body, "Pedido de cama extra"
   end
 
   test "show page includes guest escalation and owner manual reply from whatsapp flow" do
@@ -310,7 +324,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_nil result.fetch(:alert)
   end
 
-  test "show page includes guest messages referenced by ai trace logs" do
+  test "show page never mixes a message from another conversation referenced by a trace" do
     legacy_guest = @account.guests.create!(phone_number: "+15550002001", property: @property)
     legacy_conversation = legacy_guest.conversations.create!(property: @property, status: "active")
     traced_message = legacy_conversation.messages.create!(
@@ -336,8 +350,8 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     get conversation_path(@conversation)
 
     assert_response :success
-    assert_select "#message-#{traced_message.id}", count: 1
-    assert_includes @response.body, "a que hora es el check in?"
+    assert_select "#message-#{traced_message.id}", count: 0
+    assert_not_includes @response.body, "a que hora es el check in?"
   end
 
   test "owners only see messages for their tenant after conversation is relinked to another property" do
@@ -428,7 +442,77 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     get admin_ai_traces_path(conversation_id: @conversation.id)
     assert_response :success
     assert_includes @response.body, "AI Trace"
-    assert_includes @response.body, "a que hora es el check in?"
+    assert_includes @response.body, "Trace #"
+    assert_not_includes @response.body, "a que hora es el check in?"
+  end
+
+  test "show loads only the latest twenty messages in chronological order and offers older messages" do
+    base_time = 1.hour.from_now
+    created = 44.times.map do |index|
+      @conversation.messages.create!(
+        sender: index.even? ? "guest" : "ai",
+        channel: "whatsapp",
+        body: "Historial #{index.to_s.rjust(2, '0')}",
+        created_at: base_time + index.seconds
+      )
+    end
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "[data-message-id]", count: 20
+    expected = created.last(20)
+    expected.each { |message| assert_select "#message-#{message.id}", count: 1 }
+    assert_select "#message-#{created[-21].id}", count: 0
+    assert_select "a", text: "Cargar mensajes anteriores", count: 1
+    positions = expected.map { |message| response.body.index("message-#{message.id}") }
+    assert_equal positions.sort, positions
+  end
+
+  test "older message cursor returns twenty without overlap when timestamps are equal" do
+    timestamp = Time.zone.parse("2026-07-20 12:00:00")
+    messages = 44.times.map do |index|
+      @conversation.messages.create!(
+        sender: "guest",
+        channel: "whatsapp",
+        body: "Cursor #{index}",
+        created_at: timestamp,
+        updated_at: timestamp
+      )
+    end
+    initial = messages.last(20)
+
+    get older_messages_conversation_path(
+      @conversation,
+      before_created_at: initial.first.created_at.iso8601(6),
+      before_id: initial.first.id,
+      format: :turbo_stream
+    )
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    returned_ids = response.body.scan(/data-message-id="(\d+)"/).flatten.map(&:to_i)
+    assert_equal 20, returned_ids.size
+    assert_empty returned_ids & initial.map(&:id)
+    assert_equal returned_ids.uniq, returned_ids
+    assert_equal returned_ids.sort, returned_ids
+  end
+
+  test "conversation index is paginated at twenty and preserves filters" do
+    @account.update!(observer_mode_enabled: true, owner_whatsapp_number: "+59899123456")
+    24.times do |index|
+      guest = @account.guests.create!(phone_number: "+155501#{index.to_s.rjust(5, '0')}", property: @property)
+      conversation = guest.conversations.create!(property: @property)
+      conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Conversación #{index}")
+    end
+
+    get conversations_path(filter: "unread")
+
+    assert_response :success
+    assert_select "a", text: "Siguiente", count: 1 do |links|
+      assert_includes links.first["href"], "page=2"
+      assert_includes links.first["href"], "filter=unread"
+    end
   end
 
   test "null whatsapp provider does not store owner reply as sent" do

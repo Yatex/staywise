@@ -1,5 +1,5 @@
 class CheckoutEventsController < ApplicationController
-  PER_PAGE = 30
+  PER_PAGE = 25
 
   def index
     scope = scoped_checkout_events

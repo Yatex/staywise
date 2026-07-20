@@ -1,6 +1,15 @@
 class ApplicationController < ActionController::Base
+  PERFORMANCE_WARNING_THRESHOLDS = {
+    rss_delta_kb: 20.megabytes / 1.kilobyte,
+    allocations: 100_000,
+    records_loaded: 500,
+    response_bytes: 500.kilobytes,
+    duration_ms: 2_000
+  }.freeze
+
   before_action :set_locale
   before_action :require_authentication
+  before_action :set_observability_context
   around_action :log_request_performance
 
   helper_method :current_user, :current_account, :authenticated?
@@ -51,6 +60,27 @@ class ApplicationController < ActionController::Base
     redirect_to subscription_path, alert: "Tu plan actual alcanzó el límite de propiedades."
   end
 
+  def set_observability_context
+    Current.request_id = request.request_id
+    Current.account_id = current_account&.id
+    return unless defined?(Sentry) && Sentry.initialized?
+
+    Sentry.configure_scope do |scope|
+      scope.set_tags({
+        request_id: request.request_id,
+        account_id: current_account&.id,
+        controller: controller_name,
+        action: action_name
+      }.compact)
+    end
+  end
+
+  def set_sentry_tags(tags)
+    return unless defined?(Sentry) && Sentry.initialized?
+
+    Sentry.configure_scope { |scope| scope.set_tags(tags.compact) }
+  end
+
   def log_request_performance
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     allocations_before = GC.stat[:total_allocated_objects]
@@ -77,20 +107,30 @@ class ApplicationController < ActionController::Base
     rss_after = current_rss_kb
     response_bytes = response_body_bytes
 
-    Rails.logger.info(
+    metrics = {
+      duration_ms: duration_ms,
+      allocations: allocations,
+      rss_before_kb: rss_before,
+      rss_after_kb: rss_after,
+      rss_delta_kb: rss_before && rss_after ? rss_after - rss_before : nil,
+      response_bytes: response_bytes,
+      sql_queries: sql_count,
+      records_loaded: loaded_records
+    }
+    log_line =
       "[request-perf] " \
+        "request_id=#{request.request_id} " \
         "controller=#{controller_name} " \
         "action=#{action_name} " \
         "status=#{response&.status} " \
-        "duration_ms=#{duration_ms} " \
-        "allocations=#{allocations} " \
-        "rss_before_kb=#{rss_before || 'unknown'} " \
-        "rss_after_kb=#{rss_after || 'unknown'} " \
-        "rss_delta_kb=#{rss_before && rss_after ? rss_after - rss_before : 'unknown'} " \
-        "response_bytes=#{response_bytes || 'unknown'} " \
-        "sql_queries=#{sql_count} " \
-        "records_loaded=#{loaded_records}"
-    )
+        "#{metrics.map { |key, value| "#{key}=#{value.nil? ? 'unknown' : value}" }.join(' ')}"
+    Rails.logger.info(log_line)
+
+    breached = PERFORMANCE_WARNING_THRESHOLDS.filter_map do |metric, threshold|
+      value = metrics[metric]
+      "#{metric}=#{value}>#{threshold}" if value && value > threshold
+    end
+    Rails.logger.warn("[request-perf-warning] #{log_line} thresholds=#{breached.join(',')}") if breached.any?
   end
 
   def current_rss_kb

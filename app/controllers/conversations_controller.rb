@@ -1,5 +1,7 @@
 class ConversationsController < ApplicationController
-  PER_PAGE = 30
+  PER_PAGE = 20
+  MESSAGE_PAGE_SIZE = 20
+  REFRESH_LIMIT = 50
 
   def index
     @current_page = [params[:page].to_i, 1].max
@@ -28,13 +30,32 @@ class ConversationsController < ApplicationController
 
   def show
     set_conversation
+    load_initial_messages
+    load_conversation_sidebar
     mark_observer_activity_seen!
   end
 
   def refresh
     set_conversation
-    mark_observer_activity_seen!
-    render partial: "refresh", locals: { conversation: @conversation, messages: @messages, alerts: @alerts, guest_requests: @guest_requests }
+    @messages = messages_after(params[:after_message_id]).limit(REFRESH_LIMIT).to_a
+    return head :no_content if @messages.empty?
+
+    @guest_request_message_ids = visible_guest_request_message_ids(@messages)
+    render partial: "message_rows", locals: { messages: @messages, guest_request_message_ids: @guest_request_message_ids }
+  end
+
+  def older_messages
+    set_conversation
+    @messages, @has_older_messages = message_page_before(
+      created_at: params[:before_created_at],
+      id: params[:before_id]
+    )
+    @guest_request_message_ids = visible_guest_request_message_ids(@messages)
+
+    respond_to do |format|
+      format.turbo_stream
+      format.html { redirect_to conversation_path(@conversation) }
+    end
   end
 
   def reply
@@ -69,37 +90,74 @@ class ConversationsController < ApplicationController
 
   def set_conversation
     @conversation = scoped_conversations
-      .includes(:guest, :property, :alerts, messages: [])
+      .includes(:guest, :property)
       .find(params[:id])
     @display_property = display_property_for(@conversation)
-    @messages = complete_message_history_for(@conversation)
-    @alerts = readable_alerts_for(@conversation).order(created_at: :desc)
-    @guest_requests = readable_guest_requests_for(@conversation).order(created_at: :desc)
-    @guest_request_message_ids = @guest_requests.pluck(:message_id).compact
     @can_reply = account_scoped_conversations.where(id: @conversation.id).exists?
+    set_sentry_tags(
+      conversation_id: @conversation.id,
+      property_id: @display_property&.id || @conversation.property_id
+    )
   end
 
   def reply_params
     params.require(:reply).permit(:body)
   end
 
-  def complete_message_history_for(conversation)
-    direct_messages = readable_messages.where(conversation: conversation).to_a
-    traced_message_ids = readable_ai_decision_logs
-      .where(conversation: conversation)
-      .pluck(:message_id, :original_message_id)
-      .flatten
+  def load_initial_messages
+    @messages, @has_older_messages = message_page_before
+    @guest_request_message_ids = visible_guest_request_message_ids(@messages)
+  end
+
+  def load_conversation_sidebar
+    @alerts = readable_alerts_for(@conversation).order(created_at: :desc, id: :desc).limit(25)
+    @guest_requests = readable_guest_requests_for(@conversation).order(created_at: :desc, id: :desc).limit(25)
+  end
+
+  def message_page_before(created_at: nil, id: nil)
+    scope = readable_messages.where(conversation_id: @conversation.id)
+    if created_at.present? && id.present?
+      cursor_time = Time.zone.parse(created_at.to_s)
+      scope = scope.where(
+        "messages.created_at < :created_at OR (messages.created_at = :created_at AND messages.id < :id)",
+        created_at: cursor_time,
+        id: id.to_i
+      )
+    end
+
+    rows = scope.order(created_at: :desc, id: :desc).limit(MESSAGE_PAGE_SIZE + 1).to_a
+    [rows.first(MESSAGE_PAGE_SIZE).reverse, rows.size > MESSAGE_PAGE_SIZE]
+  rescue ArgumentError
+    [[], false]
+  end
+
+  def messages_after(message_id)
+    return Message.none if message_id.blank?
+
+    if message_id.to_i.zero?
+      return readable_messages
+        .where(conversation_id: @conversation.id)
+        .order(created_at: :asc, id: :asc)
+    end
+
+    cursor = readable_messages.where(conversation_id: @conversation.id, id: message_id).pick(:created_at, :id)
+    return Message.none if cursor.blank?
+
+    readable_messages
+      .where(conversation_id: @conversation.id)
+      .where(
+        "messages.created_at > :created_at OR (messages.created_at = :created_at AND messages.id > :id)",
+        created_at: cursor.first,
+        id: cursor.last
+      )
+      .order(created_at: :asc, id: :asc)
+  end
+
+  def visible_guest_request_message_ids(messages)
+    readable_guest_requests_for(@conversation)
+      .where(message_id: messages.map(&:id))
+      .pluck(:message_id)
       .compact
-      .uniq
-
-    traced_messages = Message
-      .where(id: traced_message_ids)
-      .merge(readable_messages)
-      .to_a
-
-    (direct_messages + traced_messages)
-      .uniq(&:id)
-      .sort_by { |message| [message.created_at, message.id] }
   end
 
   def display_property_for(conversation)
@@ -111,10 +169,6 @@ class ConversationsController < ApplicationController
 
   def readable_messages
     current_user.admin? ? Message.all : Message.where(account_id: current_account.id)
-  end
-
-  def readable_ai_decision_logs
-    current_user.admin? ? AIDecisionLog.all : AIDecisionLog.where(account_id: current_account.id)
   end
 
   def readable_alerts_for(conversation)

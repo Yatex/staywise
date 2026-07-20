@@ -16,16 +16,21 @@ class AiContextBuilderTest < ActiveSupport::TestCase
   end
 
   test "includes remote tool endpoint details" do
+    Current.request_id = "request-correlation-123"
     payload = AI::ContextBuilder.new(conversation: @conversation, guest_message: @message).call
 
+    assert_equal "request-correlation-123", payload[:correlation_id]
     assert_equal "https://aylamanager.test", payload.dig(:tool_endpoint, :base_url)
     assert payload.dig(:tool_endpoint, :decision_context_id).present?
+    assert_equal "request-correlation-123", payload.dig(:tool_endpoint, :correlation_id)
     assert_nil payload.dig(:tool_endpoint, :conversation_id)
     assert_nil payload.dig(:tool_endpoint, :message_id)
 
     resolved = AI::DecisionContext.resolve(payload.dig(:tool_endpoint, :decision_context_id))
     assert_equal @conversation, resolved.fetch(:conversation)
     assert_equal @message, resolved.fetch(:guest_message)
+  ensure
+    Current.reset
   end
 
   test "includes complete conversation history in chronological order" do

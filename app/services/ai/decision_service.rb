@@ -81,12 +81,14 @@ module AI
 
       @ai_request_payload = payload
       uri = URI.join(ENV.fetch("AI_SERVICE_URL"), "/decide")
-      response = Net::HTTP.post(
-        uri,
-        payload.to_json,
-        "Content-Type" => "application/json",
-        "Authorization" => "Bearer #{ENV.fetch("AI_SERVICE_TOKEN", "")}"
-      )
+      request = Net::HTTP::Post.new(uri)
+      request["Content-Type"] = "application/json"
+      request["Authorization"] = "Bearer #{ENV.fetch("AI_SERVICE_TOKEN", "")}"
+      request["X-Request-ID"] = payload[:correlation_id].to_s if payload[:correlation_id].present?
+      request.body = payload.to_json
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 30) do |http|
+        http.request(request)
+      end
 
       unless response.is_a?(Net::HTTPSuccess)
         @ai_response_payload = { status: response.code, body: parse_json_or_text(response.body) }
@@ -237,6 +239,7 @@ module AI
         escalation_required: decision.escalation_required,
         latency_ms: latency_ms,
         model: ENV["AI_MODEL"],
+        correlation_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
         tool_calls: @tool_calls,
         checkin_trace: checkin_trace(decision, evidence_ids, validation_results, fallback_reason),
         rejected_candidate: rejected_decision_payload(rejected_decision)
@@ -350,7 +353,8 @@ module AI
         ai_service_url: ENV["AI_SERVICE_URL"],
         conversation_id: @conversation.id,
         guest_id: @conversation.guest_id,
-        message_id: @guest_message.id
+        message_id: @guest_message.id,
+        request_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"]
       }.compact
     end
 

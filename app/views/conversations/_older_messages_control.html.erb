@@ -1,0 +1,13 @@
+<div id="older-messages-control" class="mb-4 text-center">
+  <% if has_older_messages && messages.first.present? %>
+    <%= link_to "Cargar mensajes anteriores",
+      older_messages_conversation_path(
+        conversation,
+        before_created_at: messages.first.created_at.iso8601(6),
+        before_id: messages.first.id,
+        format: :turbo_stream
+      ),
+      class: secondary_button_class,
+      data: { turbo_stream: true } %>
+  <% end %>
+</div>

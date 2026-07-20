@@ -117,6 +117,17 @@ module Internal
         resolved = ::AI::DecisionContext.resolve(params.require(:decision_context_id))
         @conversation = resolved.fetch(:conversation)
         @guest_message = resolved.fetch(:guest_message)
+        if defined?(Sentry) && Sentry.initialized?
+          Sentry.configure_scope do |scope|
+            scope.set_tags(
+              request_id: request.request_id,
+              account_id: @conversation.property.account_id,
+              property_id: @conversation.property_id,
+              conversation_id: @conversation.id,
+              tool_name: action_name
+            )
+          end
+        end
       rescue ::AI::DecisionContext::InvalidContext, ActionController::ParameterMissing
         render json: { error: "invalid_decision_context" }, status: :unauthorized
       end

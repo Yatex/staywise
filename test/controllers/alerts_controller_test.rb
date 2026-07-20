@@ -104,6 +104,29 @@ class AlertsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/evidence|property\.address|\{&quot;/, response.body)
   end
 
+  test "alerts are paginated at twenty five" do
+    26.times do |index|
+      @property.alerts.create!(
+        guest: @guest,
+        conversation: @conversation,
+        alert_type: "unknown_question",
+        title: "Alerta paginada #{index}",
+        description: "Descripción visible #{index}",
+        status: "open",
+        priority: "medium"
+      )
+    end
+
+    get alerts_path
+    assert_response :success
+    assert_equal 25, response.body.scan(%r{href="/alerts/\d+"}).size
+    assert_select "a", text: "Siguiente", count: 1
+
+    get alerts_path(page: 2)
+    assert_response :success
+    assert_equal 2, response.body.scan(%r{href="/alerts/\d+"}).size
+  end
+
   private
 
   def sign_in_as(user)

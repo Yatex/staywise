@@ -55,6 +55,7 @@
       <span>Cuenta: <%= @trace.account&.name || "Sin cuenta" %></span>
       <span>· Propiedad: <%= @trace.property&.display_name || "Sin propiedad" %></span>
       <span>· Conversación: #<%= @trace.conversation_id || "sin ID" %></span>
+      <span>· Correlación: <%= payload["correlation_id"].presence || "Sin datos" %></span>
       <span>· <%= local_datetime(@trace.created_at) %></span>
     </div>
   </section>

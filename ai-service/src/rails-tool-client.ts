@@ -1,6 +1,9 @@
+import { captureSafeException } from "./sentry.js";
+
 export type RailsToolEndpoint = {
   base_url: string;
   decision_context_id: string;
+  correlation_id?: string;
 };
 
 type RailsToolClientOptions = {
@@ -30,22 +33,38 @@ export async function callRailsTool(
   const baseUrl = validatedBaseUrl(toolEndpoint.base_url, options.environment || process.env.NODE_ENV);
   const url = new URL(`/internal/ai/tools/${toolName}`, baseUrl);
   const fetchImpl = options.fetchImpl || fetch;
-  const response = await fetchImpl(url, {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      decision_context_id: toolEndpoint.decision_context_id,
-      ...input,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(toolEndpoint.correlation_id ? { "X-Request-ID": toolEndpoint.correlation_id } : {}),
+      },
+      body: JSON.stringify({
+        decision_context_id: toolEndpoint.decision_context_id,
+        ...input,
+      }),
+    });
+  } catch (error) {
+    captureSafeException(error, {
+      correlation_id: toolEndpoint.correlation_id,
+      tool_name: toolName,
+      error_code: "rails_tool_transport_error",
+    });
+    throw error;
+  }
 
   const text = await response.text();
   const body = parseResponseBody(text);
   if (!response.ok) {
+    captureSafeException(new Error(`Rails tool ${toolName} returned ${response.status}`), {
+      correlation_id: toolEndpoint.correlation_id,
+      tool_name: toolName,
+      status: response.status,
+    });
     return {
       error: "tool_request_failed",
       status: response.status,
@@ -63,6 +82,7 @@ export function resolveRailsToolEndpoint(
   return {
     base_url: environment.RAILS_TOOLS_BASE_URL || toolEndpoint?.base_url || "",
     decision_context_id: toolEndpoint?.decision_context_id || "",
+    ...(toolEndpoint?.correlation_id ? { correlation_id: toolEndpoint.correlation_id } : {}),
   };
 }
 

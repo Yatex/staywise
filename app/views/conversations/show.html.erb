@@ -20,7 +20,11 @@
       <% end %>
     </div>
 
-    <%= render "messages", messages: @messages, guest_request_message_ids: @guest_request_message_ids %>
+    <%= render "messages",
+      conversation: @conversation,
+      messages: @messages,
+      guest_request_message_ids: @guest_request_message_ids,
+      has_older_messages: @has_older_messages %>
 
     <% if @can_reply %>
       <div class="border-t border-slate-200 bg-white px-5 py-5">

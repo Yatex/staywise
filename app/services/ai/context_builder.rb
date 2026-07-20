@@ -14,6 +14,10 @@ module AI
       authorization = ReservationAuthorization.new(guest: @guest, property: @property)
 
       {
+        correlation_id: Current.request_id.presence || SecureRandom.uuid,
+        account_id: @property.account_id,
+        property_id: @property.id,
+        conversation_id: @conversation.id,
         guest_message: @guest_message.body,
         guest_language_fallback: LanguageHelper.normalize_code(@guest.language),
         owner_language: LanguageHelper.owner_language(@property.account),
@@ -73,7 +77,8 @@ module AI
 
       {
         base_url: base_url,
-        decision_context_id: DecisionContext.issue(conversation: @conversation, guest_message: @guest_message)
+        decision_context_id: DecisionContext.issue(conversation: @conversation, guest_message: @guest_message),
+        correlation_id: Current.request_id
       }
     end
 

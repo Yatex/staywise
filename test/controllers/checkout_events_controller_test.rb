@@ -73,6 +73,36 @@ class CheckoutEventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "departures are paginated at twenty five and preserve status filters" do
+    26.times do |index|
+      message = @conversation.messages.create!(
+        sender: "guest",
+        channel: "whatsapp",
+        body: "Salida paginada #{index}"
+      )
+      @account.checkout_events.create!(
+        property: @property,
+        guest: @guest,
+        conversation: @conversation,
+        source_message: message,
+        reservation_key: "reservation:paged-#{index}",
+        guest_message_body: message.body,
+        checked_out_at: Time.current + index.seconds
+      )
+    end
+
+    get checkout_events_path(status: "pending")
+    assert_response :success
+    assert_equal 25, response.body.scan(/Salida paginada \d+/).uniq.size
+    assert_select "a", text: "Siguiente", count: 1 do |links|
+      assert_includes links.first["href"], "status=pending"
+    end
+
+    get checkout_events_path(status: "pending", page: 2)
+    assert_response :success
+    assert_equal 1, response.body.scan(/Salida paginada \d+/).uniq.size
+  end
+
   private
 
   def sign_in_as(user)

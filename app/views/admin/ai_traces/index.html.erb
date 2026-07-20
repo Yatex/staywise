@@ -73,7 +73,7 @@
 
     <div class="divide-y divide-slate-100">
       <% @traces.each do |trace| %>
-        <% tool_names = trace.tool_calls.map { |tool| tool["tool_name"] || tool["toolName"] }.compact.uniq %>
+        <% tool_names = Array(trace[:tool_names]).compact_blank %>
         <%= link_to admin_ai_trace_path(trace, query_params.except("page")), class: "block px-4 py-2.5 transition hover:bg-slate-50" do %>
           <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_230px] lg:items-center">
             <div class="min-w-0">
@@ -85,7 +85,7 @@
                 <% if trace.validation_failed? %>
                   <span class="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">Validación fallida</span>
                 <% end %>
-                <p class="min-w-0 truncate text-sm font-semibold text-slate-950"><%= trace.original_message&.body || trace.message&.body || "Mensaje no disponible" %></p>
+                <p class="min-w-0 truncate text-sm font-semibold text-slate-950">Trace #<%= trace.id %> · <%= trace.decision.presence || trace.route %></p>
               </div>
               <p class="mt-1 truncate text-xs text-slate-500">
                 <%= trace.property&.display_name || "Propiedad sin asociar" %>
@@ -98,7 +98,7 @@
             </div>
             <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 lg:justify-end lg:text-right">
               <span>Idioma <strong class="font-semibold text-slate-800"><%= trace.language.presence || "-" %></strong></span>
-              <span>Evidence <strong class="font-semibold text-slate-800"><%= Array(trace.evidence_ids).size %></strong></span>
+              <span>Evidence <strong class="font-semibold text-slate-800"><%= trace[:evidence_count].to_i %></strong></span>
               <span>WA <strong class="font-semibold text-slate-800"><%= trace.provider_delivery_status || "-" %></strong></span>
             </div>
           </div>

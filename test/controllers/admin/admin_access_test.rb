@@ -364,7 +364,8 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_ai_traces_path(decision: "reply", tool: "stay_facts")
     assert_response :success
-    assert_includes response.body, "a que hora es el check in?"
+    assert_not_includes response.body, "a que hora es el check in?"
+    assert_includes response.body, "Trace ##{trace.id}"
     assert_includes response.body, "stay_facts"
 
     get admin_ai_trace_path(trace)
@@ -393,6 +394,45 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "[REDACTED]"
     assert_not_includes response.body, "SuperSecret123"
     assert_not_includes response.body, "secret-token"
+  end
+
+  test "AI trace index paginates metadata without selecting heavy payload columns" do
+    26.times do |index|
+      AIDecisionLog.create!(
+        account: @owner_account,
+        property: @property,
+        route: "remote_ai",
+        decision: "paged_trace",
+        final_outcome: "reply",
+        tool_calls: [{ tool_name: "property_brain", response: { content: "HEAVY-#{index}" } }],
+        evidence_ids: ["faq.#{index}"],
+        payload: { prompt: "HEAVY-PROMPT-#{index}" },
+        ai_request_payload: { conversation_history: ["HEAVY-HISTORY-#{index}"] },
+        ai_response_payload: { output: "HEAVY-OUTPUT-#{index}" }
+      )
+    end
+    sign_in_as(@admin)
+    select_sql = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql].to_s
+      select_sql << sql if sql.match?(/SELECT.+FROM "ai_decision_logs"/m) && sql.include?("LIMIT")
+    end
+
+    get admin_ai_traces_path(decision: "paged_trace", property_id: @property.id)
+
+    assert_response :success
+    assert_equal 25, response.body.scan(/Trace #\d+/).uniq.size
+    assert_select "a", text: "Siguiente", count: 1 do |links|
+      assert_includes links.first["href"], "decision=paged_trace"
+      assert_includes links.first["href"], "property_id=#{@property.id}"
+    end
+    metadata_query = select_sql.find { |sql| sql.include?("jsonb_array_elements") }
+    assert metadata_query
+    %w[payload ai_request_payload ai_response_payload tool_calls].each do |column|
+      refute_match(/"ai_decision_logs"\."#{column}"/, metadata_query)
+    end
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
   test "admin can inspect and resolve operational errors" do

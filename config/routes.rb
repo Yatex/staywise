@@ -42,6 +42,7 @@ Rails.application.routes.draw do
   resources :conversations, only: [:index, :show] do
     post :reply, on: :member
     get :refresh, on: :member
+    get :older_messages, on: :member
   end
   resources :guest_requests, path: "pedidos", only: [:index, :show, :update], defaults: { kind: "request" }
   resources :inquiries, path: "consultas", controller: "guest_requests", only: [:index, :show, :update], defaults: { kind: "inquiry" }

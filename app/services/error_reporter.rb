@@ -10,6 +10,11 @@ class ErrorReporter
     api_key
     secret
   ].freeze
+  SENTRY_CONTEXT_KEYS = %w[
+    account_id property_id conversation_id ai_trace_id message_id request_id
+    action controller tool_name evidence_count status error_code provider
+    actor_role actor_id item_type item_id
+  ].freeze
 
   def self.report(error = nil, source:, severity: "error", account: nil, property: nil, message: nil, context: {})
     new(
@@ -34,6 +39,7 @@ class ErrorReporter
   end
 
   def report
+    report_to_sentry
     OperationalError.create!(
       account: @account,
       property: @property,
@@ -49,6 +55,32 @@ class ErrorReporter
   end
 
   private
+
+  def report_to_sentry
+    return unless defined?(Sentry) && Sentry.initialized?
+
+    Sentry.with_scope do |scope|
+      scope.set_level(normalized_severity)
+      scope.set_tags({
+        source: @source.to_s,
+        account_id: @account&.id,
+        property_id: @property&.id,
+        request_id: Current.request_id
+      }.compact)
+      scope.set_context("operation", sentry_context)
+      if @error
+        Sentry.capture_exception(@error)
+      else
+        Sentry.capture_message(@message.presence || "Operational error")
+      end
+    end
+  rescue StandardError => sentry_error
+    Rails.logger.debug("[sentry-reporter] #{sentry_error.class}: #{sentry_error.message}")
+  end
+
+  def sentry_context
+    sanitized_context.slice(*SENTRY_CONTEXT_KEYS)
+  end
 
   def normalized_severity
     OperationalError::SEVERITIES.include?(@severity.to_s) ? @severity.to_s : "error"

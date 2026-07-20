@@ -1,5 +1,5 @@
 class AlertsController < ApplicationController
-  PER_PAGE = 30
+  PER_PAGE = 25
 
   def index
     scope = Alert.joins(:property)

@@ -1206,10 +1206,9 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       }.to_json
     )
 
-    original_post = Net::HTTP.method(:post)
-    Net::HTTP.define_singleton_method(:post) { |_uri, _body, _headers| response }
-
-    begin
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) { |_request| response }
+    Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
       decision = AI::DecisionService.call(conversation: @conversation, guest_message: message)
 
       audit = AIDecisionLog.where(message: message).last
@@ -1220,8 +1219,6 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       assert_equal "remote_ai", audit.route
       assert_equal "accepted", audit.validator_result
       assert_empty audit.validation_results["reasons"]
-    ensure
-      Net::HTTP.define_singleton_method(:post, original_post)
     end
   end
 

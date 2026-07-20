@@ -1,4 +1,6 @@
+import "./sentry.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { gateway, generateObject } from "ai";
 import { z } from "zod";
 import {
@@ -18,6 +20,7 @@ import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 import { safeFallbackResponseFor } from "./safe-fallback-response.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
+import { captureSafeException, withSentryRequestContext } from "./sentry.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
@@ -59,6 +62,15 @@ type ToolMandatoryTrace = {
 };
 
 const server = createServer(async (request, response) => {
+  const correlationId = headerValue(request, "x-request-id") || randomUUID();
+  response.setHeader("X-Request-ID", correlationId);
+  console.log(
+    `[ai-service-request] correlation_id=${correlationId} method=${request.method || "unknown"} path=${(request.url || "/").split("?")[0]}`,
+  );
+
+  return withSentryRequestContext(correlationId, {
+    endpoint: request.url || "unknown",
+  }, async () => {
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, { ok: true });
     return;
@@ -82,6 +94,8 @@ const server = createServer(async (request, response) => {
   try {
     const body = await readBody(request);
     payload = JSON.parse(body || "{}");
+    payload.correlation_id = payload.correlation_id || correlationId;
+    if (payload.tool_endpoint) payload.tool_endpoint.correlation_id = correlationId;
     mandatoryTrace = newToolMandatoryTrace(payload);
 
     if (request.url === "/property_import") {
@@ -98,7 +112,7 @@ const server = createServer(async (request, response) => {
     mandatoryTrace = newToolMandatoryTrace(payload);
 
     const conversationalClassification = classifyConversationalOnly(payload?.guest_message);
-    if (shouldBypassModelForConversational(conversationalClassification)) {
+    if (conversationalClassification && shouldBypassModelForConversational(conversationalClassification)) {
       mandatoryTrace.skip_reason = `conversational_only:${conversationalClassification.kind}`;
       emitToolMandatoryTrace(mandatoryTrace, toolTrace);
       sendJson(response, 200, toPublicDecision(conversationalOnlyDecision(payload, conversationalClassification)));
@@ -198,13 +212,22 @@ const server = createServer(async (request, response) => {
       },
     });
   } catch (error) {
-    console.error("[ai-service]", error);
+    console.error(`[ai-service] correlation_id=${correlationId}`, error);
+    captureSafeException(error, {
+      correlation_id: correlationId,
+      endpoint: request.url || "unknown",
+      account_id: safeNumericTag(payload?.account_id || payload?.property?.account_id),
+      property_id: safeNumericTag(payload?.property_id || payload?.property?.id),
+      conversation_id: safeNumericTag(payload?.conversation_id),
+      decision_action: payload?.action,
+    });
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
     sendJson(response, 500, {
       error: "ai_service_failure",
       audit: withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace, generateObjectTrace).audit,
     });
   }
+  });
 });
 
 const railsToolsOrigin = validateRailsToolClientBootConfig();
@@ -236,6 +259,15 @@ function authorized(request: IncomingMessage) {
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(payload));
+}
+
+function headerValue(request: IncomingMessage, name: string) {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function safeNumericTag(value: unknown) {
+  return typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value)) ? value : undefined;
 }
 
 function gatewayModelId() {

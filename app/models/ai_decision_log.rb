@@ -41,10 +41,18 @@ class AIDecisionLog < ApplicationRecord
   end
 
   def fallback?
+    if has_attribute?("fallback_summary")
+      return ActiveModel::Type::Boolean.new.cast(self[:fallback_summary])
+    end
+
     fallback_reason.present? || safety_flags.include?("fallback") || route.to_s.include?("fallback")
   end
 
   def validation_failed?
+    if has_attribute?("validation_failed_summary")
+      return ActiveModel::Type::Boolean.new.cast(self[:validation_failed_summary])
+    end
+
     validation_results.to_h["failed"] == true ||
       validator_result.in?(%w[rejected contract_validation_failed]) ||
       validation_results.to_h["status"].in?(%w[rejected contract_validation_failed evidence_provenance_rejected security_rejected])

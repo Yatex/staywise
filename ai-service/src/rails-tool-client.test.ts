@@ -107,6 +107,31 @@ test("private Render HTTP origin with an explicit port is allowed in production"
   assert.equal(result.evidence[0].evidence_id, "property.check_in_time");
 });
 
+test("Rails tool calls preserve the safe request correlation id", async () => {
+  let receivedHeaders: HeadersInit | undefined;
+  const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit) => {
+    receivedHeaders = init?.headers;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ evidence: [] }),
+    } as Response;
+  };
+
+  await callRailsTool(
+    {
+      base_url: "https://aylamanager.example",
+      decision_context_id: "signed-context",
+      correlation_id: "request-correlation-123",
+    },
+    "property_brain",
+    { query: "cerradura" },
+    { fetchImpl, token: "shared-token", environment: "production" },
+  );
+
+  assert.equal((receivedHeaders as Record<string, string>)["X-Request-ID"], "request-correlation-123");
+});
+
 test("production boot requires and reports the configured HTTPS Rails tools origin", () => {
   assert.throws(
     () => validateRailsToolClientBootConfig("production", { AI_SERVICE_TOKEN: "shared-token" }),
