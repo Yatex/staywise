@@ -1,5 +1,6 @@
 class SettingsController < ApplicationController
   PasswordUpdateError = Class.new(StandardError)
+  SECTIONS = %w[profile ai whatsapp].freeze
 
   def show
     @account = current_account
@@ -16,7 +17,7 @@ class SettingsController < ApplicationController
       update_user! if params[:user].present?
     end
 
-    redirect_to settings_path, notice: "Configuración actualizada."
+    redirect_to settings_path(section: settings_section), notice: "Configuración actualizada."
   rescue ActiveRecord::RecordInvalid => error
     @settings_error = error.record.errors.full_messages.to_sentence
     render :show, status: :unprocessable_entity
@@ -30,14 +31,24 @@ class SettingsController < ApplicationController
 
     co_host = current_account.co_hosts.find(params[:id])
     co_host.update!(observer_mode_enabled: ActiveModel::Type::Boolean.new.cast(params[:observer_mode_enabled]))
-    redirect_to settings_path, notice: "Modo observador del co-host actualizado."
+    redirect_to settings_path(section: "whatsapp"), notice: "Modo observador del co-host actualizado."
   end
 
   private
 
   def account_params
-    params.require(:account).permit(:ai_active, :owner_whatsapp_number, :owner_whatsapp_escalations_enabled, :observer_mode_enabled)
+    permitted = params.require(:account).permit(:ai_active, :owner_whatsapp_number, :observer_mode_enabled)
+    if permitted.key?(:owner_whatsapp_number)
+      phone_present = permitted[:owner_whatsapp_number].to_s.gsub(/\Awhatsapp:/, "").strip.present?
+      permitted[:owner_whatsapp_escalations_enabled] = phone_present
+    end
+    permitted
   end
+
+  def settings_section
+    params[:section].to_s.presence_in(SECTIONS) || "profile"
+  end
+  helper_method :settings_section
 
   def update_user!
     permitted = params.require(:user).permit(:name, :current_password, :password, :password_confirmation)

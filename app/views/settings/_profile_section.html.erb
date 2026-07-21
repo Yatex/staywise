@@ -1,0 +1,37 @@
+<%= form_with scope: :user, url: settings_path, method: :patch, class: "space-y-5" do |form| %>
+  <%= hidden_field_tag :section, "profile" %>
+
+  <section class="<%= card_class %> p-5">
+    <div>
+      <h2 class="text-base font-semibold text-slate-950">Mi perfil</h2>
+      <p class="mt-1 text-sm text-slate-500">La información con la que se identifica tu cuenta.</p>
+    </div>
+    <div class="mt-5 max-w-xl">
+      <%= form.label :name, "Tu nombre", class: label_class %>
+      <%= form.text_field :name, value: @user.name, class: field_class %>
+    </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h2 class="text-base font-semibold text-slate-950">Seguridad</h2>
+    <p class="mt-1 text-sm text-slate-500">Dejá estos campos vacíos si no querés cambiar tu contraseña.</p>
+    <div class="mt-5 grid gap-4 md:grid-cols-3">
+      <div>
+        <%= form.label :current_password, "Contraseña actual", class: label_class %>
+        <%= form.password_field :current_password, autocomplete: "current-password", class: field_class %>
+      </div>
+      <div>
+        <%= form.label :password, "Nueva contraseña", class: label_class %>
+        <%= form.password_field :password, autocomplete: "new-password", minlength: 8, class: field_class %>
+      </div>
+      <div>
+        <%= form.label :password_confirmation, "Confirmar contraseña", class: label_class %>
+        <%= form.password_field :password_confirmation, autocomplete: "new-password", minlength: 8, class: field_class %>
+      </div>
+    </div>
+  </section>
+
+  <div class="flex justify-end">
+    <%= form.submit "Guardar perfil", class: primary_button_class %>
+  </div>
+<% end %>

@@ -1,0 +1,20 @@
+<section class="<%= card_class %> p-5">
+  <div class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-slate-950">Ayla AI</h2>
+        <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= @account.ai_active? ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-600 ring-slate-200' %>">
+          <%= @account.ai_active? ? "Activa" : "Apagada" %>
+        </span>
+      </div>
+      <p class="mt-2 max-w-2xl text-sm text-slate-500">
+        <%= @account.ai_active? ? "Ayla está respondiendo automáticamente las consultas de los huéspedes." : "Ayla no responderá automáticamente hasta que vuelvas a activarla." %>
+      </p>
+    </div>
+    <%= button_to @account.ai_active? ? "Apagar AI" : "Activar AI",
+      settings_path,
+      method: :patch,
+      params: { section: "ai", account: { ai_active: @account.ai_active? ? "0" : "1" } },
+      class: @account.ai_active? ? "inline-flex shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50" : primary_button_class %>
+  </div>
+</section>
