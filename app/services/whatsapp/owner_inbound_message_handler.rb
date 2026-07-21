@@ -526,7 +526,6 @@ module Whatsapp
         send_owner_message("Sesión finalizada.")
       end
       result = Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
-      Whatsapp::ObserverNotifier.call(actor: @actor, provider: @provider) unless result.sent?
       handled(result.session || session, true, finished: true, follow_up_sent: result.sent?)
     end
 
@@ -546,8 +545,7 @@ module Whatsapp
     def invalid_active_item(session)
       close_session!(session)
       send_owner_message("Ese pendiente ya no está disponible. No se envió ningún mensaje al huésped.")
-      result = Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
-      Whatsapp::ObserverNotifier.call(actor: @actor, provider: @provider) unless result.sent?
+      Whatsapp::OwnerEscalationNotifier.call(actor: @actor, provider: @provider)
       handled(session, false)
     end
 

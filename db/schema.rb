@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_18_190000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_21_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -333,28 +333,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_190000) do
     t.index ["sender"], name: "index_messages_on_sender"
   end
 
-  create_table "observer_whatsapp_sessions", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "co_host_id"
-    t.bigint "current_activity_id"
-    t.string "participant_phone", null: false
-    t.string "actor_role", null: false
-    t.string "state", default: "active", null: false
-    t.datetime "started_at", null: false
-    t.datetime "expires_at", null: false
-    t.datetime "last_prompted_at"
-    t.datetime "resolved_at"
-    t.jsonb "processed_message_sids", default: [], null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "participant_phone"], name: "index_one_active_observer_session_per_participant", unique: true, where: "((state)::text = 'active'::text)"
-    t.index ["account_id"], name: "index_observer_whatsapp_sessions_on_account_id"
-    t.index ["co_host_id"], name: "index_observer_whatsapp_sessions_on_co_host_id"
-    t.index ["current_activity_id"], name: "index_observer_whatsapp_sessions_on_current_activity_id"
-    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying, 'co_host'::character varying]::text[])", name: "observer_sessions_actor_role_check"
-    t.check_constraint "state::text = ANY (ARRAY['active'::character varying, 'resolved'::character varying]::text[])", name: "observer_sessions_state_check"
-  end
-
   create_table "operational_errors", force: :cascade do |t|
     t.bigint "account_id"
     t.bigint "property_id"
@@ -547,9 +525,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_190000) do
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "properties"
-  add_foreign_key "observer_whatsapp_sessions", "accounts"
-  add_foreign_key "observer_whatsapp_sessions", "co_hosts"
-  add_foreign_key "observer_whatsapp_sessions", "conversation_observer_activities", column: "current_activity_id"
   add_foreign_key "operational_errors", "accounts"
   add_foreign_key "operational_errors", "properties"
   add_foreign_key "owner_whatsapp_sessions", "accounts"

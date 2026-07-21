@@ -6,8 +6,6 @@ class ConversationObserverActivity < ApplicationRecord
   belongs_to :conversation
   belongs_to :property
   belongs_to :observer, polymorphic: true
-  has_many :observer_whatsapp_sessions, foreign_key: :current_activity_id, dependent: :nullify
-
   validates :last_activity_at, presence: true
   validates :latest_message_direction, inclusion: { in: DIRECTIONS }
   validates :unread_activity_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }

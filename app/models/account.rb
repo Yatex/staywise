@@ -33,7 +33,6 @@ class Account < ApplicationRecord
   has_many :billing_events, dependent: :nullify
   has_many :operational_errors, dependent: :nullify
   has_many :owner_whatsapp_sessions, dependent: :destroy
-  has_many :observer_whatsapp_sessions, dependent: :destroy
   has_many :conversation_observer_activities, as: :observer, dependent: :destroy
   has_many :owner_tasks, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
@@ -119,7 +118,6 @@ class Account < ApplicationRecord
     return unless saved_change_to_observer_mode_enabled? && !observer_mode_enabled?
 
     conversation_observer_activities.unseen.update_all(observer_seen_at: Time.current, unread_activity_count: 0, updated_at: Time.current)
-    observer_whatsapp_sessions.active.update_all(state: "resolved", resolved_at: Time.current, current_activity_id: nil, updated_at: Time.current)
   end
 
   def normalize_ai_configuration

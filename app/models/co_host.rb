@@ -2,7 +2,6 @@ class CoHost < ApplicationRecord
   belongs_to :account
   has_many :properties, dependent: :nullify
   has_many :owner_whatsapp_sessions, dependent: :nullify
-  has_many :observer_whatsapp_sessions, dependent: :nullify
   has_many :conversation_observer_activities, as: :observer, dependent: :destroy
 
   validates :name, :whatsapp_number, presence: true
@@ -37,6 +36,5 @@ class CoHost < ApplicationRecord
     return unless saved_change_to_observer_mode_enabled? && !observer_mode_enabled?
 
     conversation_observer_activities.unseen.update_all(observer_seen_at: Time.current, unread_activity_count: 0, updated_at: Time.current)
-    observer_whatsapp_sessions.active.update_all(state: "resolved", resolved_at: Time.current, current_activity_id: nil, updated_at: Time.current)
   end
 end

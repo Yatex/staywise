@@ -80,31 +80,16 @@ module Whatsapp
           }
         }
       },
-      owner_observer_conversations_notice: {
-        "friendly_name" => "owner_observer_conversations_notice_v1",
+      owner_observer_activity_notice: {
+        "friendly_name" => "owner_observer_activity_notice_v2",
         "language" => "es",
-        "variables" => { "1" => "2" },
+        "variables" => {
+          "1" => "Hay actividad nueva en una conversación. Huésped: Juan Pérez. Propiedad: Palermo Soho.",
+          "2" => "https://aylamanager.com/conversations/123"
+        },
         "types" => {
-          "twilio/quick-reply" => {
-            "body" => "Tenés nueva actividad en las conversaciones de tus huéspedes.\n\nConversaciones con novedades: {{1}}\n\nSeleccioná Conversaciones para revisarlas.",
-            "actions" => [
-              { "type" => "QUICK_REPLY", "title" => "Conversaciones", "id" => "conversaciones" }
-            ]
-          }
-        }
-      },
-      observer_actions: {
-        "friendly_name" => "ayla_owner_observer_actions_v1",
-        "language" => "es",
-        "types" => {
-          "twilio/quick-reply" => {
-            "body" => "Elegí una opción para continuar.",
-            "actions" => [
-              { "type" => "QUICK_REPLY", "title" => "Ver conversación", "id" => "ver_conversacion" },
-              { "type" => "QUICK_REPLY", "title" => "Siguiente", "id" => "siguiente" },
-              { "type" => "QUICK_REPLY", "title" => "Marcar como vista", "id" => "conversacion_vista" },
-              { "type" => "QUICK_REPLY", "title" => "Salir", "id" => "salir" }
-            ]
+          "twilio/text" => {
+            "body" => "{{1}}\n\nAbrir en el panel:\n{{2}}"
           }
         }
       }
@@ -177,13 +162,13 @@ module Whatsapp
     end
 
     def provision_and_submit_observer_notice
-      sid = fetch(:owner_observer_conversations_notice)
+      sid = fetch(:owner_observer_activity_notice)
       raise "Twilio credentials are not configured" if sid.blank?
 
       approval = @client.fetch_whatsapp_approval(sid)
       approval = @client.submit_whatsapp_approval(
         sid,
-        name: "owner_observer_conversations_notice_v1",
+        name: "owner_observer_activity_notice_v2",
         category: "UTILITY"
       ) if approval.to_h["whatsapp"].blank?
 

@@ -95,17 +95,16 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
     checkout_ids = definitions.dig(:checkout_actions, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
     notice = definitions.fetch(:owner_escalation_notice_with_checkouts)
     notice_ids = notice.dig("types", "twilio/quick-reply", "actions").map { |action| action["id"] }
-    observer_notice = definitions.fetch(:owner_observer_conversations_notice)
-    observer_notice_ids = observer_notice.dig("types", "twilio/quick-reply", "actions").map { |action| action["id"] }
-    observer_action_ids = definitions.dig(:observer_actions, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
+    observer_notice = definitions.fetch(:owner_observer_activity_notice)
 
     assert_equal %w[responder siguiente omitir salir], item_ids
     assert_equal %w[enviar editar cancelar], confirm_ids
     assert_equal %w[recordar no_recordar], learning_ids
     assert_equal %w[checkout_visto siguiente salir], checkout_ids
     assert_equal %w[pedidos consultas alertas checkouts], notice_ids
-    assert_equal %w[conversaciones], observer_notice_ids
-    assert_equal %w[ver_conversacion siguiente conversacion_vista salir], observer_action_ids
+    assert_equal ["twilio/text"], observer_notice.fetch("types").keys
+    assert_equal({ "1" => "Hay actividad nueva en una conversación. Huésped: Juan Pérez. Propiedad: Palermo Soho.",
+                   "2" => "https://aylamanager.com/conversations/123" }, observer_notice.fetch("variables"))
     assert_equal({ "1" => "2", "2" => "1", "3" => "1", "4" => "1" }, notice.fetch("variables"))
     assert_equal "owner_escalation_notice_with_checkouts_v1", notice.fetch("friendly_name")
     assert_no_match(/approval/i, definitions.to_json)
@@ -119,10 +118,10 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
 
     result = registry.provision_and_submit_observer_notice
 
-    definition = client.created_definitions.find { |item| item["friendly_name"] == "owner_observer_conversations_notice_v1" }
+    definition = client.created_definitions.find { |item| item["friendly_name"] == "owner_observer_activity_notice_v2" }
     assert definition.present?
-    assert_equal "twilio/quick-reply", definition.fetch("types").keys.first
-    assert_equal "conversaciones", definition.dig("types", "twilio/quick-reply", "actions", 0, "id")
+    assert_equal "twilio/text", definition.fetch("types").keys.first
+    assert_includes definition.dig("types", "twilio/text", "body"), "{{2}}"
     assert_equal "UTILITY", client.approval_submissions.first.fetch(:category)
     assert_equal "HX_APPROVED_OBSERVER", ENV["TWILIO_OWNER_OBSERVER_NOTICE_CONTENT_SID"]
     assert result.fetch("sid").present?

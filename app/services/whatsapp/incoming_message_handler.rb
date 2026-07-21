@@ -15,9 +15,6 @@ module Whatsapp
       end
 
       if OwnerInboundMessageHandler.owner_message?(parsed)
-        observer_handler = ObserverInboundMessageHandler.new(parsed, provider: @provider)
-        return observer_handler.call if observer_handler.handle?
-
         return OwnerInboundMessageHandler.new(parsed, provider: @provider).call
       end
 

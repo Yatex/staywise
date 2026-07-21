@@ -1,18 +1,17 @@
 module Observer
   class ActivityRecorder
-    def self.call(message: nil, conversation: nil, direction: nil, provider: Whatsapp::ProviderFactory.build)
+    def self.call(message: nil, conversation: nil, direction: nil)
       conversation ||= message&.conversation
       direction ||= message&.sender || "system"
       return if conversation.blank?
 
-      new(conversation: conversation, direction: direction, provider: provider).call
+      new(conversation: conversation, direction: direction).call
     end
 
-    def initialize(conversation:, direction:, provider:)
+    def initialize(conversation:, direction:)
       @conversation = conversation
       @property = conversation.property
       @direction = direction.to_s.in?(ConversationObserverActivity::DIRECTIONS) ? direction.to_s : "system"
-      @provider = provider
     end
 
     def call
@@ -22,7 +21,7 @@ module Observer
         next if actor.observer_mode_activated_at.present? && Time.current < actor.observer_mode_activated_at
 
         activity = record_for(actor)
-        Whatsapp::ObserverNotifier.call(actor: actor, provider: @provider)
+        ObserverNotificationJob.set(wait: ConversationObserverActivity::NOTIFICATION_WINDOW).perform_later(actor.type, actor.id)
         activity
       rescue StandardError => error
         ErrorReporter.report(error, source: "observer_activity_recorder", severity: "error", account: actor.account,
