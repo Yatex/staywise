@@ -85,11 +85,12 @@
                 <% if trace.validation_failed? %>
                   <span class="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">Validación fallida</span>
                 <% end %>
-                <p class="min-w-0 truncate text-sm font-semibold text-slate-950">Trace #<%= trace.id %> · <%= trace.decision.presence || trace.route %></p>
+                <p class="min-w-0 truncate text-sm font-semibold text-slate-950"><%= trace.message&.body.presence || "Trace ##{trace.id}" %></p>
               </div>
               <p class="mt-1 truncate text-xs text-slate-500">
                 <%= trace.property&.display_name || "Propiedad sin asociar" %>
                 · Conversación #<%= trace.conversation_id || "sin ID" %>
+                · Trace #<%= trace.id %>
                 · <%= local_datetime(trace.created_at) %>
                 <% if tool_names.any? %>
                   · Tools: <%= tool_names.join(", ") %>

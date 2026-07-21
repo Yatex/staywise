@@ -443,7 +443,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, "AI Trace"
     assert_includes @response.body, "Trace #"
-    assert_not_includes @response.body, "a que hora es el check in?"
+    assert_includes @response.body, "a que hora es el check in?"
   end
 
   test "show loads only the latest twenty messages in chronological order and offers older messages" do

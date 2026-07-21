@@ -16,7 +16,7 @@ module Admin
     before_action :set_trace, only: :show
 
     def index
-      scope = AIDecisionLog.includes(:property).recent
+      scope = AIDecisionLog.includes(:property, :message).recent
       scope = scope.where(conversation_id: params[:conversation_id]) if params[:conversation_id].present?
       scope = scope.where(property_id: params[:property_id]) if params[:property_id].present?
       scope = scope.where(decision: params[:decision]) if params[:decision].present?
@@ -33,6 +33,7 @@ module Admin
           :id,
           :property_id,
           :conversation_id,
+          :message_id,
           :route,
           :decision,
           :language,

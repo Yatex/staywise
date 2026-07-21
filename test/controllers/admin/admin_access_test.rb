@@ -388,8 +388,9 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_ai_traces_path(decision: "reply", tool: "stay_facts")
     assert_response :success
-    assert_not_includes response.body, "a que hora es el check in?"
-    assert_includes response.body, "Trace ##{trace.id}"
+    assert_includes response.body, "a que hora es el check in?"
+    assert_select "a[href^='#{admin_ai_trace_path(trace)}'] p", text: "a que hora es el check in?", count: 1
+    assert_select "a[href^='#{admin_ai_trace_path(trace)}'] span", text: "reply", count: 1
     assert_includes response.body, "stay_facts"
 
     get admin_ai_trace_path(trace)
