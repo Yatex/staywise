@@ -5,7 +5,7 @@ class ConversationsController < ApplicationController
 
   def index
     @current_page = [params[:page].to_i, 1].max
-    scope = scoped_conversations
+    scope = account_scoped_conversations
       .includes(:guest, :property)
       .recent
     if params[:filter] == "unread" && observer_for_current_user.present?
@@ -76,7 +76,7 @@ class ConversationsController < ApplicationController
 
   private
 
-  def scoped_conversations
+  def inspectable_conversations
     return Conversation.all if current_user.admin?
 
     account_scoped_conversations
@@ -89,7 +89,7 @@ class ConversationsController < ApplicationController
   end
 
   def set_conversation
-    @conversation = scoped_conversations
+    @conversation = inspectable_conversations
       .includes(:guest, :property)
       .find(params[:id])
     @display_property = display_property_for(@conversation)

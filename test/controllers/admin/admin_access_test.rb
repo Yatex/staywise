@@ -73,7 +73,12 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Configuración IA"
   end
 
-  test "admin can inspect conversations from other accounts without replying" do
+  test "admin index only lists own conversations but direct show can inspect another account without replying" do
+    admin_property = @admin_account.properties.create!(name: "Admin Apartment")
+    admin_guest = @admin_account.guests.create!(phone_number: "+59899000001", property: admin_property)
+    admin_conversation = admin_guest.conversations.create!(property: admin_property)
+    admin_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Mensaje de la cuenta admin")
+
     guest = @owner_account.guests.create!(phone_number: "+59899112233", property: @property)
     conversation = guest.conversations.create!(property: @property)
     conversation.messages.create!(
@@ -91,8 +96,10 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get conversations_path
     assert_response :success
-    assert_includes response.body, "59899112233"
-    assert_select "a[href='#{conversation_path(conversation)}']", count: 1
+    assert_includes response.body, "59899000001"
+    assert_select "a[href='#{conversation_path(admin_conversation)}']", count: 1
+    assert_not_includes response.body, "59899112233"
+    assert_select "a[href='#{conversation_path(conversation)}']", count: 0
 
     get conversation_path(conversation)
     assert_response :success
@@ -102,7 +109,8 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_select "form[action='#{reply_conversation_path(conversation)}']", count: 0
   end
 
-  test "admin can inspect properties from other accounts without editing" do
+  test "admin index only lists own properties but direct show can inspect another account without editing" do
+    admin_property = @admin_account.properties.create!(name: "Admin Apartment")
     @property.update!(
       address: "Calle Diagnóstico 123",
       wifi_name: "Owner WiFi",
@@ -127,8 +135,10 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get properties_path
     assert_response :success
-    assert_includes response.body, "Owner Apartment"
-    assert_select "a[href='#{property_path(@property)}']", count: 1
+    assert_includes response.body, "Admin Apartment"
+    assert_select "a[href='#{property_path(admin_property)}']", count: 1
+    assert_not_includes response.body, "Owner Apartment"
+    assert_select "a[href='#{property_path(@property)}']", count: 0
     assert_select "form[action='#{co_host_property_path(@property)}']", count: 0
 
     get property_path(@property)
@@ -143,6 +153,20 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get whatsapp_qr_property_path(@property, format: :svg)
     assert_response :success
+  end
+
+  test "normal user cannot directly inspect another account property or conversation" do
+    admin_property = @admin_account.properties.create!(name: "Private Admin Apartment")
+    admin_guest = @admin_account.guests.create!(phone_number: "+59899000002", property: admin_property)
+    admin_conversation = admin_guest.conversations.create!(property: admin_property)
+
+    sign_in_as(@owner)
+
+    get property_path(admin_property)
+    assert_response :not_found
+
+    get conversation_path(admin_conversation)
+    assert_response :not_found
   end
 
   test "admin can update ai decision score settings" do
@@ -370,6 +394,8 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
 
     get admin_ai_trace_path(trace)
     assert_response :success
+    assert_select "a[href='#{conversation_path(conversation)}']", text: "Ver conversación", count: 1
+    assert_select "a[href='#{property_path(@property)}']", text: "Ver propiedad", count: 1
     assert_includes response.body, "CHECKIN_TRACE"
     assert_includes response.body, "Fallback seguro del AI"
     assert_includes response.body, "No tengo esa información confirmada"

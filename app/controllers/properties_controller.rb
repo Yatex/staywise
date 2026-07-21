@@ -181,11 +181,11 @@ class PropertiesController < ApplicationController
   end
 
   def readable_properties
-    current_user.admin? ? Property.all : current_account.properties
+    current_account.properties
   end
 
   def readable_co_hosts
-    current_user.admin? ? CoHost.all : current_account.co_hosts
+    current_account.co_hosts
   end
 
   def property_editable?(property)
