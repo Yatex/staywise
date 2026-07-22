@@ -3,6 +3,10 @@ require "json"
 
 module AI
   class DecisionService
+    RETRYABLE_TRANSPORT_ERRORS = [Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, EOFError, Errno::ECONNRESET].freeze
+    MAX_REMOTE_ATTEMPTS = 2
+    RETRY_DELAY_SECONDS = 2
+
     def self.call(conversation:, guest_message:)
       new(conversation: conversation, guest_message: guest_message).call
     end
@@ -31,7 +35,14 @@ module AI
       if (decision = remote_decision(payload))
         validation = DecisionValidator.new(conversation: @conversation, decision: decision, source: "ai").call
         if validation.valid?
-          audit("remote_ai", decision, started_at, validator_result: "accepted", validation_results: validation_payload(validation, decision))
+          accepted_with_warnings = validation.warnings.present?
+          audit(
+            accepted_with_warnings ? "remote_ai_accepted_with_warnings" : "remote_ai",
+            decision,
+            started_at,
+            validator_result: accepted_with_warnings ? "accepted_with_warnings" : "accepted",
+            validation_results: validation_payload(validation, decision)
+          )
           return decision
         end
 
@@ -86,9 +97,7 @@ module AI
       request["Authorization"] = "Bearer #{ENV.fetch("AI_SERVICE_TOKEN", "")}"
       request["X-Request-ID"] = payload[:correlation_id].to_s if payload[:correlation_id].present?
       request.body = payload.to_json
-      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 30) do |http|
-        http.request(request)
-      end
+      response = request_with_timeout_retry(uri, request)
 
       unless response.is_a?(Net::HTTPSuccess)
         @ai_response_payload = { status: response.code, body: parse_json_or_text(response.body) }
@@ -115,6 +124,34 @@ module AI
       @ai_response_payload = { error_class: error.class.name, error_message: error.message }
       ErrorReporter.report(error, source: "ai_service", severity: "warning", account: @property.account, property: @property, context: ai_context)
       nil
+    end
+
+    def request_with_timeout_retry(uri, request)
+      attempts = 0
+
+      begin
+        attempts += 1
+        @ai_service_attempts = attempts
+        request["X-Ayla-Attempt"] = attempts.to_s
+        Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 30) do |http|
+          http.request(request)
+        end
+      rescue *RETRYABLE_TRANSPORT_ERRORS => error
+        @ai_service_retry_errors ||= []
+        @ai_service_retry_errors << { "attempt" => attempts, "error_class" => error.class.name }
+        raise if attempts >= MAX_REMOTE_ATTEMPTS
+
+        Rails.logger.warn(
+          "[ai-decision] retrying remote request after #{error.class} " \
+          "attempt=#{attempts} request_id=#{@ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h['correlation_id']}"
+        )
+        pause_before_timeout_retry
+        retry
+      end
+    end
+
+    def pause_before_timeout_retry
+      sleep(RETRY_DELAY_SECONDS)
     end
 
     def safe_no_reply(description, flag: "contract_validation_failed")
@@ -238,6 +275,8 @@ module AI
         replied_candidate: decision.should_reply,
         escalation_required: decision.escalation_required,
         latency_ms: latency_ms,
+        ai_service_attempts: @ai_service_attempts || 0,
+        ai_service_retry_errors: @ai_service_retry_errors || [],
         model: ENV["AI_MODEL"],
         correlation_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
         tool_calls: @tool_calls,
@@ -354,7 +393,8 @@ module AI
         conversation_id: @conversation.id,
         guest_id: @conversation.guest_id,
         message_id: @guest_message.id,
-        request_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"]
+        request_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
+        ai_service_attempts: @ai_service_attempts
       }.compact
     end
 
@@ -394,12 +434,14 @@ module AI
     end
 
     def validation_payload(validation, decision)
-      status = if validation.valid?
+      status = if validation.valid? && validation.warnings.present?
+        "accepted_with_warnings"
+      elsif validation.valid?
         "accepted"
       elsif validation.contract_failed?
         "contract_validation_failed"
       elsif validation.reasons.any? { |reason| reason.start_with?("evidence_provenance_violation:") }
-        "evidence_provenance_rejected"
+        "authorization_rejected"
       elsif validation.reasons.any? { |reason| reason.in?(%w[internal_metadata_visible internal_security_violation sensitive_access_without_authorization]) }
         "security_rejected"
       else

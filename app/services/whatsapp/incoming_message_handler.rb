@@ -11,7 +11,19 @@ module Whatsapp
     def call
       parsed = InboundMessageParser.new(@params).call
       if parsed.body.blank? && parsed.interactive_action_id.blank? && !media_message?(parsed)
-        raise ArgumentError, "El mensaje entrante de WhatsApp está vacío."
+        Rails.logger.info(
+          "[whatsapp-inbound] ignored_empty_or_unsupported " \
+          "from=#{parsed.from} message_sid=#{parsed.metadata.to_h['MessageSid'] || parsed.metadata.to_h['SmsMessageSid']}"
+        )
+        return {
+          conversation: nil,
+          message: nil,
+          decision: nil,
+          alert: nil,
+          replied: false,
+          ignored: true,
+          error: "empty_or_unsupported_message"
+        }
       end
 
       if OwnerInboundMessageHandler.owner_message?(parsed)
@@ -24,6 +36,16 @@ module Whatsapp
       account = property.account
       guest = resolve_guest(account, property, parsed)
       conversation = resolve_conversation(guest, property, parsed)
+      if (existing_message = duplicate_guest_message(conversation, parsed))
+        return {
+          conversation: conversation,
+          message: existing_message,
+          decision: nil,
+          alert: nil,
+          replied: false,
+          duplicate: true
+        }
+      end
       guest_message = conversation.messages.create!(
         sender: "guest",
         channel: "whatsapp",
@@ -73,6 +95,16 @@ module Whatsapp
       metadata["NumMedia"].to_i.positive? || metadata.keys.any? { |key| key.to_s.match?(/\AMediaUrl\d+\z/) }
     end
 
+    def duplicate_guest_message(conversation, parsed)
+      sid = parsed.metadata.to_h["MessageSid"].presence || parsed.metadata.to_h["SmsMessageSid"].presence
+      return if sid.blank?
+
+      conversation.messages.where(sender: "guest").find_by(
+        "messages.metadata ->> 'MessageSid' = :sid OR messages.metadata ->> 'SmsMessageSid' = :sid",
+        sid: sid
+      )
+    end
+
     def resolve_property(parsed)
       if parsed.property_token.present?
         property = Property.includes(:account).find_by(public_token: parsed.property_token)
@@ -97,6 +129,12 @@ module Whatsapp
       end.tap do |guest|
         guest.update!(property: property) if guest.property.blank? || parsed.property_token.present?
       end
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => error
+      guest = account.guests.find_by(phone_number: parsed.from)
+      raise error unless guest
+
+      guest.update!(property: property) if guest.property.blank? || parsed.property_token.present?
+      guest
     end
 
     def resolve_conversation(guest, property, parsed)

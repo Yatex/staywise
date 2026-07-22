@@ -48,6 +48,19 @@ class ErrorReporterTest < ActiveSupport::TestCase
     assert_equal "error", error.severity
   end
 
+  test "records useful validation details for an invalid active record" do
+    account = Account.new
+    account.validate
+    exception = ActiveRecord::RecordInvalid.new(account)
+
+    error = ErrorReporter.report(exception, source: "whatsapp_webhook", severity: "critical")
+
+    assert_equal "Account", error.context["record_model"]
+    assert_includes error.context["record_error_attributes"], "name"
+    assert error.context["record_errors"].any? { |message| message.include?("Nombre") }
+    assert_not_includes error.message, "Translation missing"
+  end
+
   test "reports an unhandled service exception to Sentry with safe correlation only" do
     scope = SafeScope.new
     captured = nil

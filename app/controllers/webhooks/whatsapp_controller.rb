@@ -17,6 +17,8 @@ module Webhooks
       result = Whatsapp::IncomingMessageHandler.new(params.to_unsafe_h).call
       response = { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
       response[:error] = result[:error] if result[:error].present?
+      response[:ignored] = true if result[:ignored]
+      response[:duplicate] = true if result[:duplicate]
       render json: response
     rescue StandardError => error
       Rails.logger.error("[whatsapp-webhook] #{error.class}: #{error.message}")
@@ -39,6 +41,12 @@ module Webhooks
         from: params[:From],
         to: params[:To],
         body: params[:Body],
+        message_sid: params[:MessageSid] || params[:SmsMessageSid],
+        message_type: params[:MessageType],
+        num_media: params[:NumMedia],
+        media_content_type: params[:MediaContentType0],
+        interactive_action_present: params[:ButtonPayload].present? || params[:ListId].present?,
+        location_present: params[:Latitude].present? || params[:Longitude].present?,
         provider: ENV.fetch("WHATSAPP_PROVIDER", "null"),
         url: request.original_url
       }.compact

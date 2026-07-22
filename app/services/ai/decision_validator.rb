@@ -4,6 +4,8 @@ module AI
 
     ALLOWED_ACTIONS = %w[reply clarify create_owner_task check_out no_action].freeze
     ALLOWED_ATTACHMENT_TYPES = %w[video image document].freeze
+    BLOCKING_EVIDENCE_REASONS = %w[cross_property cross_account sensitive_access_unauthorized].freeze
+    UNRESOLVED_EVIDENCE_WARNING = "evidence_reference_not_resolved".freeze
 
     def initialize(conversation:, decision:, source: "ai")
       @conversation = conversation
@@ -15,8 +17,9 @@ module AI
     def call
       reasons = []
       reasons.concat(structural_reasons)
-      reasons.concat(evidence_provenance_reasons)
       reasons.concat(attachment_reasons)
+      evidence_reasons, evidence_warnings = evidence_validation_findings
+      reasons.concat(evidence_reasons)
       reasons << "internal_metadata_visible" if internal_metadata_visible?
       reasons << "internal_security_violation" if internal_security_violation?
       reasons << "sensitive_access_without_authorization" if sensitive_access_without_authorization?
@@ -24,7 +27,7 @@ module AI
       Result.new(
         valid?: reasons.empty?,
         reasons: reasons.uniq,
-        warnings: [],
+        warnings: evidence_warnings.uniq,
         contract_failed?: reasons.any? { |reason| reason.start_with?("contract_") || reason.in?(structural_reason_codes) }
       )
     end
@@ -81,14 +84,23 @@ module AI
       @decision.should_reply || @decision.response_text.present?
     end
 
-    def evidence_provenance_reasons
-      evidence_refs_for_decision.filter_map do |item|
+    def evidence_validation_findings
+      reasons = []
+      warnings = []
+
+      evidence_refs_for_decision.each do |item|
         provenance = @registry.evidence_provenance(item)
         next if provenance[:authorized]
 
         evidence_id = provenance[:evidence_id].presence || "unknown"
-        "evidence_provenance_violation:#{evidence_id}:#{provenance[:reason]}"
+        if provenance[:reason].in?(BLOCKING_EVIDENCE_REASONS)
+          reasons << "evidence_provenance_violation:#{evidence_id}:#{provenance[:reason]}"
+        else
+          warnings << UNRESOLVED_EVIDENCE_WARNING
+        end
       end
+
+      [reasons, warnings]
     end
 
     def attachment_reasons
@@ -98,8 +110,7 @@ module AI
         if !type.in?(ALLOWED_ATTACHMENT_TYPES) || evidence_id.blank?
           ["invalid_attachment"]
         else
-          provenance = @registry.evidence_provenance("evidence_id" => evidence_id)
-          provenance[:authorized] ? [] : ["evidence_provenance_violation:#{evidence_id}:#{provenance[:reason]}"]
+          []
         end
       end
     end
@@ -107,7 +118,8 @@ module AI
     def evidence_refs_for_decision
       refs = Array(@decision.evidence) +
         @decision.evidence_ids.map { |evidence_id| { "evidence_id" => evidence_id } } +
-        @decision.used_source_ids.map { |source_id| { "id" => source_id } }
+        @decision.used_source_ids.map { |source_id| { "id" => source_id } } +
+        @decision.attachments.map { |attachment| { "evidence_id" => attachment["evidence_id"] } }
 
       refs.uniq do |item|
         item.to_h.stringify_keys.values_at("id", "evidence_id", "source_id").compact_blank.first

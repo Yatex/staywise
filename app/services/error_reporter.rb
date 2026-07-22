@@ -14,6 +14,8 @@ class ErrorReporter
     account_id property_id conversation_id ai_trace_id message_id request_id
     action controller tool_name evidence_count status error_code provider
     actor_role actor_id item_type item_id
+    record_model record_error_attributes template_sid variable_keys expected_variable_keys
+    ai_service_attempts
   ].freeze
 
   def self.report(error = nil, source:, severity: "error", account: nil, property: nil, message: nil, context: {})
@@ -87,7 +89,7 @@ class ErrorReporter
   end
 
   def sanitized_context
-    sanitize((@context || {}).to_h.deep_stringify_keys)
+    sanitize((@context || {}).to_h.deep_stringify_keys.merge(active_record_error_context))
   end
 
   def sanitize(value)
@@ -105,5 +107,15 @@ class ErrorReporter
 
   def sensitive_key?(key)
     FILTERED_KEYS.any? { |filtered| key.downcase.include?(filtered) }
+  end
+
+  def active_record_error_context
+    return {} unless @error.is_a?(ActiveRecord::RecordInvalid) && @error.record
+
+    {
+      "record_model" => @error.record.class.name,
+      "record_error_attributes" => @error.record.errors.attribute_names.map(&:to_s),
+      "record_errors" => @error.record.errors.full_messages
+    }
   end
 end

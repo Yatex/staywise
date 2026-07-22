@@ -3,6 +3,7 @@ require "json"
 
 module Whatsapp
   class TwilioContentRegistry
+    VariableValidation = Struct.new(:valid?, :expected_keys, :actual_keys, :error, keyword_init: true)
     CONTENTS_URL = "https://content.twilio.com/v1/Content".freeze
     LOCK = Mutex.new
     DEFINITIONS = {
@@ -89,7 +90,7 @@ module Whatsapp
         },
         "types" => {
           "twilio/text" => {
-            "body" => "{{1}}\n\nAbrir en el panel:\n{{2}}"
+            "body" => "Ayla te avisa:\n\n{{1}}\n\nAbrir en el panel:\n{{2}}\n\nNotificación automática de Ayla."
           }
         }
       }
@@ -101,6 +102,10 @@ module Whatsapp
 
     def self.supports_action?(content_sid, action_id)
       new.supports_action?(content_sid, action_id)
+    end
+
+    def self.validate_variables(content_sid, variables)
+      new.validate_variables(content_sid, variables)
     end
 
     def initialize(client: nil, cache: Rails.cache)
@@ -145,6 +150,29 @@ module Whatsapp
     rescue StandardError => error
       ErrorReporter.report(error, source: "twilio_content_registry", severity: "warning", context: { content_sid: content_sid })
       false
+    end
+
+    def validate_variables(content_sid, variables)
+      actual_keys = variables.to_h.keys.map(&:to_s).sort
+      expected_keys = variable_keys_for(content_sid)
+      unless expected_keys
+        return VariableValidation.new(
+          valid?: false,
+          expected_keys: [],
+          actual_keys: actual_keys,
+          error: "twilio_content_not_found"
+        )
+      end
+
+      VariableValidation.new(
+        valid?: expected_keys == actual_keys,
+        expected_keys: expected_keys,
+        actual_keys: actual_keys,
+        error: expected_keys == actual_keys ? nil : "twilio_template_variable_mismatch"
+      )
+    rescue StandardError => error
+      ErrorReporter.report(error, source: "twilio_content_registry", severity: "warning", context: { content_sid: content_sid })
+      VariableValidation.new(valid?: false, expected_keys: [], actual_keys: actual_keys || [], error: "twilio_content_validation_failed")
     end
 
     def provision_and_submit_owner_notice
@@ -201,6 +229,25 @@ module Whatsapp
       quick_replies = Array(types.dig("twilio/quick-reply", "actions"))
       list_items = Array(types.dig("twilio/list-picker", "items"))
       (quick_replies + list_items).filter_map { |action| action.to_h["id"].presence }.uniq
+    end
+
+    def variable_keys_for(content_sid)
+      cache_key = "ayla/twilio-content-variables/#{@client.account_sid}/#{content_sid}"
+      cached = @cache.read(cache_key)
+      return nil if cached == "__missing__"
+      return Array(cached).map(&:to_s).sort unless cached.nil?
+
+      content = @client.list_contents.find { |item| item.to_h["sid"] == content_sid }
+      unless content
+        @cache.write(cache_key, "__missing__", expires_in: 5.minutes)
+        return nil
+      end
+
+      keys = content.to_h.fetch("variables", {}).keys.map(&:to_s)
+      keys |= content.to_h.fetch("types", {}).to_json.scan(/\{\{([A-Za-z0-9_]+)\}\}/).flatten
+      keys = keys.uniq.sort
+      @cache.write(cache_key, keys, expires_in: 12.hours)
+      keys
     end
 
     def with_creation_lock(friendly_name, &block)

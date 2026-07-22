@@ -22,15 +22,17 @@ class AIFinalContractTest < ActiveSupport::TestCase
     @conversation = @guest.conversations.create!(property: @property)
   end
 
-  test "reply confidence is decided by ai while evidence provenance remains scoped" do
+  test "reply confidence and unresolved evidence are decided by ai while tenant provenance remains scoped" do
     message = guest_message("¿Cuál es la red Wi-Fi?")
     accepted = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 96, evidence_ids: ["property.wifi_name"]))
     rejected_low = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 84, evidence_ids: ["property.wifi_name"]))
-    rejected_evidence = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 96, evidence_ids: ["property.not_real"]))
+    unresolved_evidence = validate(decision(action: "reply", message: "La red Wi-Fi es Pepe.", confidence: 96, evidence_ids: ["property.not_real"]))
 
     assert accepted.valid?
     assert rejected_low.valid?
-    assert_includes rejected_evidence.reasons, "evidence_provenance_violation:property.not_real:evidence_not_in_authorized_context"
+    assert unresolved_evidence.valid?
+    assert_empty unresolved_evidence.reasons
+    assert_includes unresolved_evidence.warnings, "evidence_reference_not_resolved"
     assert_equal message, @conversation.messages.last
   end
 
@@ -48,6 +50,105 @@ class AIFinalContractTest < ActiveSupport::TestCase
 
     assert_equal 2, @conversation.owner_tasks.count
     assert_equal 0, @conversation.alerts.count
+  end
+
+  test "request with unresolved evidence is accepted and creates an owner task" do
+    message = guest_message("Necesito una cama adicional")
+    request = AI::DecisionResult.from_hash(
+      action: "create_owner_task",
+      owner_task_kind: "request",
+      language: "es",
+      message: "Recibí tu pedido de una cama adicional.",
+      task_summary: "Cama adicional",
+      answer_confidence: 98,
+      evidence_ids: ["reservation.reservation_status"],
+      proposed_action: { type: "request_extra_bed", payload: {} }
+    )
+
+    result = service_with(request, message).call
+    validation = validate(request)
+    task = OwnerTasks::Creator.call(conversation: @conversation, decision: result, guest_message: message)
+    trace = AIDecisionLog.where(message: message).last
+
+    assert validation.valid?
+    assert_includes validation.warnings, "evidence_reference_not_resolved"
+    assert_equal "extra_bed", task.category
+    assert_equal "Recibí tu pedido de una cama adicional.", result.response_text
+    assert_equal "remote_ai_accepted_with_warnings", trace.route
+    assert_not_includes result.safety_flags, "rails_technical_fallback"
+  end
+
+  test "inquiry with unresolved evidence is accepted and creates an owner task" do
+    message = guest_message("¿Pueden confirmarme si hay cuna?")
+    inquiry = decision(
+      action: "create_owner_task",
+      kind: "inquiry",
+      message: "Voy a consultar esa información con el anfitrión.",
+      confidence: 90,
+      task_summary: "Confirmar disponibilidad de cuna",
+      evidence_ids: ["property.undeclared_cot"]
+    )
+
+    result = service_with(inquiry, message).call
+    task = OwnerTasks::Creator.call(conversation: @conversation, decision: result, guest_message: message)
+
+    assert_equal "inquiry", task.kind
+    assert_equal "remote_ai_accepted_with_warnings", AIDecisionLog.where(message: message).last.route
+    assert_not_includes result.safety_flags, "rails_technical_fallback"
+  end
+
+  test "alert with unresolved evidence is accepted and creates the alert" do
+    message = guest_message("Hay una pérdida de agua")
+    alert_decision = AI::DecisionResult.from_hash(
+      action: "reply",
+      decision: "escalate",
+      language: "es",
+      message_body: "Avisé al equipo sobre la pérdida de agua.",
+      evidence_ids: ["property.undeclared_pipe_status"],
+      escalation: { required: true, reason_code: "maintenance", summary_for_host: "Pérdida de agua" },
+      alert_type: "maintenance_issue",
+      alert_title: "Pérdida de agua",
+      alert_description: "El huésped informó una pérdida de agua."
+    )
+
+    result = service_with(alert_decision, message).call
+    alert = Alerts::Creator.call(
+      conversation: @conversation,
+      decision: result,
+      owner_whatsapp_provider: Whatsapp::Providers::NullProvider.new
+    )
+
+    assert_equal "maintenance_issue", alert.alert_type
+    assert_equal "remote_ai_accepted_with_warnings", AIDecisionLog.where(message: message).last.route
+    assert_not_includes result.safety_flags, "rails_technical_fallback"
+  end
+
+  test "reply with unresolved evidence is sent without technical fallback" do
+    message = guest_message("¿Cómo uso la calefacción?")
+    reply = decision(
+      action: "reply",
+      message: "Encendela desde el control y seleccioná modo calor.",
+      confidence: 95,
+      evidence_ids: ["property.undeclared_heating_instructions"]
+    )
+    accepted = service_with(reply, message).call
+    provider = MediaProvider.new
+
+    AI::DecisionService.stub(:call, accepted) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+59899000333",
+          "To" => "whatsapp:+59899000999",
+          "Body" => "¿Cómo uso la calefacción?",
+          "MessageSid" => "SM-UNRESOLVED-REPLY"
+        },
+        provider: provider
+      ).call
+      assert result.fetch(:replied)
+    end
+
+    assert_equal accepted.response_text, provider.deliveries.last[:body]
+    assert_not_includes accepted.safety_flags, "rails_technical_fallback"
   end
 
   test "clarify does not create an owner task" do
@@ -116,12 +217,15 @@ class AIFinalContractTest < ActiveSupport::TestCase
       "MessageSid" => "SM-CHECKOUT-ONE"
     }
 
-    2.times do
-      AI::DecisionService.stub(:call, check_out) do
-        result = Whatsapp::IncomingMessageHandler.new(params, provider: provider).call
-        assert_equal "check_out", result.fetch(:decision).action
-        assert result.fetch(:replied)
-      end
+    AI::DecisionService.stub(:call, check_out) do
+      result = Whatsapp::IncomingMessageHandler.new(params, provider: provider).call
+      assert_equal "check_out", result.fetch(:decision).action
+      assert result.fetch(:replied)
+    end
+    AI::DecisionService.stub(:call, check_out) do
+      duplicate = Whatsapp::IncomingMessageHandler.new(params, provider: provider).call
+      assert duplicate.fetch(:duplicate)
+      assert_nil duplicate.fetch(:decision)
     end
 
     event = @conversation.checkout_events.first
@@ -157,6 +261,7 @@ class AIFinalContractTest < ActiveSupport::TestCase
 
     assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
     assert_not_includes result.response_text, @property.owner_contact_phone
+    assert_includes result.safety_flags, "rails_technical_fallback"
   end
 
   test "rails still blocks internal secrets and authorization headers" do
@@ -289,6 +394,28 @@ class AIFinalContractTest < ActiveSupport::TestCase
 
     assert_not validation.valid?
     assert_includes validation.reasons, "evidence_provenance_violation:faq_#{other_faq.id}:cross_property"
+  end
+
+  test "evidence from a property in another account remains rejected" do
+    other_account = Account.create!(name: "Other evidence account")
+    other_property = other_account.properties.create!(name: "Other evidence property")
+    other_faq = other_property.faqs.create!(
+      question: "¿Cómo ingreso?",
+      answer: "Instrucciones de otra cuenta",
+      active: true
+    )
+    value = decision(
+      action: "reply",
+      message: "Instrucciones de otra cuenta",
+      confidence: 100,
+      evidence_ids: ["faq.#{other_faq.id}"]
+    )
+
+    validation = validate(value)
+
+    assert_not validation.valid?
+    assert_includes validation.reasons, "evidence_provenance_violation:faq.#{other_faq.id}:cross_property"
+    assert_empty validation.warnings
   end
 
   private

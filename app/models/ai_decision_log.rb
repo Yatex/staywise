@@ -55,7 +55,7 @@ class AIDecisionLog < ApplicationRecord
 
     validation_results.to_h["failed"] == true ||
       validator_result.in?(%w[rejected contract_validation_failed]) ||
-      validation_results.to_h["status"].in?(%w[rejected contract_validation_failed evidence_provenance_rejected security_rejected])
+      validation_results.to_h["status"].in?(%w[rejected contract_validation_failed evidence_provenance_rejected authorization_rejected security_rejected])
   end
 
   def checkin_trace

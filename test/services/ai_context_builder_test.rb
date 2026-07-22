@@ -49,6 +49,41 @@ class AiContextBuilderTest < ActiveSupport::TestCase
     assert_equal bodies + [latest.body], payload.fetch(:conversation_history).map { |message| message["body"] || message[:body] }
   end
 
+  test "decision context rejects a property from another account" do
+    other_account = Account.create!(name: "Other Context Account")
+    other_property = other_account.properties.create!(name: "Other Context Property")
+    token = AI::DecisionContext.verifier.generate(
+      {
+        account_id: other_account.id,
+        property_id: other_property.id,
+        guest_id: @guest.id,
+        conversation_id: @conversation.id,
+        message_id: @message.id
+      },
+      expires_in: AI::DecisionContext::TTL
+    )
+
+    error = assert_raises(AI::DecisionContext::InvalidContext) { AI::DecisionContext.resolve(token) }
+    assert_equal "decision_context_conversation_mismatch", error.message
+  end
+
+  test "decision context rejects a conversation assigned to another account id" do
+    other_account = Account.create!(name: "Other Conversation Account")
+    token = AI::DecisionContext.verifier.generate(
+      {
+        account_id: other_account.id,
+        property_id: @property.id,
+        guest_id: @guest.id,
+        conversation_id: @conversation.id,
+        message_id: @message.id
+      },
+      expires_in: AI::DecisionContext::TTL
+    )
+
+    error = assert_raises(AI::DecisionContext::InvalidContext) { AI::DecisionContext.resolve(token) }
+    assert_equal "decision_context_account_mismatch", error.message
+  end
+
   test "uses persisted guest language only as a fallback hint" do
     @guest.update!(language: "es")
     french_message = @conversation.messages.create!(sender: "guest", body: "À quelle heure est le check-in ?", channel: "whatsapp")

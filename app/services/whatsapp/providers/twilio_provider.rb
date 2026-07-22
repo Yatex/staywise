@@ -20,11 +20,28 @@ module Whatsapp
         return false unless configured?
         return send_message(to: to, body: variables.values.compact.join(" ")) if template_sid.blank?
 
+        normalized_variables = variables.compact.stringify_keys.transform_values(&:to_s)
+        validation = @content_registry.validate_variables(template_sid, normalized_variables)
+        unless validation.valid?
+          ErrorReporter.report(
+            source: "twilio_provider",
+            severity: "error",
+            message: "Twilio template variables do not match content definition",
+            context: {
+              template_sid: template_sid,
+              variable_keys: validation.actual_keys,
+              expected_variable_keys: validation.expected_keys,
+              error_code: validation.error
+            }
+          )
+          return DeliveryResult.new(success?: false, error: validation.error)
+        end
+
         deliver(
           to: to,
           payload: {
             "ContentSid" => template_sid,
-            "ContentVariables" => variables.compact.to_json
+            "ContentVariables" => normalized_variables.to_json
           },
           context: { body: "template:#{template_sid}" }
         )
@@ -61,11 +78,17 @@ module Whatsapp
         end
 
         unless response.is_a?(Net::HTTPSuccess)
+          response_json = JSON.parse(response.body) rescue {}
           ErrorReporter.report(
             source: "twilio_provider",
             severity: "error",
             message: "Twilio message delivery failed with status #{response.code}",
-            context: delivery_context(to: to, body: context[:body]).merge(status: response.code, response_body: response.body.to_s.first(1_000))
+            context: delivery_context(to: to, body: context[:body]).merge(
+              status: response.code,
+              error_code: response_json["code"],
+              template_sid: payload["ContentSid"],
+              response_body: response.body.to_s.first(1_000)
+            )
           )
           return DeliveryResult.new(success?: false, error: "Twilio message delivery failed with status #{response.code}", raw_response: response.body.to_s.first(1_000))
         end

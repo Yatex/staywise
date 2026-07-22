@@ -537,7 +537,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal "accepted", audit.validator_result
   end
 
-  test "validator rejects nonexistent evidence id" do
+  test "validator accepts nonexistent evidence id with a non blocking warning" do
     message = @conversation.messages.create!(sender: "guest", body: "a que hora puedo entrar al depto?", channel: "whatsapp")
 
     decision = run_with_remote_decision(message, ai_reply(
@@ -555,8 +555,14 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
-    assert_includes audit.validation_results["reasons"], "evidence_provenance_violation:property.not_real:evidence_not_in_authorized_context"
+    assert_equal "Podés entrar a partir de las 3:00 PM.", decision.response_text
+    assert_equal "remote_ai_accepted_with_warnings", audit.route
+    assert_equal "accepted_with_warnings", audit.validator_result
+    assert_equal "accepted_with_warnings", audit.validation_results["status"]
+    assert_empty audit.validation_results["reasons"]
+    assert_includes audit.validation_results["warnings"], "evidence_reference_not_resolved"
+    assert_not audit.validation_failed?
+    assert_not_includes decision.safety_flags, "rails_technical_fallback"
   end
 
   test "validator rejects direct contradiction of exact evidence value" do
@@ -1222,6 +1228,90 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "retries one timeout with the same request id before using a successful response" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
+    response = Net::HTTPOK.new("1.1", "200", "OK")
+    response_body = ai_reply(
+      language: "es",
+      message_body: "El check-in es a las 15:00.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ).to_json
+    response.define_singleton_method(:body) { response_body }
+    attempts = []
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) do |request|
+      attempts << { request_id: request["X-Request-ID"], attempt: request["X-Ayla-Attempt"] }
+      raise Net::ReadTimeout, "first timeout" if attempts.one?
+
+      response
+    end
+    service = AI::DecisionService.new(conversation: @conversation, guest_message: message)
+    service.define_singleton_method(:pause_before_timeout_retry) {}
+
+    assert_no_difference -> { OperationalError.where(source: "ai_service").count } do
+      Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
+        decision = service.call
+        assert_equal "reply", decision.outcome
+        assert_equal "El check-in es a las 15:00.", decision.response_text
+      end
+    end
+
+    assert_equal %w[1 2], attempts.map { |attempt| attempt[:attempt] }
+    assert_equal 1, attempts.map { |attempt| attempt[:request_id] }.uniq.size
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal 2, audit.payload["ai_service_attempts"]
+    assert_equal [{ "attempt" => 1, "error_class" => "Net::ReadTimeout" }], audit.payload["ai_service_retry_errors"]
+  end
+
+  test "uses the technical fallback only after the timeout retry also fails" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    @property.update!(owner_contact_phone: "+59899007777")
+    message = @conversation.messages.create!(sender: "guest", body: "Necesito ayuda", channel: "whatsapp")
+    attempts = 0
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) do |_request|
+      attempts += 1
+      raise Net::ReadTimeout, "timeout #{attempts}"
+    end
+    service = AI::DecisionService.new(conversation: @conversation, guest_message: message)
+    service.define_singleton_method(:pause_before_timeout_retry) {}
+
+    assert_difference -> { OperationalError.where(source: "ai_service").count }, 1 do
+      Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
+        decision = service.call
+        assert_equal "reply", decision.outcome
+        assert_includes decision.response_text, @property.owner_contact_phone
+      end
+    end
+
+    assert_equal 2, attempts
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal "local_fallback", audit.route
+    assert_equal 2, audit.payload["ai_service_attempts"]
+    assert_equal 2, audit.payload["ai_service_retry_errors"].size
+    assert_match(/Net::ReadTimeout/, audit.fallback_reason)
+  end
+
+  test "uses the technical fallback for irrecoverable invalid JSON" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    message = @conversation.messages.create!(sender: "guest", body: "Necesito ayuda", channel: "whatsapp")
+    response = Net::HTTPOK.new("1.1", "200", "OK")
+    response.define_singleton_method(:body) { "{invalid-json" }
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) { |_request| response }
+
+    result = Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
+      AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    end
+
+    trace = AIDecisionLog.where(message: message).last
+    assert_includes result.safety_flags, "rails_technical_fallback"
+    assert_equal "local_fallback", trace.route
+    assert_match(/JSON::ParserError/, trace.fallback_reason)
+  end
+
   test "ai reply without evidence is executed when structurally usable" do
     decision = AI::DecisionResult.from_hash(
       outcome: "reply",
@@ -1328,6 +1418,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal @property.id, trace.payload["conversation_property_id"]
     assert_equal other_property.id, trace.validation_results.dig("evidence", 0, "evidence_property_id")
     assert_equal "cross_property", trace.validation_results.dig("evidence", 0, "provenance_reason")
+    assert_equal "authorization_rejected", trace.validation_results["status"]
     assert OperationalError.where(source: "ai_evidence_provenance", message: "AI evidence provenance validation failed").exists?
   end
 

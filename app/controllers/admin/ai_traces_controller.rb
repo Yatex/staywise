@@ -66,6 +66,7 @@ module Admin
                 'rejected',
                 'contract_validation_failed',
                 'evidence_provenance_rejected',
+                'authorization_rejected',
                 'security_rejected'
               )
             ) AS validation_failed_summary

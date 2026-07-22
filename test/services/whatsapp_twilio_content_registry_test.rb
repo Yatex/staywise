@@ -107,6 +107,10 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
                    "2" => "https://aylamanager.com/conversations/123" }, observer_notice.fetch("variables"))
     assert_equal({ "1" => "2", "2" => "1", "3" => "1", "4" => "1" }, notice.fetch("variables"))
     assert_equal "owner_escalation_notice_with_checkouts_v1", notice.fetch("friendly_name")
+    assert_equal "owner_observer_activity_notice_v2", observer_notice.fetch("friendly_name")
+    observer_body = observer_notice.dig("types", "twilio/text", "body")
+    assert_match(/\AAyla te avisa:/, observer_body)
+    assert_match(/Notificación automática de Ayla\.\z/, observer_body)
     assert_no_match(/approval/i, definitions.to_json)
   end
 
@@ -154,6 +158,27 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
 
     assert registry.supports_action?("HX_CHECKOUTS", "checkouts")
     assert_not registry.supports_action?("HX_CHECKOUTS", "unknown")
+  end
+
+  test "validates content variable keys against the configured Twilio content" do
+    definition = Whatsapp::TwilioContentRegistry::DEFINITIONS.fetch(:owner_observer_activity_notice)
+    client = FakeClient.new(contents: [definition.merge("sid" => "HX_OBSERVER")])
+    registry = registry_for(client)
+
+    valid = registry.validate_variables("HX_OBSERVER", { "1" => "Resumen", "2" => "https://example.test" })
+    invalid = registry.validate_variables("HX_OBSERVER", { "1" => "Resumen" })
+
+    assert valid.valid?
+    assert_equal %w[1 2], valid.expected_keys
+    assert_not invalid.valid?
+    assert_equal "twilio_template_variable_mismatch", invalid.error
+  end
+
+  test "rejects validation when the configured content SID does not exist" do
+    validation = registry_for(FakeClient.new).validate_variables("HX_UNKNOWN", { "1" => "Resumen" })
+
+    assert_not validation.valid?
+    assert_equal "twilio_content_not_found", validation.error
   end
 
   test "returns nil and reports a clear error when Twilio creation fails" do

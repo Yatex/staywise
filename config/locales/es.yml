@@ -252,6 +252,7 @@ es:
       invalid: "no es válido"
       too_short: "es demasiado corto"
       inclusion: "no está incluido en la lista"
+      record_invalid: "La validación falló: %{errors}"
   activerecord:
     models:
       account: "Cuenta"

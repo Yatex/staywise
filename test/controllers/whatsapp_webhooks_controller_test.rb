@@ -50,6 +50,42 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, Conversation.count
   end
 
+  test "acknowledges an empty or unsupported inbound event without creating a critical error" do
+    ENV["WHATSAPP_PROVIDER"] = "null"
+    ENV["TWILIO_AUTH_TOKEN"] = nil
+
+    assert_no_difference ["Conversation.count", "OperationalError.where(source: 'whatsapp_webhook').count"] do
+      post webhooks_whatsapp_path, params: whatsapp_payload(body: "").merge(
+        "MessageSid" => "SM_EMPTY_EVENT",
+        "MessageType" => "location",
+        "Latitude" => "-34.9",
+        "Longitude" => "-56.2"
+      )
+    end
+
+    assert_response :success
+    assert_equal true, response.parsed_body["ok"]
+    assert_equal true, response.parsed_body["ignored"]
+    assert_equal "empty_or_unsupported_message", response.parsed_body["error"]
+  end
+
+  test "acknowledges a repeated guest MessageSid without processing the message twice" do
+    ENV["WHATSAPP_PROVIDER"] = "null"
+    ENV["TWILIO_AUTH_TOKEN"] = nil
+    payload = whatsapp_payload.merge("MessageSid" => "SM_REPEATED_GUEST")
+
+    post webhooks_whatsapp_path, params: payload
+    assert_response :success
+
+    assert_no_difference ["Message.count", "Conversation.count"] do
+      post webhooks_whatsapp_path, params: payload
+    end
+
+    assert_response :success
+    assert_equal true, response.parsed_body["duplicate"]
+    assert_equal 1, Message.where("metadata ->> 'MessageSid' = ?", "SM_REPEATED_GUEST").count
+  end
+
   private
 
   def whatsapp_payload(body: "#{@property.whatsapp_reference} Can I get late checkout?")

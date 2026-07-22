@@ -269,11 +269,11 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       conversation: conversation,
       message: message,
       original_message: message,
-      route: "remote_ai",
+      route: "remote_ai_accepted_with_warnings",
       decision: "reply",
       final_outcome: "reply",
       language: "es",
-      validator_result: "accepted",
+      validator_result: "accepted_with_warnings",
       detected_intents: [{ "type" => "check_in", "status" => "answered" }],
       evidence_ids: ["property.check_in_time"],
       ai_request_payload: AIDecisionLog.sanitize_trace({ "Authorization" => "Bearer secret-token", "body" => "a que hora es el check in?" }),
@@ -329,8 +329,9 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
         }
       ].then { |value| AIDecisionLog.sanitize_trace(value) },
       validation_results: {
-        "status" => "accepted",
+        "status" => "accepted_with_warnings",
         "passed" => true,
+        "warnings" => ["evidence_reference_not_resolved"],
         "evidence" => [{
           "evidence_id" => "property.check_in_time",
           "authorized" => true,
@@ -403,6 +404,8 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Respuesta final de Rails"
     assert_includes response.body, "Decisión original de la AI"
     assert_includes response.body, "Procedencia Rails"
+    assert_includes response.body, "Advertencias no bloqueantes"
+    assert_includes response.body, "evidence_reference_not_resolved"
     assert_includes response.body, "Tool Requests"
     assert_includes response.body, "Contexto resuelto por Rails"
     assert_includes response.body, "Decision Context ID"
