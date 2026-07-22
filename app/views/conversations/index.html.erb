@@ -24,7 +24,7 @@
             <div>
               <p class="font-medium text-slate-950"><%= conversation_display_title(conversation) %></p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span class="<%= property_tag_class %>"><%= display_property.display_name %></span>
+                <span class="<%= property_tag_class %>"><%= display_property&.display_name || "Propiedad no disponible" %></span>
                 <span class="text-sm text-slate-500"><%= t("ui.conversations.messages_count", count: @message_counts[conversation.id].to_i) %></span>
                 <% if observer_activity.present? %>
                   <span class="text-xs text-slate-500">Última actividad <%= time_ago_in_words(observer_activity.last_activity_at) %> atrás</span>

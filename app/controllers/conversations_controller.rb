@@ -21,7 +21,7 @@ class ConversationsController < ApplicationController
       .order(created_at: :desc, id: :desc)
       .pluck(:conversation_id, :property_id)
       .each_with_object({}) { |(conversation_id, property_id), memo| memo[conversation_id] ||= property_id }
-    @conversation_display_properties = Property.where(id: latest_property_ids.values.compact.uniq).index_by(&:id)
+    @conversation_display_properties = Property.with_deleted.where(id: latest_property_ids.values.compact.uniq).index_by(&:id)
     @conversation_display_property_ids = latest_property_ids
     @observer_activities = observer_activities_for(conversation_ids).index_by(&:conversation_id)
     @last_ai_responses = readable_messages.where(conversation_id: conversation_ids, sender: "ai")
@@ -161,10 +161,15 @@ class ConversationsController < ApplicationController
   end
 
   def display_property_for(conversation)
-    return conversation.property if current_user.admin?
-    return conversation.property if conversation.property.account_id == current_account.id
+    conversation_property = Property.with_deleted.find_by(id: conversation.property_id)
+    return conversation_property if current_user.admin?
+    return conversation_property if conversation_property&.account_id == current_account.id
 
-    Property.find_by(id: conversation.messages.where(account_id: current_account.id).order(created_at: :desc, id: :desc).pick(:property_id))
+    property_id = conversation.messages
+      .where(account_id: current_account.id)
+      .order(created_at: :desc, id: :desc)
+      .pick(:property_id)
+    Property.with_deleted.find_by(id: property_id, account_id: current_account.id)
   end
 
   def readable_messages

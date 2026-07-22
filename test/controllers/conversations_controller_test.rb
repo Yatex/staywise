@@ -111,6 +111,21 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Ayla respondió 2 días atrás"
   end
 
+  test "index and show render conversations from a soft-deleted historical property" do
+    @property.soft_delete!
+
+    get conversations_path
+
+    assert_response :success
+    assert_includes response.body, "Conversation Apartment"
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_select "span", text: "Conversation Apartment"
+    assert_includes response.body, "¿Puedo hacer late checkout?"
+  end
+
   test "refresh endpoint returns only messages after the last known message" do
     known = @conversation.messages.order(:id).last
     first_new = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Nuevo uno")
