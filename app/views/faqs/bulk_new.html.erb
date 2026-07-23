@@ -1,0 +1,118 @@
+<% content_for :page_title, "Agregar FAQ en varias propiedades" %>
+
+<div class="mx-auto max-w-6xl">
+  <div class="mb-6">
+    <%= link_to "Volver a la propiedad", property_path(@property, anchor: "faqs"), class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
+    <h2 class="mt-3 text-xl font-semibold text-slate-950">Agregar FAQ en varias propiedades</h2>
+    <p class="mt-1 text-sm text-slate-500">Cargá la respuesta una vez y elegí en qué propiedades querés usarla.</p>
+  </div>
+
+  <%= form_with model: @faq,
+    url: bulk_create_property_faqs_path(@property),
+    method: :post,
+    class: "space-y-5",
+    data: { controller: "bulk-property-selector" } do |form| %>
+    <% if @faq.errors.any? %>
+      <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <%= @faq.errors.full_messages.to_sentence %>
+      </div>
+    <% end %>
+
+    <div class="grid gap-5 lg:grid-cols-2">
+      <div class="<%= card_class %> p-5">
+        <h3 class="text-base font-semibold text-slate-950">Contenido de la FAQ</h3>
+        <div class="mt-5 grid gap-4">
+          <div>
+            <%= form.label :question, "Pregunta", class: label_class %>
+            <%= form.text_field :question, class: field_class, required: true, autofocus: true %>
+          </div>
+          <div>
+            <%= form.label :answer, "Respuesta", class: label_class %>
+            <%= form.text_area :answer, rows: 10, class: field_class, required: true %>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <%= form.label :category, "Categoría", class: label_class %>
+              <%= form.text_field :category, class: field_class, placeholder: "Acceso, checkout, amenities..." %>
+            </div>
+            <div>
+              <%= form.label :status, "Estado", class: label_class %>
+              <%= form.select :status, Faq::STATUSES.map { |status| [enum_label(status), status] }, {}, class: field_class %>
+            </div>
+          </div>
+          <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <%= form.check_box :active, class: "h-4 w-4 rounded border-slate-300 text-slate-900" %>
+            Usar como fuente activa de IA
+          </label>
+        </div>
+      </div>
+
+      <div class="<%= card_class %> overflow-hidden">
+        <div class="border-b border-slate-200 p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-base font-semibold text-slate-950">Propiedades</h3>
+              <p class="mt-1 text-sm text-slate-500">
+                <span data-bulk-property-selector-target="count">0</span> seleccionadas
+              </p>
+            </div>
+            <button type="button"
+              class="text-sm font-semibold text-slate-600 hover:text-slate-950"
+              data-bulk-property-selector-target="selectAll"
+              data-action="bulk-property-selector#toggleVisible">
+              Seleccionar todas
+            </button>
+          </div>
+          <label class="mt-4 block">
+            <span class="sr-only">Buscar propiedad</span>
+            <input type="search"
+              placeholder="Buscar por nombre o dirección"
+              class="<%= field_class %>"
+              data-bulk-property-selector-target="search"
+              data-action="input->bulk-property-selector#filter">
+          </label>
+        </div>
+
+        <div class="max-h-80 divide-y divide-slate-100 overflow-auto">
+          <% @available_properties.each do |property| %>
+            <% search_text = [property.display_name, property.name, property.internal_nickname, property.address].compact.join(" ").downcase %>
+            <label class="flex cursor-pointer items-start gap-3 px-5 py-4 hover:bg-slate-50"
+              data-bulk-property-selector-target="item"
+              data-search-text="<%= search_text %>">
+              <%= check_box_tag "property_ids[]",
+                property.id,
+                @selected_property_ids.include?(property.id.to_s),
+                class: "mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-slate-900",
+                data: {
+                  bulk_property_selector_target: "checkbox",
+                  action: "change->bulk-property-selector#update"
+                } %>
+              <span class="min-w-0">
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-slate-950"><%= property.display_name %></span>
+                  <% if property == @property %>
+                    <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Propiedad actual</span>
+                  <% end %>
+                </span>
+                <% if property.address.present? %>
+                  <span class="mt-1 block truncate text-sm text-slate-500"><%= property.address %></span>
+                <% end %>
+              </span>
+            </label>
+          <% end %>
+        </div>
+
+        <div class="border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+          Se crearán copias independientes. Si una propiedad ya tiene la misma pregunta, se omitirá sin modificarla.
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap justify-end gap-3">
+      <%= link_to "Cancelar", property_path(@property, anchor: "faqs"), class: secondary_button_class %>
+      <%= form.submit "Agregar FAQ a propiedades seleccionadas",
+        class: primary_button_class,
+        data: { bulk_property_selector_target: "submit" } %>
+    </div>
+  <% end %>
+</div>

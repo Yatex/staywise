@@ -361,7 +361,10 @@
         <p class="text-sm text-slate-500">Respuestas reutilizables para preguntas frecuentes de huéspedes.</p>
       </div>
       <% unless @property_read_only %>
-        <%= link_to "Agregar FAQ", new_property_faq_path(@property), class: secondary_button_class %>
+        <div class="flex flex-wrap justify-end gap-2">
+          <%= link_to "Agregar FAQ", new_property_faq_path(@property), class: secondary_button_class %>
+          <%= link_to "Agregar en varias propiedades", bulk_new_property_faqs_path(@property), class: secondary_button_class %>
+        </div>
       <% end %>
     </div>
     <div class="divide-y divide-slate-100">

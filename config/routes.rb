@@ -36,7 +36,12 @@ Rails.application.routes.draw do
     patch :co_host, action: :update_co_host, on: :member
     resources :knowledge_blocks, except: [:show]
     resources :recommendations, except: [:show]
-    resources :faqs, except: [:show]
+    resources :faqs, except: [:show] do
+      collection do
+        get :bulk_new
+        post :bulk_create
+      end
+    end
   end
 
   resources :conversations, only: [:index, :show] do
