@@ -30,6 +30,7 @@ module AI
         owner_instructions: owner_instructions_payload,
         decision_settings: @property.account.ai_decision_settings,
         conversation_history: conversation_history_payload,
+        open_owner_tasks: open_owner_tasks_payload,
         tool_endpoint: tool_endpoint_payload,
         safety_rules: safety_rules,
         tool_context: tool_endpoint_payload.present? ? nil : registry.tool_context
@@ -69,6 +70,13 @@ module AI
         .map do |message|
           message.slice(:sender, :body, :channel, :created_at)
         end
+    end
+
+    def open_owner_tasks_payload
+      @conversation.owner_tasks.open
+        .select(:id, :kind, :title, :category, :created_at)
+        .order(created_at: :desc)
+        .map { |task| task.slice(:id, :kind, :title, :category, :created_at) }
     end
 
     def tool_endpoint_payload

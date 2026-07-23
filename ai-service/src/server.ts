@@ -686,6 +686,7 @@ function safeBaseContext(payload: any) {
     owner_instructions: payload?.owner_instructions,
     decision_settings: payload?.decision_settings,
     conversation_history: payload?.conversation_history,
+    open_owner_tasks: payload?.open_owner_tasks,
     safety_rules: payload?.safety_rules,
     tool_endpoint: payload?.tool_endpoint,
   };

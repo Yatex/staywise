@@ -41,11 +41,39 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, "Pedidos"
     assert_includes @response.body, "Pedido de comida o bebida"
-    assert_includes @response.body, "quiero un vino"
+    assert_includes @response.body, "Abrir conversación"
     assert_includes @response.body, "Pedido Apartment"
   end
 
-  test "list and detail show the latest clarification while preserving the original message" do
+  test "approval badge only appears while the request is open and actions are separated" do
+    @guest_request.update!(category: "late_checkout", requires_owner_approval: true)
+
+    get guest_requests_path
+
+    assert_response :success
+    assert_select "[aria-label='Estado']" do
+      assert_select "span", text: "Requiere aprobación", count: 1
+      assert_select "span", text: "Abierta", count: 1
+      assert_select "form", count: 0
+    end
+    assert_select "[aria-label='Acciones']" do
+      assert_select "button", text: "Marcar como resuelto", count: 1
+    end
+
+    @guest_request.update!(status: "resolved")
+    get guest_requests_path
+
+    assert_response :success
+    assert_select "[aria-label='Estado']" do
+      assert_select "span", text: "Requiere aprobación", count: 0
+      assert_select "span", text: "Resuelto", count: 1
+    end
+    assert_select "[aria-label='Acciones']" do
+      assert_select "button", text: "Reabrir", count: 1
+    end
+  end
+
+  test "list and detail link to the conversation without duplicating guest messages" do
     @guest_request.update!(metadata: {
       "updates" => [{
         "message_id" => @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "tres botellas").id,
@@ -55,13 +83,15 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
 
     get guest_requests_path
     assert_response :success
-    assert_includes response.body, "tres botellas"
+    assert_not_includes response.body, "tres botellas"
     assert_not_includes response.body, ">quiero un vino<"
+    assert_select "a[href='#{conversation_path(@conversation)}']", text: "Abrir conversación"
 
     get guest_request_path(@guest_request)
     assert_response :success
-    assert_includes response.body, "quiero un vino"
-    assert_includes response.body, "tres botellas"
+    assert_not_includes response.body, "quiero un vino"
+    assert_not_includes response.body, "tres botellas"
+    assert_select "a[href='#{conversation_path(@conversation)}']", minimum: 1
     assert_equal "quiero un vino", @guest_request.reload.description
   end
 
@@ -70,8 +100,7 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, "Quién lo pidió"
-    assert_includes @response.body, "Mensaje del huésped"
-    assert_includes @response.body, "quiero un vino"
+    assert_includes @response.body, "El contexto completo"
     assert_select "a[href='#{conversation_path(@conversation)}']", text: "Responder al huésped"
     assert_not_includes @response.body, "Resumen de Ayla"
     assert_not_includes @response.body, "Detalles estructurados"
@@ -112,8 +141,8 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
     get guest_requests_path(property_id: @property.id)
 
     assert_response :success
-    assert_includes @response.body, "quiero un vino"
-    assert_not_includes @response.body, "necesito toallas"
+    assert_includes @response.body, "Pedido de comida o bebida"
+    assert_not_includes @response.body, "Pedido de artículo extra"
   end
 
   test "requests and inquiries are listed in separate sections" do
@@ -127,13 +156,13 @@ class GuestRequestsControllerTest < ActionDispatch::IntegrationTest
 
     get guest_requests_path
     assert_response :success
-    assert_includes response.body, @guest_request.description
-    assert_not_includes response.body, inquiry.description
+    assert_includes response.body, @guest_request.title
+    assert_not_includes response.body, inquiry.title
 
     get inquiries_path
     assert_response :success
-    assert_includes response.body, inquiry.description
-    assert_not_includes response.body, @guest_request.description
+    assert_includes response.body, inquiry.title
+    assert_not_includes response.body, @guest_request.title
     assert_select "a[href='#{inquiry_path(inquiry)}']"
   end
 

@@ -8,6 +8,8 @@ const reply = {
   language: "es",
   message: "La red Wi-Fi es Pepe.",
   task_summary: null,
+  title: null,
+  owner_task_id: null,
   answer_confidence: 96,
   evidence_ids: ["property.wifi_name"],
   attachments: [],
@@ -61,9 +63,10 @@ test("AylaDecision accepts a confirmed check_out with a guest reply and no owner
 
 test("AylaDecision requires an explicit owner task kind", () => {
   assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_owner_task", task_summary: "Dos mantas" }).success, false);
-  const parsed = DecisionSchema.parse({ ...reply, action: "create_owner_task", owner_task_kind: "request", task_summary: "Dos mantas", evidence_ids: [] });
+  const parsed = DecisionSchema.parse({ ...reply, action: "create_owner_task", owner_task_kind: "request", task_summary: "Dos mantas", title: "Enviar dos mantas", evidence_ids: [] });
   assert.equal(parsed.outcome, "propose_action");
   assert.equal(parsed.owner_task_kind, "request");
+  assert.equal(parsed.title, "Enviar dos mantas");
 });
 
 test("AylaDecision accepts directly useful attachments", () => {

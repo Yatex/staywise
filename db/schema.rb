@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_21_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -241,14 +241,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_21_120000) do
     t.bigint "property_id", null: false
     t.bigint "conversation_id", null: false
     t.bigint "guest_id", null: false
-    t.bigint "message_id", null: false
+    t.bigint "message_id"
     t.bigint "ai_decision_log_id"
     t.string "guest_phone", null: false
     t.string "property_name", null: false
     t.string "property_address"
     t.string "category", null: false
     t.string "title", null: false
-    t.text "description", null: false
+    t.text "description"
     t.text "ai_summary"
     t.string "status", default: "open", null: false
     t.string "priority", default: "normal", null: false
@@ -267,6 +267,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_21_120000) do
     t.bigint "resolved_by_actor_id"
     t.string "resolved_by_role"
     t.string "source_owner_message_sid"
+    t.index "((metadata ->> 'source_guest_message_id'::text))", name: "index_owner_tasks_on_source_guest_message_id", unique: true, where: "(metadata ? 'source_guest_message_id'::text)"
     t.index ["account_id", "kind", "status"], name: "index_owner_tasks_on_account_kind_status"
     t.index ["account_id", "status"], name: "index_guest_requests_on_account_id_and_status"
     t.index ["account_id"], name: "index_guest_requests_on_account_id"

@@ -31,6 +31,17 @@ test("decision prompt classifies owner-managed requests as guest requests", () =
   assert.match(DECISION_SYSTEM_PROMPT, /confirm receipt only/i);
 });
 
+test("decision prompts model owner tasks as pending needs instead of messages", () => {
+  for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
+    assert.match(prompt, /action-oriented.*title.*at most 8 words/i);
+    assert.match(prompt, /open_owner_tasks/i);
+    assert.match(prompt, /same pending (?:need|intent)|continues exactly one task/i);
+    assert.match(prompt, /owner_task_id=null/i);
+  }
+  assert.match(DECISION_SYSTEM_PROMPT, /Never choose a task by textual similarity alone/i);
+  assert.match(DECISION_SYSTEM_PROMPT, /never invent an id/i);
+});
+
 test("decision prompts follow respond-first clarification rules", () => {
   for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
     assert.match(prompt, /Respond first, clarify only when necessary/i);

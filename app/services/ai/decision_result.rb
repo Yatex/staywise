@@ -30,6 +30,8 @@ module AI
       action
       answer_confidence
       task_summary
+      title
+      owner_task_id
       attachments
     ].freeze
 
@@ -76,6 +78,10 @@ module AI
         action: action || action_for_outcome(decision, normalized["owner_task_kind"]),
         answer_confidence: normalized.fetch("answer_confidence", normalized.fetch("confidence", 0).to_f * 100).to_f,
         task_summary: normalized["task_summary"],
+        title: normalized["title"].presence ||
+          normalized.dig("proposed_action", "payload", "title").presence ||
+          (normalized["task_summary"].presence || normalized["intent_summary"].presence if normalized["owner_task_kind"].present?),
+        owner_task_id: normalized["owner_task_id"],
         attachments: normalized.fetch("attachments", [])
       )
     end

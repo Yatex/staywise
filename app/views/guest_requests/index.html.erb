@@ -38,21 +38,30 @@
             <%= link_to(inquiry_view ? inquiry_path(guest_request) : guest_request_path(guest_request), class: "min-w-0 flex-1") do %>
               <span class="text-xs font-semibold text-slate-500"><%= inquiry_view ? "Consulta" : "Pedido" %></span>
               <p class="font-medium text-slate-950"><%= guest_request.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= guest_request.property_name %> · <%= display_phone_number(guest_request.guest_phone) %></p>
-              <p class="mt-2 line-clamp-2 text-sm text-slate-600"><%= guest_request.current_guest_message %></p>
+              <p class="mt-1 text-sm text-slate-500">
+                <%= guest_request.guest&.display_name.presence || display_phone_number(guest_request.guest_phone) %>
+                · <%= guest_request.property_name %>
+                · <%= l(guest_request.created_at, format: :short) %>
+              </p>
             <% end %>
-            <div class="flex shrink-0 flex-wrap items-center gap-2">
-              <% if guest_request.requires_owner_approval? %>
-                <span class="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">Requiere aprobación</span>
-              <% end %>
-              <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.status) %>"><%= enum_label(guest_request.status) %></span>
-              <% GuestRequest::STATUSES.without(guest_request.status).each do |status| %>
-                <%= button_to enum_label(status),
+            <div class="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="flex flex-wrap items-center gap-2" aria-label="Estado">
+                <% if guest_request.status == "open" && guest_request.requires_owner_approval? %>
+                  <span class="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">Requiere aprobación</span>
+                <% end %>
+                <span class="rounded-full px-2 py-1 text-xs font-semibold ring-1 <%= pill_class(guest_request.status) %>"><%= enum_label(guest_request.status) %></span>
+              </div>
+
+              <% next_status = guest_request.status == "open" ? "resolved" : "open" %>
+              <% action_label = next_status == "resolved" ? "Marcar como resuelto" : "Reabrir" %>
+              <div class="border-t border-slate-200 pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0" aria-label="Acciones">
+                <%= link_to "Abrir conversación", conversation_path(guest_request.conversation), class: "mr-2 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-950" %>
+                <%= button_to action_label,
                   inquiry_view ? inquiry_path(guest_request) : guest_request_path(guest_request),
                   method: :patch,
-                  params: { guest_request: { status: status } },
-                  class: "rounded-md px-2 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-50 hover:text-slate-950" %>
-              <% end %>
+                  params: { guest_request: { status: next_status } },
+                  class: "inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-950" %>
+              </div>
             </div>
           </div>
         </div>

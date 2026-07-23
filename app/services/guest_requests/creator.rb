@@ -59,17 +59,19 @@ module GuestRequests
 
     def call
       return unless @decision.owner_task_kind.in?(OwnerTask::KINDS)
+      duplicate = duplicate_request
+      return duplicate if duplicate
 
       category = @decision.owner_task_kind == "inquiry" ? "other" : request_category
       return unless category
 
-      result = if (request = existing_request(category))
+      if (request = existing_request)
         update_request!(request)
       else
-        create_request(category)
+        result = create_request(category)
+        notify_owner(result)
+        result
       end
-      notify_owner(result)
-      result
     end
 
     private
@@ -96,63 +98,49 @@ module GuestRequests
       @decision.detected_intents.map(&:to_h).map(&:stringify_keys)
     end
 
-    def existing_request(category)
-      OwnerTask.find_by(message: @guest_message) ||
-        pending_clarification_request ||
-        @conversation.owner_tasks.open.where(
-          account: @conversation.property.account,
-          property: @conversation.property,
-          guest: @conversation.guest,
-          kind: @decision.owner_task_kind,
-          category: category
-        ).where("created_at >= ?", 24.hours.ago).order(updated_at: :desc).first
+    def existing_request
+      return if @decision.owner_task_id.blank?
+
+      @conversation.owner_tasks.open.find_by(
+        id: @decision.owner_task_id,
+        account: @conversation.property.account,
+        property: @conversation.property,
+        guest: @conversation.guest,
+        kind: @decision.owner_task_kind
+      )
     end
 
-    def pending_clarification_request
-      @conversation.owner_tasks.open
-        .where(
-          account: @conversation.property.account,
-          property: @conversation.property,
-          guest: @conversation.guest,
-          kind: @decision.owner_task_kind
-        )
-        .where("created_at >= ?", 24.hours.ago)
-        .order(updated_at: :desc)
-        .detect { |request| awaiting_guest_clarification?(request) }
-    end
+    def duplicate_request
+      @duplicate_request ||= @conversation.owner_tasks.find_by(
+        "metadata ->> 'source_guest_message_id' = ?",
+        @guest_message.id.to_s
+      )
+      return @duplicate_request if @duplicate_request
 
-    def awaiting_guest_clarification?(request)
-      metadata = request.metadata.to_h
-      if metadata.key?("awaiting_guest_clarification")
-        return ActiveModel::Type::Boolean.new.cast(metadata["awaiting_guest_clarification"])
+      if (trace = latest_ai_trace)
+        @duplicate_request = @conversation.owner_tasks.find_by(ai_decision_log: trace)
       end
-
-      metadata["decision"] == "ask_clarifying_question" ||
-        Array(metadata["detected_intents"]).any? { |intent| intent.to_h["status"] == "needs_clarification" }
     end
 
     def update_request!(request)
-      return request if request.message_id == @guest_message.id
-
-      updates = Array(request.metadata["updates"])
-      updates << {
-        "message_id" => @guest_message.id,
-        "body" => request_text,
-        "received_at" => @guest_message.created_at.iso8601,
-        "changed_field" => inferred_update_field
-      }.compact
-
-      request.update!(
-        ai_decision_log: request.ai_decision_log || latest_ai_trace,
-        ai_summary: [request.ai_summary, ai_summary].compact_blank.uniq.join("\n"),
-        structured_details: request.structured_details.merge(structured_details),
-        metadata: request.metadata.merge(
-          "updates" => updates,
-          "last_update_message_id" => @guest_message.id,
-          "last_update_at" => Time.current.iso8601,
-          "awaiting_guest_clarification" => false
+      request.with_lock do
+        request.update!(
+          title: @decision.title,
+          category: request_category,
+          ai_decision_log: latest_ai_trace || request.ai_decision_log,
+          metadata: request.metadata.except(
+            "updates",
+            "last_update_message_id",
+            "awaiting_guest_clarification",
+            "detected_intents",
+            "proposed_action",
+            "evidence_ids"
+          ).merge(
+            "last_activity_at" => Time.current.iso8601,
+            "has_new_activity" => true
+          )
         )
-      )
+      end
       request
     end
 
@@ -162,66 +150,39 @@ module GuestRequests
         kind: @decision.owner_task_kind,
         property: @conversation.property,
         guest: @conversation.guest,
-        message: @guest_message,
+        message: nil,
         ai_decision_log: latest_ai_trace,
         guest_phone: @conversation.guest.phone_number,
         property_name: @conversation.property.display_name,
         property_address: @conversation.property.address,
         category: category,
-        title: request_title(category),
-        description: request_text,
-        ai_summary: ai_summary,
+        title: @decision.title,
+        description: nil,
+        ai_summary: nil,
         status: "open",
         priority: "normal",
         requires_owner_approval: requires_owner_approval?(category),
-        structured_details: structured_details,
+        structured_details: {},
         source_channel: @guest_message.channel.presence || "whatsapp",
         metadata: {
           "source" => "ai_guest_request",
+          "source_guest_message_id" => @guest_message.id,
           "decision" => @decision.outcome,
-          "proposed_action" => @decision.proposed_action,
-          "detected_intents" => @decision.detected_intents,
-          "evidence_ids" => @decision.evidence_ids,
           "approval_required" => requires_owner_approval?(category),
-          "awaiting_guest_clarification" => awaiting_clarification?
+          "last_activity_at" => Time.current.iso8601,
+          "has_new_activity" => false
         }.compact
       )
     rescue ActiveRecord::RecordNotUnique
-      OwnerTask.find_by!(message: @guest_message)
+      @conversation.owner_tasks.find_by!(
+        "metadata ->> 'source_guest_message_id' = ?",
+        @guest_message.id.to_s
+      )
     end
 
     def latest_ai_trace
       AIDecisionLog.where(conversation: @conversation, message: @guest_message).order(created_at: :desc).first ||
         AIDecisionLog.where(conversation: @conversation, original_message: @guest_message).order(created_at: :desc).first
-    end
-
-    def request_title(category)
-      return "Consulta pendiente" if @decision.owner_task_kind == "inquiry"
-
-      "#{@conversation.guest.phone_number.to_s.delete_prefix("+")} · Pedido"
-    end
-
-    def action_title
-      @decision.proposed_action.to_h.dig("payload", "title") ||
-        @decision.proposed_action.to_h["title"]
-    end
-
-    def request_text
-      @guest_message.body.to_s
-        .delete_prefix(@conversation.property.whatsapp_reference)
-        .gsub(@conversation.property.whatsapp_reference, "")
-        .strip
-        .presence || @guest_message.body.to_s
-    end
-
-    def ai_summary
-      return @decision.task_summary if @decision.task_summary.present?
-
-      @decision.alert_description.presence ||
-        @decision.escalation.to_h["summary_for_host"].presence ||
-        @decision.intent_summary.presence ||
-        @decision.proposed_action.to_h["details"].presence ||
-        request_text
     end
 
     def requires_owner_approval?(category)
@@ -232,23 +193,6 @@ module GuestRequests
         @decision.required_capabilities.include?("owner_attention") ||
         truthy?(@decision.proposed_action.to_h["requires_approval"]) ||
         @decision.escalation_required
-    end
-
-    def structured_details
-      payload = @decision.proposed_action.to_h["payload"]
-      payload.is_a?(Hash) ? payload.stringify_keys : {}
-    end
-
-    def inferred_update_field
-      return "guest_clarification" if @decision.outcome == "ask_clarifying_question"
-      return "owner_approval" if requires_owner_approval?(request_category)
-
-      "details"
-    end
-
-    def awaiting_clarification?
-      @decision.outcome == "ask_clarifying_question" ||
-        detected_intents.any? { |intent| intent["status"] == "needs_clarification" }
     end
 
     def truthy?(value)

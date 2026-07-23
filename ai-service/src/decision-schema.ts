@@ -12,6 +12,8 @@ const PublicDecisionSchema = z.object({
   language: z.string().min(2),
   message: z.string().min(1).nullable(),
   task_summary: z.string().nullable().default(null),
+  title: z.string().nullable().default(null),
+  owner_task_id: z.number().int().positive().nullable().default(null),
   answer_confidence: z.number().min(0).max(100),
   evidence_ids: z.array(z.string()).default([]),
   attachments: z.array(AttachmentSchema).default([]),
@@ -19,8 +21,17 @@ const PublicDecisionSchema = z.object({
   if (decision.action === "create_owner_task" && !decision.owner_task_kind) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["owner_task_kind"], message: "owner_task_kind is required" });
   }
+  if (decision.action === "create_owner_task" && !decision.title?.trim()) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title is required" });
+  }
+  if (decision.action === "create_owner_task" && decision.title && decision.title.trim().split(/\s+/).length > 8) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title must have at most 8 words" });
+  }
   if (decision.action !== "create_owner_task" && decision.owner_task_kind) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["owner_task_kind"], message: "owner_task_kind is only valid for create_owner_task" });
+  }
+  if (decision.action !== "create_owner_task" && (decision.title || decision.owner_task_id)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "task fields are only valid for create_owner_task" });
   }
   if (decision.action === "no_action" && decision.message !== null) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message must be null for no_action" });
@@ -51,6 +62,12 @@ export function toPublicDecision(decision: any) {
     message: action === "no_action" ? null : sanitizeGuestVisibleText(decision?.message || decision?.message_body || decision?.response_text || ""),
     task_summary: action === "create_owner_task"
       ? String(decision?.task_summary || decision?.intent_summary || decision?.escalation?.summary_for_host || "").trim() || null
+      : null,
+    title: action === "create_owner_task"
+      ? String(decision?.title || decision?.proposed_action?.payload?.title || "").trim() || null
+      : null,
+    owner_task_id: action === "create_owner_task" && Number.isInteger(Number(decision?.owner_task_id))
+      ? Number(decision.owner_task_id)
       : null,
     answer_confidence: answerConfidence,
     evidence_ids: uniqueStrings(decision?.evidence_ids || decision?.used_source_ids),

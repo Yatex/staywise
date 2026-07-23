@@ -427,6 +427,8 @@ module AI
         :alert_type,
         :owner_task_kind,
         :task_summary,
+        :title,
+        :owner_task_id,
         :attachments,
         :proposed_action,
         :sensitive_info_used

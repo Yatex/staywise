@@ -30,7 +30,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     get dashboard_path
 
     assert_response :success
-    assert_includes @response.body, "Puedo hacer más tarde el checkout?"
+    assert_includes @response.body, "Consulta pendiente"
     assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
     assert_not_includes @response.body, "Alertas importantes"
@@ -89,7 +89,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, "Pedidos pendientes"
     assert_includes @response.body, "Pedido de comida o bebida"
-    assert_includes @response.body, "quiero un vino"
+    assert_not_includes @response.body, "quiero un vino"
   end
 
   test "shows pending departures with a link to the departures section" do
@@ -131,7 +131,8 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
       missing_information: ["late_checkout_policy"],
       safety_flags: [],
       confidence: 0.9,
-      owner_task_kind: "inquiry"
+      owner_task_kind: "inquiry",
+      title: "Consultar late checkout"
     )
     result = nil
 
@@ -154,7 +155,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     get dashboard_path
 
     assert_response :success
-    assert_includes @response.body, "Puedo hacer más tarde el checkout?"
+    assert_includes @response.body, "Consultar late checkout"
     assert_includes @response.body, "Consultas pendientes"
     assert_includes @response.body, "New Charming Design Center"
     assert_not_includes @response.body, "Alertas importantes"

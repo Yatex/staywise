@@ -41,7 +41,9 @@ class AIFinalContractTest < ActiveSupport::TestCase
     request = decision(action: "create_owner_task", kind: "request", message: "Recibí tu pedido.", confidence: 98, task_summary: "2 mantas para esta noche")
     request_task = OwnerTasks::Creator.call(conversation: @conversation, decision: request, guest_message: request_message)
     assert_equal "request", request_task.kind
-    assert_equal "2 mantas para esta noche", request_task.ai_summary
+    assert_equal "2 mantas para esta noche", request_task.title
+    assert_nil request_task.ai_summary
+    assert_nil request_task.description
 
     inquiry_message = guest_message("¿Cuál es la clave de la caja fuerte?")
     inquiry = decision(action: "create_owner_task", kind: "inquiry", message: "No tengo esa información disponible.", confidence: 20, task_summary: "Consultar clave de caja fuerte")

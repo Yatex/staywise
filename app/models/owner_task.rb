@@ -10,13 +10,13 @@ class OwnerTask < ApplicationRecord
   belongs_to :property
   belongs_to :conversation
   belongs_to :guest
-  belongs_to :message
+  belongs_to :message, optional: true
   belongs_to :ai_decision_log, optional: true
 
   validates :kind, inclusion: { in: KINDS }
   validates :category, inclusion: { in: CATEGORIES }
   validates :status, inclusion: { in: STATUSES }
-  validates :guest_phone, :property_name, :title, :description, :source_channel, presence: true
+  validates :guest_phone, :property_name, :title, :source_channel, presence: true
 
   scope :requests, -> { where(kind: "request") }
   scope :inquiries, -> { where(kind: "inquiry") }
@@ -30,7 +30,7 @@ class OwnerTask < ApplicationRecord
   end
 
   def current_guest_message
-    Array(metadata.to_h["updates"]).last.to_h["body"].presence || description
+    title
   end
 
   private

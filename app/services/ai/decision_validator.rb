@@ -40,6 +40,9 @@ module AI
       reasons << "invalid_owner_task_kind" if @decision.owner_task_kind.present? && !@decision.owner_task_kind.in?(OwnerTask::KINDS)
       reasons << "owner_task_kind_required" if @decision.action == "create_owner_task" && @decision.owner_task_kind.blank?
       reasons << "owner_task_kind_not_allowed" if @decision.action != "create_owner_task" && @decision.owner_task_kind.present?
+      reasons << "owner_task_title_required" if @decision.action == "create_owner_task" && @decision.title.blank?
+      reasons << "owner_task_title_too_long" if @decision.title.present? && @decision.title.split.size > 8
+      reasons << owner_task_reference_reason if owner_task_reference_reason
       reasons << "empty_response" if @decision.response_text.blank? && @decision.action != "no_action"
       reasons << "missing_language" if @decision.language.blank?
       reasons << "no_action_must_not_have_response" if @decision.action == "no_action" && @decision.response_text.present?
@@ -55,12 +58,34 @@ module AI
         invalid_owner_task_kind
         owner_task_kind_required
         owner_task_kind_not_allowed
+        owner_task_title_required
+        owner_task_title_too_long
+        owner_task_reference_invalid
+        owner_task_reference_scope_mismatch
         empty_response
         missing_language
         no_action_must_not_have_response
         no_action_must_not_have_effects
         invalid_attachment
       ]
+    end
+
+    def owner_task_reference_reason
+      return if @decision.owner_task_id.blank?
+      return "owner_task_reference_invalid" unless @decision.action == "create_owner_task"
+
+      task = OwnerTask.find_by(id: @decision.owner_task_id)
+      return "owner_task_reference_invalid" unless task&.status == "open"
+
+      expected = {
+        conversation_id: @conversation.id,
+        account_id: @conversation.property.account_id,
+        property_id: @conversation.property_id,
+        guest_id: @conversation.guest_id,
+        kind: @decision.owner_task_kind
+      }
+      actual = task.attributes.symbolize_keys.slice(*expected.keys)
+      "owner_task_reference_scope_mismatch" unless actual == expected
     end
 
     def no_action_has_effects?

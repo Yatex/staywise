@@ -80,7 +80,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "request", guest_request.kind
     assert_equal "+15550000002", guest_request.guest_phone
     assert_equal "Av. Test 123", guest_request.property_address
-    assert_equal conversation.messages.where(sender: "guest").last, guest_request.message
+    assert_nil guest_request.message
+    assert_nil guest_request.description
     assert_no_match(/approved|aprobado/i, conversation.messages.where(sender: "ai").last.body)
   end
 
@@ -130,7 +131,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_equal "open", guest_request.status
     assert_equal "+15550000023", guest_request.guest_phone
     assert_equal "Calle Vino 456", guest_request.property_address
-    assert_includes guest_request.description, "quiero un vino"
+    assert_nil guest_request.description
     assert_includes provider.sent_messages.last.fetch(:body), "le aviso al anfitrión"
   end
 
@@ -156,7 +157,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     assert_nil result.fetch(:alert)
     assert_equal "food_or_drink", guest_request.category
     assert_equal "open", guest_request.status
-    assert_equal "15550000026 · Pedido", guest_request.title
+    assert_equal "Pedido del huésped", guest_request.title
   end
 
   test "later clarification updates existing open pedido without duplicate" do
@@ -184,6 +185,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         language: "es",
         message: "Perfecto, sumo ese detalle al pedido.",
         task_summary: "Vino tinto",
+        title: "Solicitar vino tinto",
+        owner_task_id: first.fetch(:guest_request).id,
         answer_confidence: 98,
         evidence_ids: [],
         attachments: []
@@ -200,11 +203,10 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     end
 
     guest_request = first.fetch(:guest_request).reload
-    assert_equal 1, guest_request.metadata.fetch("updates").length
-    assert_includes guest_request.metadata.fetch("updates").first.fetch("body"), "tinto"
-    assert_equal "tinto por favor", guest_request.current_guest_message
-    assert_includes guest_request.description, "quiero un vino"
-    assert_equal false, guest_request.metadata.fetch("awaiting_guest_clarification")
+    assert_equal "Solicitar vino tinto", guest_request.title
+    assert_nil guest_request.message
+    assert_nil guest_request.description
+    assert_empty guest_request.metadata.slice("updates", "last_update_message_id")
 
     assert_difference -> { GuestRequest.count }, 1 do
       with_ai_decision(AI::DecisionResult.from_hash(
@@ -213,6 +215,7 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
         language: "es",
         message: "Recibí tu nuevo pedido.",
         task_summary: "Pedido no relacionado",
+        title: "Coordinar traslado al aeropuerto",
         answer_confidence: 98,
         evidence_ids: [],
         attachments: []
