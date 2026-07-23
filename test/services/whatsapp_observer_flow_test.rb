@@ -38,7 +38,8 @@ class WhatsappObserverFlowTest < ActiveSupport::TestCase
 
       assert result[:owner_message]
       assert_nil result[:conversation]
-      assert_includes @provider.messages.last[:body], "No tenés pendientes"
+      assert_includes @provider.messages.last[:body], "WhatsApp del *dueño/anfitrión*"
+      assert_includes @provider.messages.last[:body], "No tenés pedidos, consultas, alertas ni salidas pendientes"
     end
   end
 

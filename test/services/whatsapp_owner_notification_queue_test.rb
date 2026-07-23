@@ -334,7 +334,92 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     assert_equal task.id, session.active_item_id
     assert_equal "open", task.reload.status
     assert_empty @conversation.messages.where(sender: "owner")
-    assert_includes @provider.sent_messages[-2][:body], "Elegí una de las opciones"
+    assert_includes @provider.sent_messages[-2][:body], "WhatsApp del *dueño/anfitrión*"
+    assert_includes @provider.sent_messages[-2][:body], "Responder, Siguiente, Omitir o Salir"
+  end
+
+  test "unknown owner message with no pending explains the owner role and guest limitation" do
+    result = inbound("¿Cuál es la clave del WiFi?", "SM-OWNER-HELP-1")
+
+    assert result[:owner_message]
+    assert_nil result[:conversation]
+    assert_nil result[:session]
+    assert_includes @provider.sent_messages.last[:body], "WhatsApp del *dueño/anfitrión*"
+    assert_includes @provider.sent_messages.last[:body], "no como preguntas de un huésped"
+    assert_includes @provider.sent_messages.last[:body], "No tenés pedidos, consultas, alertas ni salidas pendientes"
+    assert_includes @provider.sent_messages.last[:body], "otro número de WhatsApp"
+  end
+
+  test "an owner phone with a property token remains in the owner flow" do
+    @account.guests.create!(phone_number: @account.owner_whatsapp_number, property: @property, name: "Owner as guest")
+
+    result = inbound("#{@property.whatsapp_reference} ¿Cómo ingreso?", "SM-OWNER-ROLE-COLLISION-1")
+
+    assert result[:owner_message]
+    assert_nil result[:conversation]
+    assert_not Conversation.exists?(channel: "whatsapp", channel_participant: @account.owner_whatsapp_number)
+    assert_includes @provider.sent_messages.last[:body], "WhatsApp del *dueño/anfitrión*"
+    assert_includes @provider.sent_messages.last[:body], "no como preguntas de un huésped"
+  end
+
+  test "menu with no pending reports all counters without creating a session" do
+    result = inbound("MENÚ", "SM-OWNER-MENU-1")
+
+    assert result[:owner_message]
+    assert result[:menu]
+    assert_nil result[:session]
+    assert_equal 0, @account.owner_whatsapp_sessions.active.count
+    assert_includes @provider.sent_messages.last[:body], "pedidos (0)"
+    assert_includes @provider.sent_messages.last[:body], "consultas (0)"
+    assert_includes @provider.sent_messages.last[:body], "alertas (0)"
+    assert_includes @provider.sent_messages.last[:body], "salidas (0)"
+  end
+
+  test "unknown message in menu explains the owner role without changing pending state" do
+    create_task("request", "Necesito toallas")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+
+    inbound("¿Cuál es la clave del WiFi?", "SM-OWNER-HELP-2")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "menu", session.state
+    assert_nil session.active_item_id
+    assert_includes @provider.sent_messages.last[:body], "WhatsApp del *dueño/anfitrión*"
+    assert_includes @provider.sent_messages.last[:body], "pedidos (1)"
+    assert_empty @conversation.messages.where(sender: "owner")
+  end
+
+  test "help during send confirmation preserves the active item and draft" do
+    task = create_task("request", "Necesito una manta")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-OWNER-HELP-3", action_id: "pedidos")
+    inbound("Responder", "SM-OWNER-HELP-4", action_id: "responder")
+    inbound("La dejamos en recepción.", "SM-OWNER-HELP-5")
+
+    inbound("AYUDA", "SM-OWNER-HELP-6")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "awaiting_send_confirmation", session.state
+    assert_equal task.id, session.active_item_id
+    assert_equal "La dejamos en recepción.", session.draft_reply_body
+    assert_equal "open", task.reload.status
+    assert_empty @conversation.messages.where(sender: "owner")
+    assert_includes @provider.sent_messages[-2][:body], "Enviar, Editar o Cancelar"
+  end
+
+  test "menu and help remain valid reply text when Ayla is awaiting the owner draft" do
+    task = create_task("request", "Necesito ayuda")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-DRAFT-COMMAND-1", action_id: "pedidos")
+    inbound("Responder", "SM-DRAFT-COMMAND-2", action_id: "responder")
+
+    inbound("ayuda", "SM-DRAFT-COMMAND-3")
+
+    session = @account.owner_whatsapp_sessions.active.first
+    assert_equal "awaiting_send_confirmation", session.state
+    assert_equal task.id, session.active_item_id
+    assert_equal "ayuda", session.draft_reply_body
+    assert_empty @conversation.messages.where(sender: "owner")
   end
 
   test "edit replaces the draft and cancel returns to the same item without sending" do

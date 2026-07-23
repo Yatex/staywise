@@ -10,7 +10,9 @@ module Whatsapp
       cancelar: "cancelar",
       recordar: "recordar",
       no_recordar: "no_recordar",
-      checkout_visto: "checkout_visto"
+      checkout_visto: "checkout_visto",
+      menu: "menu",
+      ayuda: "ayuda"
     }.freeze
     CATEGORIES = %w[pedidos consultas alertas checkouts].freeze
     ITEM_ACTIONS = ACTION_IDS.values_at(:responder, :siguiente, :omitir, :salir).freeze
@@ -38,7 +40,7 @@ module Whatsapp
         return handled(active_session, true, duplicate: true) if duplicate_webhook?
 
         session = active_session || open_session_if_pending
-        return handled(nil, send_owner_message("No tenés pendientes en Ayla.")) unless session
+        return handle_without_session unless session
 
         remember_webhook!(session)
         @current_action = resolve_action(session)
@@ -70,8 +72,10 @@ module Whatsapp
       category = @current_action
       return select_category(session, category) if category.in?(CATEGORIES)
       return finish_session(session) if category == ACTION_IDS[:salir]
+      return show_menu(session) if category == ACTION_IDS[:menu]
 
-      show_menu(session)
+      send_owner_message(menu_guidance)
+      handled(session, true, help: true)
     end
 
     def handle_viewing_item(session)
@@ -87,7 +91,7 @@ module Whatsapp
       when ACTION_IDS[:salir]
         finish_session(session)
       else
-        send_owner_message("Elegí una de las opciones para continuar.")
+        send_owner_guidance("Para este caso podés elegir Responder, Siguiente, Omitir o Salir.")
         send_item_actions
         handled(session, true)
       end
@@ -106,7 +110,7 @@ module Whatsapp
       when ACTION_IDS[:salir]
         finish_session(session)
       else
-        send_owner_message("Elegí Marcar como visto, Siguiente o Salir para continuar.")
+        send_owner_guidance("Para esta salida podés elegir Marcar como visto, Siguiente o Salir.")
         send_checkout_actions
         handled(session, true)
       end
@@ -142,14 +146,14 @@ module Whatsapp
         clear_draft!(session)
         show_active_item(session)
       else
-        send_owner_message("Elegí Enviar, Editar o Cancelar para continuar.")
+        send_owner_guidance("Tenés una respuesta preparada. Elegí Enviar, Editar o Cancelar para continuar.")
         send_confirmation(session.draft_reply_body.to_s)
         handled(session, true)
       end
     end
 
     def handle_sending_message(session)
-      send_owner_message("Estoy enviando la respuesta anterior. No hace falta que vuelvas a tocar Enviar.")
+      send_owner_guidance("Estoy enviando la respuesta anterior. No hace falta que vuelvas a tocar Enviar.")
       handled(session, true, sending: true)
     end
 
@@ -195,7 +199,7 @@ module Whatsapp
 
     def handle_learning(session)
       unless @current_action.in?(LEARNING_ACTIONS)
-        send_owner_message("Elegí si querés que Ayla recuerde esta respuesta.")
+        send_owner_guidance("Elegí Recordar o No recordar para indicar si Ayla debe guardar esta respuesta.")
         send_learning_options
         return handled(session, true)
       end
@@ -449,12 +453,14 @@ module Whatsapp
     end
 
     def resolve_action(session)
-      interactive = @parsed.interactive_action_id.to_s.strip.downcase
+      interactive = normalize_command(@parsed.interactive_action_id)
       return interactive if (ACTION_IDS.values + CATEGORIES).include?(interactive)
 
-      typed = @parsed.body.to_s.strip.downcase
+      typed = normalize_command(@parsed.body)
+      return typed if typed.in?(ACTION_IDS.values_at(:menu, :ayuda)) && session.state != "awaiting_reply_text"
+
       allowed = case session.state
-      when "menu" then CATEGORIES + [ACTION_IDS[:salir]]
+      when "menu" then CATEGORIES + ACTION_IDS.values_at(:salir, :menu, :ayuda)
       when "viewing_item" then session.active_category == "checkouts" ? CHECKOUT_ACTIONS : ITEM_ACTIONS
       when "awaiting_send_confirmation" then CONFIRMATION_ACTIONS
       when "awaiting_learning_confirmation" then LEARNING_ACTIONS
@@ -562,6 +568,50 @@ module Whatsapp
         send_owner_message("Elegí una categoría: pedidos (#{counts[:pedidos]}), consultas (#{counts[:consultas]}), alertas (#{counts[:alertas]}) o checkouts (#{counts[:checkouts]}).")
       end
       handled(session, true, menu: true)
+    end
+
+    def handle_without_session
+      counts = pending_counts
+      message = if normalized_typed_action == ACTION_IDS[:menu]
+        menu_guidance(counts)
+      else
+        [
+          owner_role_explanation,
+          "No tenés pedidos, consultas, alertas ni salidas pendientes.",
+          owner_available_actions
+        ].join("\n\n")
+      end
+
+      handled(nil, send_owner_message(message), help: true, menu: normalized_typed_action == ACTION_IDS[:menu])
+    end
+
+    def send_owner_guidance(detail)
+      send_owner_message([owner_role_explanation, detail, owner_available_actions].join("\n\n"))
+    end
+
+    def owner_role_explanation
+      "Este número está configurado como WhatsApp del *dueño/anfitrión*. Ayla interpreta tus mensajes como acciones del dueño, no como preguntas de un huésped."
+    end
+
+    def owner_available_actions
+      "Escribí *MENÚ* para ver tus pendientes o *AYUDA* para conocer las opciones. Para probar Ayla como huésped, usá otro número de WhatsApp."
+    end
+
+    def menu_guidance(counts = pending_counts)
+      [
+        owner_role_explanation,
+        "Pendientes: pedidos (#{counts[:pedidos]}), consultas (#{counts[:consultas]}), alertas (#{counts[:alertas]}) y salidas (#{counts[:checkouts]}).",
+        "Elegí Pedidos, Consultas, Alertas o Checkouts para revisar una categoría.",
+        owner_available_actions
+      ].join("\n\n")
+    end
+
+    def normalized_typed_action
+      normalize_command(@parsed.body)
+    end
+
+    def normalize_command(value)
+      value.to_s.strip.downcase.unicode_normalize(:nfd).gsub(/\p{Mn}/, "")
     end
 
     def pending_items(category)
