@@ -44,15 +44,80 @@ class OwnerTasksCreatorTest < ActiveSupport::TestCase
     assert_equal ["Aprobar early check-in", "Solicitar una cuna"], @conversation.owner_tasks.pluck(:title).sort
   end
 
-  test "a resolved task cannot be selected for an update" do
+  test "a resolved task reference becomes a warning and creates a new task" do
     task = create_task(body: "Quiero una cuna", title: "Solicitar una cuna", action_type: "request_extra_item")
     task.update!(status: "resolved")
     decision = decision(title: "Agregar detalle de cuna", owner_task_id: task.id, action_type: "request_extra_item")
 
     validation = AI::DecisionValidator.new(conversation: @conversation, decision: decision).call
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Quiero otra cuna")
+    created = OwnerTasks::Creator.call(conversation: @conversation, decision: decision, guest_message: message)
 
-    assert_not validation.valid?
-    assert_includes validation.reasons, "owner_task_reference_invalid"
+    assert validation.valid?
+    assert_includes validation.warnings, "owner_task_reference_invalid"
+    assert_not_equal task.id, created.id
+    assert_equal "open", created.status
+  end
+
+  test "a nonexistent task reference creates a new local task with a warning" do
+    decision = decision(title: "Solicitar una cama adicional", owner_task_id: 999_999_999, action_type: "request_extra_bed")
+    validation = AI::DecisionValidator.new(conversation: @conversation, decision: decision).call
+    message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Quiero una cama adicional")
+
+    created = OwnerTasks::Creator.call(conversation: @conversation, decision: decision, guest_message: message)
+
+    assert validation.valid?
+    assert_includes validation.warnings, "owner_task_reference_invalid"
+    assert_equal "Solicitar una cama adicional", created.title
+    assert_equal @conversation, created.conversation
+  end
+
+  test "a task reference from another conversation or account is never updated" do
+    other_account = Account.create!(name: "Other owner")
+    other_account.subscriptions.create!(plan: "growth", status: "trialing")
+    other_property = other_account.properties.create!(name: "Other property")
+    other_guest = other_account.guests.create!(phone_number: "+59899009999", property: other_property)
+    other_conversation = other_guest.conversations.create!(property: other_property)
+    external_message = other_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Necesito una cama")
+    external_task = OwnerTasks::Creator.call(
+      conversation: other_conversation,
+      decision: decision(title: "Solicitar cama externa", action_type: "request_extra_bed"),
+      guest_message: external_message
+    )
+    external_title = external_task.title
+    local_decision = decision(title: "Solicitar cama local", owner_task_id: external_task.id, action_type: "request_extra_bed")
+    validation = AI::DecisionValidator.new(conversation: @conversation, decision: local_decision).call
+    local_message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Quiero una cama adicional")
+
+    local_task = OwnerTasks::Creator.call(conversation: @conversation, decision: local_decision, guest_message: local_message)
+
+    assert validation.valid?
+    assert_includes validation.warnings, "owner_task_reference_invalid"
+    assert_not_equal external_task.id, local_task.id
+    assert_equal external_title, external_task.reload.title
+    assert_equal @account, local_task.account
+  end
+
+  test "a task reference from another conversation in the same account creates locally" do
+    other_guest = @account.guests.create!(phone_number: "+59899008888", property: @property)
+    other_conversation = other_guest.conversations.create!(property: @property)
+    other_message = other_conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Necesito una cama")
+    other_task = OwnerTasks::Creator.call(
+      conversation: other_conversation,
+      decision: decision(title: "Solicitar cama en otra conversación", action_type: "request_extra_bed"),
+      guest_message: other_message
+    )
+    local_decision = decision(title: "Solicitar cama adicional", owner_task_id: other_task.id, action_type: "request_extra_bed")
+    validation = AI::DecisionValidator.new(conversation: @conversation, decision: local_decision).call
+    local_message = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Quiero una cama adicional")
+
+    local_task = OwnerTasks::Creator.call(conversation: @conversation, decision: local_decision, guest_message: local_message)
+
+    assert validation.valid?
+    assert_includes validation.warnings, "owner_task_reference_invalid"
+    assert_equal @conversation, local_task.conversation
+    assert_not_equal other_task.id, local_task.id
+    assert_equal "Solicitar cama en otra conversación", other_task.reload.title
   end
 
   test "AI context exposes only open tasks from the current conversation" do

@@ -232,6 +232,72 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     end
   end
 
+  test "invalid owner task continuation creates locally, replies with AI text, and records the warning and result" do
+    provider = RecordingProvider.new
+    decision = AI::DecisionResult.from_hash(
+      action: "create_owner_task",
+      owner_task_kind: "request",
+      owner_task_id: 999_999_999,
+      language: "es",
+      message: "Perfecto, le aviso al anfitrión sobre la cama adicional.",
+      task_summary: "Solicitar una cama adicional",
+      title: "Solicitar una cama adicional",
+      answer_confidence: 98,
+      evidence_ids: [],
+      detected_intents: [{ type: "request_extra_bed", status: "requires_host_approval" }],
+      proposed_action: { type: "request_extra_bed", payload: {} }
+    )
+    trace = nil
+
+    AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
+      trace = AIDecisionLog.create!(
+        account: conversation.property.account,
+        property: conversation.property,
+        guest: conversation.guest,
+        conversation: conversation,
+        message: guest_message,
+        original_message: guest_message,
+        route: "remote_ai_accepted_with_warnings",
+        decision: decision.outcome,
+        final_outcome: decision.outcome,
+        language: "es",
+        validator_result: "accepted_with_warnings",
+        validation_results: {
+          "status" => "accepted_with_warnings",
+          "passed" => true,
+          "failed" => false,
+          "reasons" => [],
+          "warnings" => ["owner_task_reference_invalid"]
+        },
+        payload: { "original_decision" => { "owner_task_id" => 999_999_999 } }
+      )
+      decision
+    }) do
+      result = Whatsapp::IncomingMessageHandler.new(
+        {
+          "From" => "whatsapp:+15550000028",
+          "To" => "whatsapp:+15550009999",
+          "Body" => "#{@property.whatsapp_reference} Quiero una cama adicional"
+        },
+        provider: provider
+      ).call
+
+      task = result.fetch(:guest_request)
+      trace.reload
+
+      assert_equal "Solicitar una cama adicional", task.title
+      assert_equal result.fetch(:conversation), task.conversation
+      assert_equal "Perfecto, le aviso al anfitrión sobre la cama adicional.", result.fetch(:decision).response_text
+      assert_includes provider.sent_messages.map { |message| message[:body] }, decision.response_text
+      assert_equal "accepted_with_warnings", trace.validation_results["status"]
+      assert_equal ["owner_task_reference_invalid"], trace.validation_results["warnings"]
+      assert_equal "owner_task_created", trace.payload.dig("guest_request", "operational_result")
+      assert_equal task.id, trace.payload.dig("guest_request", "created_owner_task_id")
+      assert_equal 999_999_999, trace.payload.dig("guest_request", "requested_owner_task_id")
+      assert_nil trace.fallback_reason
+    end
+  end
+
   test "extra bed request creates pedido" do
     result = with_ai_decision(ai_guest_request_decision(action_type: "request_extra_bed", intent_type: "request_extra_bed", message_body: "Perfecto, le aviso al anfitrión sobre tu pedido y te confirmamos en cuanto tengamos respuesta.")) do
       Whatsapp::IncomingMessageHandler.new(

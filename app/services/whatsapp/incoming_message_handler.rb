@@ -353,13 +353,19 @@ module Whatsapp
       end
 
       guest_request_payload = if guest_request.present?
+        owner_task_updated = decision.owner_task_id.present? && guest_request.id.to_s == decision.owner_task_id.to_s
+        operational_result = owner_task_updated ? "owner_task_updated" : "owner_task_created"
         {
           created: true,
           id: guest_request.id,
+          operational_result: operational_result,
+          created_owner_task_id: (guest_request.id unless owner_task_updated),
+          updated_owner_task_id: (guest_request.id if owner_task_updated),
+          requested_owner_task_id: decision.owner_task_id,
           category: guest_request.category,
           status: guest_request.status,
           visible_for_owner: guest_request.account_id == log.account_id
-        }
+        }.compact
       else
         { created: false }
       end

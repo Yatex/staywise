@@ -283,6 +283,17 @@
               <% end %>
             </ul>
           <% end %>
+          <% owner_task_result = payload.to_h.dig("guest_request", "operational_result") %>
+          <% if owner_task_result.present? %>
+            <p class="mt-3 font-semibold text-slate-950">Resultado operativo</p>
+            <p class="mt-1"><%= owner_task_result %></p>
+            <% if (created_owner_task_id = payload.to_h.dig("guest_request", "created_owner_task_id")).present? %>
+              <p class="mt-1">created_owner_task_id: <strong><%= created_owner_task_id %></strong></p>
+            <% end %>
+            <% if (updated_owner_task_id = payload.to_h.dig("guest_request", "updated_owner_task_id")).present? %>
+              <p class="mt-1">updated_owner_task_id: <strong><%= updated_owner_task_id %></strong></p>
+            <% end %>
+          <% end %>
         </div>
       </div>
     </div>

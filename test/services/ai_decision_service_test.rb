@@ -1072,6 +1072,37 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_includes audit.validation_results["reasons"], "contract_no_reply_must_not_send_whatsapp"
   end
 
+  test "invalid owner task continuation is accepted with warnings without replacing the AI response" do
+    message = @conversation.messages.create!(sender: "guest", body: "Quiero una cama adicional", channel: "whatsapp")
+
+    decision = run_with_remote_decision(message, {
+      action: "create_owner_task",
+      owner_task_kind: "request",
+      owner_task_id: 999_999_999,
+      title: "Solicitar una cama adicional",
+      language: "es",
+      message: "Perfecto, le aviso al anfitrión sobre la cama adicional.",
+      task_summary: "Solicitar una cama adicional",
+      answer_confidence: 98,
+      evidence_ids: [],
+      detected_intents: [{ type: "request_extra_bed", status: "requires_host_approval" }],
+      proposed_action: { type: "request_extra_bed", payload: {} },
+      escalation: { required: false },
+      audit: default_tool_audit
+    })
+
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_equal "create_owner_task", decision.action
+    assert_equal "Perfecto, le aviso al anfitrión sobre la cama adicional.", decision.response_text
+    assert_equal "remote_ai_accepted_with_warnings", audit.route
+    assert_equal "accepted_with_warnings", audit.validator_result
+    assert_equal ["owner_task_reference_invalid"], audit.validation_results["warnings"]
+    assert_empty audit.validation_results["reasons"]
+    assert_not audit.payload["rails_used_technical_fallback"]
+    assert_nil audit.fallback_reason
+  end
+
   test "does not use pool directions faq to answer visitor permission question" do
     @property.faqs.create!(
       question: "Como bajo a la pileta?",

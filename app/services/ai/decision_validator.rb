@@ -6,6 +6,7 @@ module AI
     ALLOWED_ATTACHMENT_TYPES = %w[video image document].freeze
     BLOCKING_EVIDENCE_REASONS = %w[cross_property cross_account sensitive_access_unauthorized].freeze
     UNRESOLVED_EVIDENCE_WARNING = "evidence_reference_not_resolved".freeze
+    INVALID_OWNER_TASK_REFERENCE_WARNING = "owner_task_reference_invalid".freeze
 
     def initialize(conversation:, decision:, source: "ai")
       @conversation = conversation
@@ -19,7 +20,9 @@ module AI
       reasons.concat(structural_reasons)
       reasons.concat(attachment_reasons)
       evidence_reasons, evidence_warnings = evidence_validation_findings
+      owner_task_reasons, owner_task_warnings = owner_task_reference_findings
       reasons.concat(evidence_reasons)
+      reasons.concat(owner_task_reasons)
       reasons << "internal_metadata_visible" if internal_metadata_visible?
       reasons << "internal_security_violation" if internal_security_violation?
       reasons << "sensitive_access_without_authorization" if sensitive_access_without_authorization?
@@ -27,7 +30,7 @@ module AI
       Result.new(
         valid?: reasons.empty?,
         reasons: reasons.uniq,
-        warnings: evidence_warnings.uniq,
+        warnings: (evidence_warnings + owner_task_warnings).uniq,
         contract_failed?: reasons.any? { |reason| reason.start_with?("contract_") || reason.in?(structural_reason_codes) }
       )
     end
@@ -42,7 +45,6 @@ module AI
       reasons << "owner_task_kind_not_allowed" if @decision.action != "create_owner_task" && @decision.owner_task_kind.present?
       reasons << "owner_task_title_required" if @decision.action == "create_owner_task" && @decision.title.blank?
       reasons << "owner_task_title_too_long" if @decision.title.present? && @decision.title.split.size > 8
-      reasons << owner_task_reference_reason if owner_task_reference_reason
       reasons << "empty_response" if @decision.response_text.blank? && @decision.action != "no_action"
       reasons << "missing_language" if @decision.language.blank?
       reasons << "no_action_must_not_have_response" if @decision.action == "no_action" && @decision.response_text.present?
@@ -60,8 +62,6 @@ module AI
         owner_task_kind_not_allowed
         owner_task_title_required
         owner_task_title_too_long
-        owner_task_reference_invalid
-        owner_task_reference_scope_mismatch
         empty_response
         missing_language
         no_action_must_not_have_response
@@ -70,12 +70,12 @@ module AI
       ]
     end
 
-    def owner_task_reference_reason
-      return if @decision.owner_task_id.blank?
-      return "owner_task_reference_invalid" unless @decision.action == "create_owner_task"
+    def owner_task_reference_findings
+      return [[], []] if @decision.owner_task_id.blank?
+      return [["owner_task_reference_invalid"], []] unless @decision.action == "create_owner_task"
 
       task = OwnerTask.find_by(id: @decision.owner_task_id)
-      return "owner_task_reference_invalid" unless task&.status == "open"
+      return [[], [INVALID_OWNER_TASK_REFERENCE_WARNING]] unless task&.status == "open"
 
       expected = {
         conversation_id: @conversation.id,
@@ -85,7 +85,9 @@ module AI
         kind: @decision.owner_task_kind
       }
       actual = task.attributes.symbolize_keys.slice(*expected.keys)
-      "owner_task_reference_scope_mismatch" unless actual == expected
+      return [[], []] if actual == expected
+
+      [[], [INVALID_OWNER_TASK_REFERENCE_WARNING]]
     end
 
     def no_action_has_effects?
