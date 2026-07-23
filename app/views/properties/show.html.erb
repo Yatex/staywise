@@ -37,7 +37,7 @@
     </div>
 
     <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-      <% sections = [["Resumen", "#overview"], ["Electrodomésticos", "#appliances"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Consultas pendientes", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"]] %>
+      <% sections = [["Resumen", "#overview"], ["Información completa", "#property-information"], ["Guías y electrodomésticos", "#knowledge"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Consultas pendientes", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"]] %>
       <% sections << ["Configuración", "#settings"] unless @property_read_only %>
       <% sections.each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
@@ -111,36 +111,180 @@
     </div>
   </section>
 
-  <section id="appliances" class="<%= card_class %> overflow-hidden">
+  <section id="property-information" class="<%= card_class %> overflow-hidden">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <h3 class="text-base font-semibold text-slate-950">Información completa de la propiedad</h3>
+      <p class="mt-1 text-sm text-slate-500">Todo lo configurado para esta propiedad y disponible para su operación.</p>
+    </div>
+
+    <div class="grid gap-6 p-5 xl:grid-cols-2">
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Datos básicos</h4>
+        <dl class="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Nombre</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property.name.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Alias interno</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property.internal_nickname.presence || "Sin configurar" %></dd>
+          </div>
+          <div class="sm:col-span-2">
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Dirección</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property.address.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Estado</dt>
+            <dd class="mt-1 text-sm text-slate-700"><%= enum_label(@property.status) %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Ayla activa</dt>
+            <dd class="mt-1 text-sm text-slate-700"><%= @property.ai_enabled? ? "Sí" : "No" %></dd>
+          </div>
+          <div class="sm:col-span-2">
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Etiquetas</dt>
+            <dd class="mt-1 text-sm text-slate-700"><%= @property.tags.presence&.to_sentence || "Sin configurar" %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Co-host</h4>
+        <dl class="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Nombre</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property.co_host&.name.presence || "Sin co-host" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">WhatsApp</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property_read_only ? "Oculto por seguridad" : (@property.co_host&.whatsapp_number.presence || "Sin configurar") %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Llegada y check-in</h4>
+        <dl class="mt-4 grid gap-4">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Horario de check-in</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.check_in_time.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Instrucciones de acceso</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property_read_only ? "Ocultas por seguridad" : (@property.access_instructions.presence || "Sin configurar") %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Estacionamiento</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.parking_instructions.presence || "Sin configurar" %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Durante la estadía</h4>
+        <dl class="mt-4 grid gap-4">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Nombre de WiFi</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property_read_only ? "Oculto por seguridad" : (@property.wifi_name.presence || "Sin configurar") %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Contraseña de WiFi</dt>
+            <dd class="mt-1 whitespace-pre-line break-all font-mono text-sm text-slate-700"><%= @property_read_only ? "Oculta por seguridad" : (@property.wifi_password.presence || "Sin configurar") %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Notas útiles para responder</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.ai_general_notes.presence || "Sin configurar" %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Reglas, seguridad y escalamiento</h4>
+        <dl class="mt-4 grid gap-4">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Reglas de la casa</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.house_rules.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Información de emergencia</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.emergency_information.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Cuándo consultar al propietario</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.owner_contact_instructions.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Teléfono de contacto del anfitrión</dt>
+            <dd class="mt-1 break-words text-sm text-slate-700"><%= @property_read_only ? "Oculto por seguridad" : (@property.owner_contact_phone.presence || "Sin configurar") %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 p-4">
+        <h4 class="font-semibold text-slate-950">Checkout</h4>
+        <dl class="mt-4 grid gap-4">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Horario de checkout</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.checkout_time.presence || "Sin configurar" %></dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Instrucciones de salida</dt>
+            <dd class="mt-1 whitespace-pre-line break-words text-sm text-slate-700"><%= @property.checkout_instructions.presence || "Sin configurar" %></dd>
+          </div>
+        </dl>
+      </div>
+
+      <% unless @property_read_only %>
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 xl:col-span-2">
+          <h4 class="font-semibold text-amber-950">Datos sensibles guardados</h4>
+          <p class="mt-1 text-sm text-amber-800">Códigos, ubicaciones de llaves y contraseñas que Ayla puede consultar cuando el huésped está autorizado.</p>
+          <% if @sensitive_data.any? %>
+            <dl class="mt-4 grid gap-4 md:grid-cols-2">
+              <% @sensitive_data.each do |datum| %>
+                <div class="rounded-lg border border-amber-200 bg-white p-3">
+                  <dt class="text-xs font-semibold uppercase tracking-wide text-amber-700"><%= enum_label(datum.kind) %></dt>
+                  <dd class="mt-1 whitespace-pre-line break-all font-mono text-sm text-slate-800"><%= datum.value.presence || "Sin valor disponible" %></dd>
+                </div>
+              <% end %>
+            </dl>
+          <% else %>
+            <p class="mt-4 text-sm text-amber-800">No hay datos sensibles adicionales guardados.</p>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <section id="knowledge" class="<%= card_class %> overflow-hidden">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <div>
-        <h3 class="text-base font-semibold text-slate-950">Electrodomésticos</h3>
-        <p class="text-sm text-slate-500">Guías de uso para lavarropas, aire acondicionado, TV, horno, cafetera u otros equipos de la propiedad.</p>
+        <h3 class="text-base font-semibold text-slate-950">Guías, información y electrodomésticos</h3>
+        <p class="text-sm text-slate-500">Todo el contenido estructurado que Ayla puede consultar para responder.</p>
       </div>
       <% unless @property_read_only %>
         <%= link_to "Agregar guía", new_property_knowledge_block_path(@property, category: "appliances"), class: secondary_button_class %>
       <% end %>
     </div>
     <div class="divide-y divide-slate-100">
-      <% @appliance_guides.each do |guide| %>
+      <% @knowledge_blocks.each do |guide| %>
         <div class="px-5 py-4">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= guide.title %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= enum_label(guide.status) %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= enum_label(guide.category) %> · <%= enum_label(guide.status) %></p>
             </div>
             <% unless @property_read_only %>
               <%= link_to "Editar", edit_property_knowledge_block_path(@property, guide), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
             <% end %>
           </div>
-          <p class="mt-3 whitespace-pre-line text-sm text-slate-600"><%= truncate(guide.content, length: 260) %></p>
+          <p class="mt-3 whitespace-pre-line break-words text-sm text-slate-600"><%= guide.content %></p>
           <% if guide.youtube_url.present? %>
             <p class="mt-3 text-sm"><%= link_to "Video de YouTube", guide.youtube_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %></p>
           <% end %>
         </div>
       <% end %>
-      <% if @appliance_guides.blank? %>
-        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay guías de electrodomésticos.</p>
+      <% if @knowledge_blocks.blank? %>
+        <p class="px-5 py-8 text-sm text-slate-500">Todavía no hay guías ni contenido estructurado.</p>
       <% end %>
     </div>
   </section>
@@ -161,7 +305,7 @@
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="font-medium text-slate-950"><%= recommendation.name %></p>
-              <p class="mt-1 text-sm text-slate-500"><%= enum_label(recommendation.category) %></p>
+              <p class="mt-1 text-sm text-slate-500"><%= enum_label(recommendation.category) %> · <%= recommendation.active? ? "Activa" : "Inactiva" %></p>
             </div>
             <% unless @property_read_only %>
               <div class="flex items-center gap-3">
@@ -170,7 +314,40 @@
               </div>
             <% end %>
           </div>
-          <p class="mt-3 text-sm text-slate-600"><%= recommendation.description.presence || recommendation.owner_note.presence || recommendation.address.presence || "Sin detalles todavía." %></p>
+          <dl class="mt-4 grid gap-3 text-sm">
+            <div>
+              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Descripción</dt>
+              <dd class="mt-1 whitespace-pre-line break-words text-slate-600"><%= recommendation.description.presence || "Sin configurar" %></dd>
+            </div>
+            <div>
+              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Nota del propietario</dt>
+              <dd class="mt-1 whitespace-pre-line break-words text-slate-600"><%= recommendation.owner_note.presence || "Sin configurar" %></dd>
+            </div>
+            <div>
+              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Dirección</dt>
+              <dd class="mt-1 break-words text-slate-600"><%= recommendation.address.presence || "Sin configurar" %></dd>
+            </div>
+            <div>
+              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Distancia o tiempo caminando</dt>
+              <dd class="mt-1 break-words text-slate-600"><%= recommendation.distance_or_walking_time.presence || "Sin configurar" %></dd>
+            </div>
+            <% if recommendation.phone_number.present? %>
+              <div>
+                <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Teléfono</dt>
+                <dd class="mt-1 break-words text-slate-600"><%= recommendation.phone_number %></dd>
+              </div>
+            <% end %>
+            <% if recommendation.google_maps_url.present? || recommendation.website_url.present? %>
+              <div class="flex flex-wrap gap-3">
+                <% if recommendation.google_maps_url.present? %>
+                  <%= link_to "Abrir en Google Maps", recommendation.google_maps_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %>
+                <% end %>
+                <% if recommendation.website_url.present? %>
+                  <%= link_to "Abrir sitio web", recommendation.website_url, target: "_blank", rel: "noopener", class: "font-semibold text-slate-700 hover:text-slate-950" %>
+                <% end %>
+              </div>
+            <% end %>
+          </dl>
         </div>
       <% end %>
       <% if @recommendations.blank? %>
@@ -193,12 +370,16 @@
       <% @faqs.each do |faq| %>
         <div class="px-5 py-4">
           <div class="flex items-start justify-between gap-4">
-            <p class="font-medium text-slate-950"><%= faq.question %></p>
+            <div>
+              <p class="font-medium text-slate-950"><%= faq.question %></p>
+              <p class="mt-1 text-xs text-slate-500"><%= faq.category.presence || "Sin categoría" %> · <%= enum_label(faq.status) %> · <%= faq.active? ? "Activa" : "Inactiva" %></p>
+            </div>
             <% unless @property_read_only %>
               <%= link_to "Editar", edit_property_faq_path(@property, faq), class: "text-sm font-semibold text-slate-600 hover:text-slate-950" %>
             <% end %>
           </div>
-          <p class="mt-2 text-sm text-slate-600"><%= faq.answer %></p>
+          <p class="mt-2 whitespace-pre-line break-words text-sm text-slate-600"><%= faq.answer %></p>
+          <p class="mt-2 text-xs text-slate-400">Origen: <%= enum_label(faq.source_type) %></p>
         </div>
       <% end %>
       <% if @faqs.blank? %>

@@ -17,11 +17,45 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "property show and step forms render" do
+    @property.update!(
+      internal_nickname: "Alias visible",
+      address: "Calle completa 123",
+      check_in_time: "15:00",
+      access_instructions: "Entrar por el portón lateral y retirar la llave.",
+      parking_instructions: "Cochera número 8.",
+      wifi_name: "Red completa",
+      wifi_password: "clave-visible-owner",
+      ai_general_notes: "La pileta abre de 9 a 20.",
+      house_rules: "No fumar.",
+      emergency_information: "El extintor está en la cocina.",
+      owner_contact_instructions: "Consultar daños y permisos especiales.",
+      owner_contact_phone: "+59899112233",
+      checkout_time: "11:00",
+      checkout_instructions: "Dejar las llaves sobre la mesa."
+    )
     @property.knowledge_blocks.create!(
       title: "Lavarropas",
       category: "appliances",
       content: "Usar programa rápido y agregar una ficha.",
       status: "active"
+    )
+    @property.knowledge_blocks.create!(
+      title: "Información de amenities",
+      category: "amenities",
+      content: "#{"Contenido completo. " * 20}FINAL-SIN-RECORTAR",
+      status: "active"
+    )
+    @property.sensitive_data.create!(kind: "door_code", value: "9087", active: true)
+    @property.recommendations.create!(
+      name: "Café completo",
+      category: "cafe",
+      description: "Buen café.",
+      owner_note: "Pedir la mesa del fondo.",
+      address: "Esquina 456",
+      distance_or_walking_time: "5 minutos",
+      phone_number: "+59899000000",
+      google_maps_url: "https://maps.google.com/?q=cafe",
+      website_url: "https://cafe.example"
     )
 
     get property_path(@property)
@@ -34,6 +68,20 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_select "section#alerts", count: 0
     assert_select "section#conversations", count: 0
     assert_includes @response.body, "Eliminar propiedad"
+    assert_includes @response.body, "Información completa de la propiedad"
+    assert_includes @response.body, "Entrar por el portón lateral"
+    assert_includes @response.body, "Cochera número 8"
+    assert_includes @response.body, "clave-visible-owner"
+    assert_includes @response.body, "La pileta abre de 9 a 20"
+    assert_includes @response.body, "Consultar daños y permisos especiales"
+    assert_includes @response.body, "Dejar las llaves sobre la mesa"
+    assert_includes @response.body, "9087"
+    assert_includes @response.body, "Información de amenities"
+    assert_includes @response.body, "FINAL-SIN-RECORTAR"
+    assert_includes @response.body, "Pedir la mesa del fondo"
+    assert_includes @response.body, "5 minutos"
+    assert_includes @response.body, "Abrir en Google Maps"
+    assert_includes @response.body, "Abrir sitio web"
 
     get edit_property_path(@property)
     assert_response :success

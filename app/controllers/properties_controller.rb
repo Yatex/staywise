@@ -19,9 +19,10 @@ class PropertiesController < ApplicationController
   end
 
   def show
-    @appliance_guides = @property.knowledge_blocks.where(category: "appliances").order(:title)
+    @knowledge_blocks = @property.knowledge_blocks.order(:category, :title)
     @recommendations = @property.recommendations.order(:category, :name)
     @faqs = @property.faqs.order(:category, :question)
+    @sensitive_data = @property_read_only ? [] : @property.sensitive_data.active.order(:kind)
     @new_questions = @property.alerts.unknown_questions.open.includes(:guest, :conversation).order(created_at: :desc).limit(10)
     @source_properties = current_account.properties.where.not(id: @property.id).order(:name)
     @whatsapp_link = Whatsapp::PropertyDeepLink.call(@property)

@@ -114,8 +114,12 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     @property.update!(
       address: "Calle Diagnóstico 123",
       wifi_name: "Owner WiFi",
+      wifi_password: "owner-secret-password",
+      access_instructions: "Código privado 7788",
+      parking_instructions: "Estacionamiento visible para diagnóstico.",
       tags: ["diagnostico"]
     )
+    @property.sensitive_data.create!(kind: "door_code", value: "9911", active: true)
     @property.knowledge_blocks.create!(
       title: "Aire acondicionado",
       category: "appliances",
@@ -146,6 +150,11 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Vista administrativa · Owner Account"
     assert_includes response.body, "Aire acondicionado"
     assert_includes response.body, "¿Cómo ingreso?"
+    assert_includes response.body, "Estacionamiento visible para diagnóstico."
+    assert_includes response.body, "Oculto por seguridad"
+    assert_not_includes response.body, "owner-secret-password"
+    assert_not_includes response.body, "Código privado 7788"
+    assert_not_includes response.body, "9911"
     assert_not_includes response.body, "Editar propiedad"
     assert_not_includes response.body, "Eliminar propiedad"
     assert_not_includes response.body, "Agregar FAQ"
