@@ -52,6 +52,20 @@ test("decision prompts troubleshoot property problems before creating inquiries"
   }
 });
 
+test("decision prompts preserve operational data and directly relevant video URLs", () => {
+  for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
+    assert.match(prompt, /must not omit or modify operational details/i);
+    assert.match(prompt, /Copy exactly, character for character, every URL, video link, access code, password/i);
+    assert.match(prompt, /include that exact URL in the same guest-facing message/i);
+    assert.match(prompt, /briefly explain what the video demonstrates/i);
+    assert.match(prompt, /Never rely only on an attachment/i);
+    assert.match(prompt, /including their query parameters, fragments, capitalization, and punctuation/i);
+    assert.match(prompt, /translate only the explanatory prose/i);
+    assert.match(prompt, /Long instructions may be shortened only if every operational detail/i);
+    assert.match(prompt, /Never invent, infer, repair, complete, or substitute a URL/i);
+  }
+});
+
 test("decision prompt uses contextual no_action without hiding new needs", () => {
   assert.match(DECISION_SYSTEM_PROMPT, /latest message and the conversation history/i);
   assert.match(DECISION_SYSTEM_PROMPT, /action no_action with message=null/i);

@@ -60,6 +60,28 @@ test("tool results produce a grounded check-in evidence catalog", () => {
   });
 });
 
+test("tool evidence preserves a complete relevant video URL and long access instructions", () => {
+  const videoUrl = "https://www.youtube.com/watch?v=IngresoABC123&t=42s#paso-2";
+  const instructions = "Subí al piso 1, puerta E. Tocá el panel, ingresá el código 4826 y después presioná #.";
+  const catalog = buildEvidenceCatalog([{
+    toolName: "property_brain",
+    result: [{
+      evidence_id: "guide.72",
+      source_type: "knowledge_block",
+      title: "Ingreso con cerradura electrónica",
+      content: instructions,
+      youtube_url: videoUrl,
+    }],
+  }]);
+
+  assert.equal(catalog.length, 1);
+  assert.equal(catalog[0].value, instructions);
+  assert.equal(catalog[0].metadata.youtube_url, videoUrl);
+  assert.match(catalog[0].text, /4826/);
+  assert.match(catalog[0].text, /presioná #/);
+  assert.match(catalog[0].text, /watch\?v=IngresoABC123&t=42s#paso-2/);
+});
+
 test("unknown escalation without citations is reviewed when tool evidence exists", () => {
   const catalog = [{
     evidence_id: "property.check_in_time",

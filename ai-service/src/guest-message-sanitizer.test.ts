@@ -46,6 +46,24 @@ test("sanitizeGuestVisibleText preserves normal guest-facing text", () => {
   );
 });
 
+test("sanitizeGuestVisibleText preserves operational instructions, codes, sequences, and exact URLs", () => {
+  const response = [
+    "The entrance uses an electronic lock. Go to floor 1, apartment E at 15:00.",
+    "Tap the panel, enter code 4826, and then press #.",
+    "WiFi: Ayla Guest. Password: Clave-9X.",
+    "Video: https://www.youtube.com/watch?v=IngresoABC123&t=42s#paso-2",
+  ].join("\n");
+
+  assert.equal(sanitizeGuestVisibleText(response), response);
+});
+
+test("sanitizeGuestVisibleText does not invent or rewrite a missing URL", () => {
+  const response = "Subí al piso 1, puerta E. Ingresá 4826 y después presioná #.";
+
+  assert.equal(sanitizeGuestVisibleText(response), response);
+  assert.doesNotMatch(String(sanitizeGuestVisibleText(response)), /https?:\/\//);
+});
+
 test("sanitizeGuestVisibleText removes internal policy directives", () => {
   assert.equal(
     sanitizeGuestVisibleText("Late checkout: always_escalate."),

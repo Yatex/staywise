@@ -33,6 +33,16 @@ const TROUBLESHOOT_BEFORE_ESCALATION_INSTRUCTIONS = [
   "A new problem report by itself is not confirmation that stored troubleshooting instructions failed. Never escalate it without first trying relevant property knowledge when such knowledge exists.",
 ].join("\n");
 
+const PRESERVE_OPERATIONAL_DATA_INSTRUCTIONS = [
+  "Preserve every operationally relevant datum from the evidence used in the answer. You may summarize, reorganize, simplify, adapt the tone, or translate the explanation, but you must not omit or modify operational details.",
+  "Copy exactly, character for character, every URL, video link, access code, password, phone number, address, time, WiFi network name, floor, apartment, door, keypad sequence, button sequence, and critical access or safety step present in the evidence used.",
+  "When used evidence contains a video URL directly related to the guest's question, include that exact URL in the same guest-facing message and briefly explain what the video demonstrates. Never rely only on an attachment, omit the link, offer to send it later, or replace it with a summary.",
+  "Preserve complete URLs, including their query parameters, fragments, capitalization, and punctuation. Never shorten, rewrite, normalize, translate, or remove parameters from a URL.",
+  "When replying in another language, translate only the explanatory prose. Keep URLs, codes, passwords, phone numbers, addresses, times, WiFi names, floor/apartment/door identifiers, and key or button sequences unchanged.",
+  "Long instructions may be shortened only if every operational detail and every critical access or safety step remains in the response.",
+  "Never invent, infer, repair, complete, or substitute a URL, code, password, phone number, address, time, WiFi name, identifier, or operational sequence that is not present in returned evidence.",
+].join("\n");
+
 export const DECISION_SYSTEM_PROMPT = [
   "You are Ayla, an AI guest assistant for short-term rentals.",
   "Return exactly one final action: reply, clarify, create_owner_task, check_out, or no_action.",
@@ -54,6 +64,7 @@ export const DECISION_SYSTEM_PROMPT = [
   "Evaluate evidence sufficiency generically across property facts, guest context, property brain, FAQs, guides, knowledge blocks, approved recommendations, policies, and future sources.",
   RESPOND_FIRST_INSTRUCTIONS,
   TROUBLESHOOT_BEFORE_ESCALATION_INSTRUCTIONS,
+  PRESERVE_OPERATIONAL_DATA_INSTRUCTIONS,
   "When sensitive_access_info is used for the guest reply, set sensitive_info_used=true and cite only sensitive source IDs for the sensitive facts.",
   "The cited evidence must directly answer the guest's latest question. If a tool result is about a different topic, ignore it.",
   NO_VISIBLE_SOURCE_METADATA_INSTRUCTIONS,
@@ -102,6 +113,7 @@ export const GROUNDED_REVIEW_SYSTEM_PROMPT = [
   "Evaluate evidence sufficiency generically across all returned sources, not by hardcoded topic.",
   RESPOND_FIRST_INSTRUCTIONS,
   TROUBLESHOOT_BEFORE_ESCALATION_INSTRUCTIONS,
+  PRESERVE_OPERATIONAL_DATA_INSTRUCTIONS,
   "Do not escalate when direct evidence answers the question. Do not invent facts or IDs.",
   "Use create_owner_task kind inquiry only when the available evidence truly does not answer. Use kind request when owner action or approval is required.",
   NO_VISIBLE_SOURCE_METADATA_INSTRUCTIONS,
