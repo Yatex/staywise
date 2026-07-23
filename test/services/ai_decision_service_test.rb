@@ -236,7 +236,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
 
     assert_equal "reply", decision.outcome
     assert decision.should_reply
-    assert_includes decision.response_text, "No pude procesar"
+    assert_includes decision.response_text, "inconveniente técnico"
     assert_equal "es", decision.language
     assert_includes audit.validation_results["reasons"], "missing_language"
     assert_equal "es", @guest.reload.language
@@ -605,7 +605,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     audit = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
+    assert_includes decision.response_text, "inconveniente técnico"
     assert_includes audit.validation_results["reasons"], "internal_metadata_visible"
   end
 
@@ -1039,7 +1039,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     })
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
+    assert_includes decision.response_text, "inconveniente técnico"
     audit = AIDecisionLog.where(message: message).last
     assert_equal "remote_ai_contract_rejected", audit.route
     assert_includes audit.validation_results["reasons"], "contract_escalate_requires_escalation_required_true"
@@ -1066,7 +1066,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     })
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
+    assert_includes decision.response_text, "inconveniente técnico"
     audit = AIDecisionLog.where(message: message).last
     assert_equal "remote_ai_contract_rejected", audit.route
     assert_includes audit.validation_results["reasons"], "contract_no_reply_must_not_send_whatsapp"
@@ -1323,6 +1323,63 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal 2, audit.payload["ai_service_attempts"]
     assert_equal 2, audit.payload["ai_service_retry_errors"].size
     assert_match(/Net::ReadTimeout/, audit.fallback_reason)
+    assert_equal "AI_TIMEOUT", audit.payload.dig("fallback_diagnostic", "type")
+    assert_equal 0, audit.payload.dig("fallback_diagnostic", "tools_executed")
+    assert_includes audit.payload.dig("fallback_diagnostic", "message_sent"), @property.owner_contact_phone
+    assert_equal "Net::ReadTimeout", audit.payload.dig("fallback_diagnostic", "exception_class")
+    assert_nil audit.payload.dig("fallback_diagnostic", "backtrace")
+  end
+
+  test "classifies an AI service tool timeout returned over HTTP" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    @property.update!(owner_contact_phone: "+59899007777")
+    message = @conversation.messages.create!(sender: "guest", body: "¿Cómo entro?", channel: "whatsapp")
+    response = Struct.new(:code, :body).new(
+      "500",
+      {
+        error: "ai_service_failure",
+        fallback_diagnostic: {
+          type: "TOOL_TIMEOUT",
+          tool: "property_brain",
+          provider: "rails-tools",
+          exception_class: "TimeoutError",
+          exception_message: "tool timed out"
+        },
+        audit: {
+          tool_calls: [{
+            tool_name: "property_brain",
+            error: "tool_timeout",
+            latency_ms: 5_000
+          }]
+        }
+      }.to_json
+    )
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) { |_request| response }
+
+    decision = Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
+      AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    end
+    audit = AIDecisionLog.where(message: message).last
+
+    assert_includes decision.response_text, @property.owner_contact_phone
+    assert_equal "TOOL_TIMEOUT", audit.payload.dig("fallback_diagnostic", "type")
+    assert_equal "property_brain", audit.payload.dig("fallback_diagnostic", "tool")
+    assert_equal 5_000, audit.payload.dig("fallback_diagnostic", "tool_duration_ms")
+  end
+
+  test "classifies a gateway HTTP timeout" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    message = @conversation.messages.create!(sender: "guest", body: "Necesito ayuda", channel: "whatsapp")
+    response = Struct.new(:code, :body).new("504", { error: "gateway_timeout" }.to_json)
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) { |_request| response }
+
+    Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
+      AI::DecisionService.call(conversation: @conversation, guest_message: message)
+    end
+
+    assert_equal "HTTP_TIMEOUT", AIDecisionLog.where(message: message).last.payload.dig("fallback_diagnostic", "type")
   end
 
   test "uses the technical fallback for irrecoverable invalid JSON" do
@@ -1443,8 +1500,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     trace = AIDecisionLog.where(message: message).last
 
     assert_equal "reply", result.outcome
-    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
-    assert_not_includes result.response_text, @property.owner_contact_phone.to_s
+    assert_includes result.response_text, "inconveniente técnico"
+    assert_includes result.response_text, @property.owner_contact_phone.to_s
     assert_not result.escalation_required
     assert_equal @property.id, trace.payload["conversation_property_id"]
     assert_equal other_property.id, trace.validation_results.dig("evidence", 0, "evidence_property_id")
@@ -1530,7 +1587,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     ))
 
     assert_equal "reply", decision.outcome
-    assert_includes decision.response_text, "No pude procesar"
+    assert_includes decision.response_text, "inconveniente técnico"
     assert_not decision.escalation_required
   end
 

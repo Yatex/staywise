@@ -255,14 +255,14 @@ class AIFinalContractTest < ActiveSupport::TestCase
     assert_includes validation.reasons, "invalid_action"
   end
 
-  test "partial structural rejection does not share the owner phone" do
+  test "partial structural rejection uses the centralized technical fallback" do
     message = guest_message("¿Cómo uso el aire?")
     invalid = decision(action: "unexpected_action", message: "Respuesta", confidence: 100)
 
     result = service_with(invalid, message).call
 
-    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
-    assert_not_includes result.response_text, @property.owner_contact_phone
+    assert_includes result.response_text, "inconveniente técnico"
+    assert_includes result.response_text, @property.owner_contact_phone
     assert_includes result.safety_flags, "rails_technical_fallback"
   end
 
@@ -279,7 +279,8 @@ class AIFinalContractTest < ActiveSupport::TestCase
 
     assert_not validation.valid?
     assert_includes validation.reasons, "internal_security_violation"
-    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
+    assert_includes result.response_text, "inconveniente técnico"
+    assert_includes result.response_text, @property.owner_contact_phone
     assert_not_includes result.response_text, "internal-secret"
   end
 
@@ -326,7 +327,7 @@ class AIFinalContractTest < ActiveSupport::TestCase
     end.new(conversation: @conversation, guest_message: message)
     result = service.call
 
-    assert_equal "No pude procesar tu mensaje en este momento.", result.response_text
+    assert_equal "Estoy teniendo un inconveniente técnico temporal y no pude responder tu consulta.", result.response_text
   end
 
   test "valid attachment is delivered and an attachment from another property is rejected" do

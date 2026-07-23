@@ -24,6 +24,7 @@ module AI
     def call
       payload = ContextBuilder.new(conversation: @conversation, guest_message: @guest_message).call
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @call_started_at = started_at
       log_ai_payload_size(payload)
 
       unless SafetyConfig.tool_first_flow_enabled?(account: @property.account, property: @property)
@@ -80,7 +81,7 @@ module AI
         return fallback
       end
 
-      fallback = technical_fallback("AI service unavailable.", share_owner_contact: true)
+      fallback = technical_fallback("AI service unavailable.", error: @fallback_error)
       audit("local_fallback", fallback, started_at, fallback_reason: @fallback_reason || "ai_service_unavailable", validation_results: { status: "skipped" })
       fallback
     end
@@ -101,6 +102,10 @@ module AI
 
       unless response.is_a?(Net::HTTPSuccess)
         @ai_response_payload = { status: response.code, body: parse_json_or_text(response.body) }
+        parsed_error_payload = @ai_response_payload[:body]
+        @ai_response_payload = parsed_error_payload.merge("status" => response.code) if parsed_error_payload.is_a?(Hash)
+        @tool_calls = Array(@ai_response_payload.to_h.dig("audit", "tool_calls"))
+        @fallback_http_status = response.code.to_i
         @fallback_reason = "ai_service_status_#{response.code}"
         fallback_decision = decision_from_error_response(response)
         ErrorReporter.report(
@@ -120,6 +125,7 @@ module AI
       DecisionResult.from_hash(parsed)
     rescue StandardError => error
       Rails.logger.warn("[ai-decision] remote fallback: #{error.class}: #{error.message}")
+      @fallback_error = error
       @fallback_reason = "#{error.class}: #{error.message}"
       @ai_response_payload = { error_class: error.class.name, error_message: error.message }
       ErrorReporter.report(error, source: "ai_service", severity: "warning", account: @property.account, property: @property, context: ai_context)
@@ -206,17 +212,22 @@ module AI
       )
     end
 
-    def technical_fallback(description, share_owner_contact: false)
-      phone = share_owner_contact ? (@property.owner_contact_phone.presence || @property.account.owner_whatsapp_number.presence) : nil
-      message = if phone.present?
-        "No pude procesar tu mensaje en este momento. Podés comunicarte con el anfitrión al #{phone}."
-      else
-        "No pude procesar tu mensaje en este momento."
-      end
+    def technical_fallback(description, error: nil)
+      @fallback_diagnostic = TechnicalFallback.new(
+        property: @property,
+        error: error,
+        response_payload: @ai_response_payload,
+        http_status: @fallback_http_status,
+        duration_ms: current_duration_ms,
+        correlation_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
+        request_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
+        provider: fallback_provider,
+        tools: @tool_calls
+      ).diagnostic
 
       DecisionResult.from_hash(
         action: "reply",
-        message: message,
+        message: @fallback_diagnostic.fetch(:message_sent),
         answer_confidence: 100,
         language: @fallback_language,
         intent_summary: description,
@@ -281,6 +292,7 @@ module AI
         correlation_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
         tool_calls: @tool_calls,
         checkin_trace: checkin_trace(decision, evidence_ids, validation_results, fallback_reason),
+        fallback_diagnostic: @fallback_diagnostic,
         rejected_candidate: rejected_decision_payload(rejected_decision)
       }.compact
 
@@ -396,6 +408,17 @@ module AI
         request_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
         ai_service_attempts: @ai_service_attempts
       }.compact
+    end
+
+    def current_duration_ms
+      return unless defined?(@call_started_at) && @call_started_at
+
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @call_started_at) * 1000).round
+    end
+
+    def fallback_provider
+      diagnostic_provider = @ai_response_payload.to_h.dig("fallback_diagnostic", "provider")
+      diagnostic_provider.presence || (@ai_response_payload.present? ? "ai-service" : nil)
     end
 
     def decision_from_error_response(response)

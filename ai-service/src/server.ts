@@ -18,6 +18,7 @@ import { DecisionSchema, recoverDecisionFromRawText, toPublicDecision } from "./
 import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decision-system-prompt.js";
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 import { safeFallbackResponseFor } from "./safe-fallback-response.js";
+import { classifyTechnicalFallback } from "./technical-fallback-diagnostic.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 import { captureSafeException, withSentryRequestContext } from "./sentry.js";
@@ -222,8 +223,10 @@ const server = createServer(async (request, response) => {
       decision_action: payload?.action,
     });
     emitToolMandatoryTrace(mandatoryTrace, toolTrace);
+    const fallbackDiagnostic = classifyTechnicalFallback(error, toolTrace, generateObjectTrace);
     sendJson(response, 500, {
       error: "ai_service_failure",
+      fallback_diagnostic: fallbackDiagnostic,
       audit: withToolMandatoryAudit(fallbackDecision(payload), toolTrace, mandatoryTrace, generateObjectTrace).audit,
     });
   }

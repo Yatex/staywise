@@ -39,7 +39,9 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
 
   setup do
     @original_notice_sid = ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"]
+    @original_app_host = ENV["APP_HOST"]
     ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"] = "HX_NOTICE"
+    ENV["APP_HOST"] = "https://ayla.test"
     @account = Account.create!(name: "Queue owner", owner_whatsapp_number: "+15559991000", owner_whatsapp_escalations_enabled: true)
     @property = @account.properties.create!(name: "Queue apartment")
     @guest = @account.guests.create!(phone_number: "+15550001000", property: @property)
@@ -49,6 +51,7 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
 
   teardown do
     ENV["TWILIO_OWNER_ESCALATION_NOTICE_CONTENT_SID"] = @original_notice_sid
+    ENV["APP_HOST"] = @original_app_host
   end
 
   test "uses notice content SID and sends owner-scoped counters once" do
@@ -123,8 +126,9 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     detail = @provider.sent_messages.find { |message| message[:body]&.include?("Caso #CO-#{event.id}") }.fetch(:body)
     assert_includes detail, @property.display_name
     assert_includes detail, @guest.phone_number
-    assert_includes detail, event.guest_message_body
-    assert_includes detail, "Salida informada:"
+    assert_includes detail, "Estado:\nPendiente de revisión"
+    assert_includes detail, "https://ayla.test/conversations/#{@conversation.id}"
+    assert_not_includes detail, event.guest_message_body
 
     actions = @provider.sent_messages.reverse.find { |message| message[:content_key] == :checkout_actions }
     assert_equal "Opciones: checkout_visto, siguiente o salir.", actions[:fallback_body]
@@ -285,7 +289,7 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     assert_equal [second.id, third.id], @account.owner_tasks.open.order(:created_at).pluck(:id)
   end
 
-  test "item view includes original request clarifications recent conversation and last guest message" do
+  test "item view uses task title and conversation link without copying conversation messages" do
     task = create_task("inquiry", "La puerta del balcón está trabada")
     clarification = @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Seguí las instrucciones pero todavía no abre")
     @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "Probá levantando completamente la manija.")
@@ -296,14 +300,76 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     inbound("Consultas", "SM30", action_id: "consultas")
 
     detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #C-#{task.id}") }[:body]
-    assert_includes detail, "Solicitud original:"
     assert_includes detail, "La puerta del balcón está trabada"
-    assert_includes detail, "Aclaraciones:"
-    assert_includes detail, clarification.body
-    assert_includes detail, "Conversación reciente:"
-    assert_includes detail, "Ayla:"
-    assert_includes detail, "Último mensaje del huésped:"
-    assert_includes detail, last_guest.body
+    assert_includes detail, "https://ayla.test/conversations/#{@conversation.id}"
+    assert_not_includes detail, "Solicitud original:"
+    assert_not_includes detail, "Aclaraciones:"
+    assert_not_includes detail, "Conversación reciente:"
+    assert_not_includes detail, "Último mensaje del huésped:"
+    assert_not_includes detail, clarification.body
+    assert_not_includes detail, "Probá levantando completamente la manija."
+    assert_not_includes detail, last_guest.body
+  end
+
+  test "request view uses the AI title and reports its queue position" do
+    first = create_task("request", "Enviar dos toallas adicionales")
+    create_task("request", "Coordinar una cuna")
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM31", action_id: "pedidos")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #P-#{first.id}") }[:body]
+    assert_includes detail, "Pedido 1 de 2"
+    assert_includes detail, "Enviar dos toallas adicionales"
+    assert_includes detail, "https://ayla.test/conversations/#{@conversation.id}"
+  end
+
+  test "historical task without a title uses only the short case fallback" do
+    task = create_task("request", "Este mensaje histórico no debe usarse como título")
+    task.update_column(:title, "")
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM32", action_id: "pedidos")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #P-#{task.id}") }[:body]
+    assert_includes detail, "Pedido #P-#{task.id}"
+    assert_not_includes detail, "Este mensaje histórico no debe usarse como título"
+    assert_not_includes detail, "Sin mensaje disponible"
+  end
+
+  test "alert view uses its short title and does not copy conversation history" do
+    alert = create_alert("Revisar pérdida de agua")
+    @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "MENSAJE LARGO DEL HUÉSPED QUE NO DEBE APARECER")
+    @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "RESPUESTA COMPLETA DE AYLA QUE NO DEBE APARECER")
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Alertas", "SM33", action_id: "alertas")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #A-#{alert.id}") }[:body]
+    assert_includes detail, "Revisar pérdida de agua"
+    assert_includes detail, "https://ayla.test/conversations/#{@conversation.id}"
+    assert_not_includes detail, "MENSAJE LARGO DEL HUÉSPED"
+    assert_not_includes detail, "RESPUESTA COMPLETA DE AYLA"
+    assert_not_includes detail, "Conversación reciente"
+  end
+
+  test "urgent alert keeps only a brief immediate-action detail" do
+    alert = @conversation.alerts.create!(
+      property: @property,
+      guest: @guest,
+      alert_type: "emergency",
+      priority: "urgent",
+      title: "Posible incendio",
+      description: "El huésped informó humo en la cocina. " + ("Detalle extenso " * 30)
+    )
+
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Alertas", "SM34", action_id: "alertas")
+
+    detail = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("Caso #A-#{alert.id}") }[:body]
+    assert_includes detail, "Posible incendio"
+    assert_includes detail, "Atención inmediata:"
+    assert_operator detail.length, :<, 700
   end
 
   test "item context never includes messages from another property or conversation" do

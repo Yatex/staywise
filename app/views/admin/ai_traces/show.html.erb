@@ -9,6 +9,7 @@
 <% generated_response = original_decision.to_h["response_text"].presence || original_decision.to_h["message_body"].presence || payload["outcome"].presence %>
 <% safe_fallback_response = payload["safe_fallback_response"].presence || @trace.ai_response_payload.to_h["safe_fallback_response"].presence || payload["rejected_candidate"].to_h["safe_fallback_response"].presence %>
 <% final_response = payload["final_response_text"].presence %>
+<% fallback_diagnostic = payload["fallback_diagnostic"].to_h %>
 
 <div class="space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -311,7 +312,36 @@
     <div class="mt-4 grid gap-4 md:grid-cols-3">
       <div class="rounded-lg bg-slate-50 p-4 text-sm">
         <p class="font-semibold text-slate-950">Fallback</p>
-        <p class="mt-2 text-slate-600"><%= @trace.fallback_reason.presence || "No aplicado" %></p>
+        <% if fallback_diagnostic.present? %>
+          <dl class="mt-2 space-y-2 text-slate-600">
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tipo</dt><dd class="font-semibold text-slate-950"><%= fallback_diagnostic["type"] %></dd></div>
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Descripción</dt><dd><%= fallback_diagnostic["description"] %></dd></div>
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tools ejecutadas</dt><dd><%= fallback_diagnostic["tools_executed"] || 0 %></dd></div>
+            <% if fallback_diagnostic["tool"].present? %>
+              <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tool</dt><dd><%= fallback_diagnostic["tool"] %></dd></div>
+            <% end %>
+            <% if fallback_diagnostic["tool_duration_ms"].present? %>
+              <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tiempo de la tool</dt><dd><%= fallback_diagnostic["tool_duration_ms"] %> ms</dd></div>
+            <% end %>
+            <% if fallback_diagnostic["duration_ms"].present? %>
+              <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Duración total</dt><dd><%= fallback_diagnostic["duration_ms"] %> ms</dd></div>
+            <% end %>
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Fallback enviado</dt><dd><%= fallback_diagnostic["fallback_sent"].nil? ? "Pendiente de confirmar" : (fallback_diagnostic["fallback_sent"] ? "Sí" : "No") %></dd></div>
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Mensaje enviado</dt><dd class="whitespace-pre-line"><%= fallback_diagnostic["message_sent"] %></dd></div>
+          </dl>
+          <details class="mt-3 border-t border-slate-200 pt-3">
+            <summary class="cursor-pointer text-xs font-semibold text-slate-500">Detalle técnico sanitizado</summary>
+            <div class="mt-2 space-y-1 text-xs text-slate-500">
+              <p>Clase: <%= fallback_diagnostic["exception_class"].presence || "Sin datos" %></p>
+              <p>Mensaje: <%= fallback_diagnostic["exception_message"].presence || "Sin datos" %></p>
+              <p>Provider: <%= fallback_diagnostic["provider"].presence || "Sin datos" %></p>
+              <p>Correlation ID: <%= fallback_diagnostic["correlation_id"].presence || "Sin datos" %></p>
+              <p>Request ID: <%= fallback_diagnostic["request_id"].presence || "Sin datos" %></p>
+            </div>
+          </details>
+        <% else %>
+          <p class="mt-2 text-slate-600"><%= @trace.fallback_reason.presence || "No aplicado" %></p>
+        <% end %>
       </div>
       <div class="rounded-lg bg-slate-50 p-4 text-sm">
         <p class="font-semibold text-slate-950">Alerta</p>

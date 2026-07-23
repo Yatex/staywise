@@ -271,8 +271,7 @@ module Whatsapp
       phone = conversation.property.owner_contact_phone.presence || conversation.property.account.owner_whatsapp_number.presence
       text = text.gsub("{{owner_contact_phone}}", phone.to_s) if phone.present?
       if phone.blank? && text.include?("{{owner_contact_phone}}")
-        text = text.split(/(?<=[.!?])\s+/).reject { |sentence| sentence.include?("{{owner_contact_phone}}") }.join(" ").presence ||
-          "No pude procesar tu mensaje en este momento."
+        text = AI::TechnicalFallback.new(property: conversation.property).message
       end
 
       text
@@ -376,13 +375,21 @@ module Whatsapp
         provider_status: outbound_message&.metadata&.dig("provider_status"),
         provider_error: outbound_message&.metadata&.dig("delivery_error")
       }
+      fallback_diagnostic = log.payload.to_h["fallback_diagnostic"].to_h
+      if fallback_diagnostic.present?
+        fallback_diagnostic = fallback_diagnostic.merge(
+          "fallback_sent" => replied,
+          "delivery_status" => delivery_status
+        )
+      end
 
       log.update!(
         provider_delivery_status: delivery_status,
         payload: log.payload.merge(
           "alert" => alert_payload,
           "guest_request" => guest_request_payload,
-          "whatsapp_delivery" => whatsapp_payload
+          "whatsapp_delivery" => whatsapp_payload,
+          "fallback_diagnostic" => fallback_diagnostic
         )
       )
     rescue StandardError => error

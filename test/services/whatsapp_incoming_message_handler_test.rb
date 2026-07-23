@@ -49,6 +49,36 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
     @property = @account.properties.create!(name: "Webhook Apartment")
   end
 
+  test "technical fallback sends the centralized guest-safe message and finalizes its trace" do
+    previous_url = ENV["AI_SERVICE_URL"]
+    ENV["AI_SERVICE_URL"] = nil
+    @property.update!(owner_contact_phone: "+59899007777")
+    provider = RecordingProvider.new
+
+    result = Whatsapp::IncomingMessageHandler.new(
+      {
+        "From" => "whatsapp:+15550000099",
+        "To" => "whatsapp:+15550009999",
+        "Body" => "#{@property.whatsapp_reference} Necesito ayuda",
+        "MessageSid" => "SM-TECHNICAL-FALLBACK"
+      },
+      provider: provider
+    ).call
+
+    trace = AIDecisionLog.where(message: result.fetch(:message)).last
+    sent_body = provider.sent_messages.last.fetch(:body)
+
+    assert result.fetch(:replied)
+    assert_includes sent_body, "inconveniente técnico"
+    assert_includes sent_body, @property.owner_contact_phone
+    assert_no_match(/OpenAI|timeout|servidor|stack|Net::/i, sent_body)
+    assert_equal true, trace.payload.dig("fallback_diagnostic", "fallback_sent")
+    assert_equal "sent", trace.payload.dig("fallback_diagnostic", "delivery_status")
+    assert_equal sent_body, trace.payload.dig("fallback_diagnostic", "message_sent")
+  ensure
+    ENV["AI_SERVICE_URL"] = previous_url
+  end
+
   teardown do
   end
 

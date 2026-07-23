@@ -435,6 +435,51 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "secret-token"
   end
 
+  test "admin AI trace shows the human technical fallback diagnosis" do
+    guest = @owner_account.guests.create!(phone_number: "+15550004444", property: @property)
+    conversation = guest.conversations.create!(property: @property)
+    message = conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Necesito ayuda")
+    trace = AIDecisionLog.create!(
+      account: @owner_account,
+      property: @property,
+      guest: guest,
+      conversation: conversation,
+      message: message,
+      original_message: message,
+      route: "local_fallback",
+      decision: "reply",
+      final_outcome: "reply",
+      language: "es",
+      fallback_reason: "Net::ReadTimeout: execution expired",
+      payload: {
+        "final_response_text" => "Estoy teniendo un inconveniente técnico temporal.",
+        "fallback_diagnostic" => {
+          "type" => "AI_TIMEOUT",
+          "description" => "La solicitud al AI service no recibió respuesta antes del tiempo límite.",
+          "tools_executed" => 0,
+          "duration_ms" => 30_100,
+          "fallback_sent" => true,
+          "message_sent" => "Estoy teniendo un inconveniente técnico temporal.",
+          "exception_class" => "Net::ReadTimeout",
+          "exception_message" => "execution expired",
+          "correlation_id" => "correlation-123",
+          "request_id" => "request-123"
+        }
+      }
+    )
+
+    sign_in_as(@admin)
+    get admin_ai_trace_path(trace)
+
+    assert_response :success
+    assert_includes response.body, "AI_TIMEOUT"
+    assert_includes response.body, "La solicitud al AI service no recibió respuesta antes del tiempo límite."
+    assert_includes response.body, "Tools ejecutadas"
+    assert_includes response.body, "Fallback enviado"
+    assert_includes response.body, "correlation-123"
+    assert_not_includes response.body, "app/services/ai/decision_service.rb"
+  end
+
   test "AI trace index paginates metadata without selecting heavy payload columns" do
     26.times do |index|
       AIDecisionLog.create!(

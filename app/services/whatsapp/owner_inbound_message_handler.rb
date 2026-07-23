@@ -19,9 +19,6 @@ module Whatsapp
     CONFIRMATION_ACTIONS = ACTION_IDS.values_at(:enviar, :editar, :cancelar).freeze
     LEARNING_ACTIONS = ACTION_IDS.values_at(:recordar, :no_recordar).freeze
     CHECKOUT_ACTIONS = ACTION_IDS.values_at(:checkout_visto, :siguiente, :salir).freeze
-    MAX_RECENT_MESSAGES = 6
-    MAX_CONTEXT_LENGTH = 3_500
-
     def self.owner_message?(parsed)
       HostActor.authorized_phone?(parsed.from)
     end
@@ -346,22 +343,22 @@ module Whatsapp
       position = pending_items(category).where("#{table}.created_at < ?", item.created_at).count + 1
       total = pending_items(category).count
       label = { "pedidos" => "Pedido", "consultas" => "Consulta", "alertas" => "Alerta" }.fetch(category)
-      original = original_item_message(item)
-      clarifications = item_clarifications(item)
-      recent = recent_conversation(item)
-      last_guest = item.conversation&.messages&.where(sender: "guest")&.order(created_at: :desc)&.first&.body
+      identifier = case_identifier(item, category)
+      title = item.title.presence || "#{label} ##{identifier}"
 
       sections = [
         "#{label} #{position} de #{total}",
-        "Caso ##{case_identifier(item, category)}",
+        "Caso ##{identifier}",
+        title,
         "Propiedad:\n#{item.property.display_name}",
         "Huésped:\n#{item.guest&.phone_number.presence || 'Huésped de WhatsApp'}",
-        "Solicitud original:\n“#{clean_context_body(original, item.property)}”"
+        "Ver conversación:\n#{conversation_url(item.conversation)}"
       ]
-      sections << "Aclaraciones:\n#{clarifications.map { |body| "“#{clean_context_body(body, item.property)}”" }.join("\n")}" if clarifications.any?
-      sections << "Conversación reciente:\n\n#{recent}" if recent.present?
-      sections << "Último mensaje del huésped:\n“#{clean_context_body(last_guest, item.property)}”" if last_guest.present?
-      sections.join("\n\n").truncate(MAX_CONTEXT_LENGTH)
+      if item.is_a?(Alert) && critical_alert?(item)
+        critical_detail = item.description.to_s.squish
+        sections << "Atención inmediata:\n#{critical_detail.truncate(180)}" if critical_detail.present? && critical_detail != title
+      end
+      sections.join("\n\n")
     end
 
     def checkout_detail(event)
@@ -376,41 +373,20 @@ module Whatsapp
         "Caso ##{case_identifier(event, 'checkouts')}",
         "Propiedad:\n#{event.property.display_name}",
         "Huésped:\n#{guest_label}",
-        "Salida informada:\n#{I18n.l(event.checked_out_at, format: :long)}",
-        "Mensaje del huésped:\n“#{clean_context_body(event.guest_message_body, event.property)}”",
-        "El departamento ya puede revisarse."
-      ].join("\n\n").truncate(MAX_CONTEXT_LENGTH)
+        "Estado:\n#{event.pending? ? 'Pendiente de revisión' : 'Visto'}",
+        "Ver conversación:\n#{conversation_url(event.conversation)}"
+      ].join("\n\n")
     end
 
-    def original_item_message(item)
-      if item.is_a?(OwnerTask)
-        item.message&.body.presence || item.description
-      else
-        item.original_message&.body.presence || item.description.presence || item.title
-      end
+    def critical_alert?(alert)
+      alert.alert_type == "emergency" || alert.priority == "urgent"
     end
 
-    def item_clarifications(item)
-      return [] unless item.respond_to?(:metadata)
-
-      Array(item.metadata.to_h["updates"]).filter_map { |update| update.to_h["body"].to_s.strip.presence }.last(3)
-    end
-
-    def recent_conversation(item)
-      conversation = item.conversation
-      return if conversation.blank?
-      anchor = item.respond_to?(:message) ? item.message : item.original_message
-      scope = conversation.messages.order(created_at: :desc)
-      scope = scope.where("created_at >= ?", anchor.created_at - 5.minutes) if anchor&.created_at
-      messages = scope.limit(MAX_RECENT_MESSAGES).to_a.reverse
-      messages.map do |message|
-        speaker = { "guest" => "Huésped", "ai" => "Ayla", "owner" => "Anfitrión" }.fetch(message.sender, "Ayla")
-        "#{speaker}:\n“#{clean_context_body(message.body, item.property).truncate(500)}”"
-      end.join("\n\n")
-    end
-
-    def clean_context_body(body, property)
-      body.to_s.gsub(property.whatsapp_reference.to_s, "").squish.presence || "Sin mensaje disponible"
+    def conversation_url(conversation)
+      Rails.application.routes.url_helpers.conversation_url(
+        conversation,
+        host: ENV["APP_HOST"].presence || "http://localhost:3000"
+      )
     end
 
     def case_identifier(item, category)
