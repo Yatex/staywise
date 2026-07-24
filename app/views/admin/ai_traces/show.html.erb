@@ -10,6 +10,7 @@
 <% safe_fallback_response = payload["safe_fallback_response"].presence || @trace.ai_response_payload.to_h["safe_fallback_response"].presence || payload["rejected_candidate"].to_h["safe_fallback_response"].presence %>
 <% final_response = payload["final_response_text"].presence %>
 <% fallback_diagnostic = payload["fallback_diagnostic"].to_h %>
+<% ai_service_attempt_trace = Array(payload["ai_service_attempt_trace"]) %>
 
 <div class="space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -59,6 +60,49 @@
       <span>· Correlación: <%= payload["correlation_id"].presence || "Sin datos" %></span>
       <span>· <%= local_datetime(@trace.created_at) %></span>
     </div>
+  </section>
+
+  <section class="<%= card_class %> p-5">
+    <h3 class="text-base font-semibold text-slate-950">Intentos al AI service</h3>
+    <% if ai_service_attempt_trace.any? %>
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full text-left text-sm">
+          <thead class="text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th class="px-3 py-2">Intento</th>
+              <th class="px-3 py-2">Inicio</th>
+              <th class="px-3 py-2">Duración</th>
+              <th class="px-3 py-2">Resultado</th>
+              <th class="px-3 py-2">Provider</th>
+              <th class="px-3 py-2">Tools</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% ai_service_attempt_trace.each do |attempt| %>
+              <tr>
+                <td class="px-3 py-2 font-semibold text-slate-950"><%= attempt["attempt_number"] %></td>
+                <td class="px-3 py-2 text-slate-600"><%= attempt["started_at"] || "Sin datos" %></td>
+                <td class="px-3 py-2 text-slate-600"><%= attempt["duration_ms"].present? ? "#{attempt["duration_ms"]} ms" : "Sin datos" %></td>
+                <td class="px-3 py-2 text-slate-600"><%= attempt["timeout_type"].presence || (attempt["http_status"].present? ? "HTTP #{attempt["http_status"]}" : attempt["error_class"].presence || "Sin datos") %></td>
+                <td class="px-3 py-2 text-slate-600"><%= attempt["provider"].presence || "Sin datos" %></td>
+                <td class="px-3 py-2 text-slate-600">
+                  <% if attempt["tools_started"].nil? %>
+                    Desconocido
+                  <% else %>
+                    <%= attempt["tools_completed"] || 0 %>/<%= attempt["tools_started"] %>
+                  <% end %>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="6" class="px-3 pb-2 text-xs text-slate-400">Correlation ID: <%= attempt["correlation_id"].presence || "Sin datos" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="mt-3 text-sm text-slate-500">Este trace es anterior al registro de intentos individuales.</p>
+    <% end %>
   </section>
 
   <section class="<%= card_class %> p-5">

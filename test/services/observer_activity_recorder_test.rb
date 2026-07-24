@@ -24,7 +24,14 @@ class ObserverActivityRecorderTest < ActiveSupport::TestCase
 
   class FailingProvider < RecordingProvider
     def send_template(to:, template_sid:, variables: {})
-      DeliveryResult.new(success?: false, error: "Twilio observer delivery failed")
+      DeliveryResult.new(
+        success?: false,
+        error: "Twilio message delivery failed with status 400",
+        raw_response: {
+          "code" => 21_656,
+          "message" => "The ContentVariables Parameter is invalid."
+        }
+      )
     end
   end
 
@@ -97,8 +104,9 @@ class ObserverActivityRecorderTest < ActiveSupport::TestCase
     assert_equal 1, @provider.templates.size
     template = @provider.templates.first
     assert_equal "HX_OBSERVER", template[:template_sid]
-    assert_includes template.dig(:variables, "1"), "Juan"
+    assert_equal ["1", "2"], template[:variables].keys
     assert_includes template.dig(:variables, "1"), "Observer apartment"
+    assert_no_match(/[\r\n\t]/, template.dig(:variables, "1"))
     assert_equal "https://ayla.test/conversations/#{@conversation.id}", template.dig(:variables, "2")
   end
 
@@ -115,7 +123,7 @@ class ObserverActivityRecorderTest < ActiveSupport::TestCase
     end
 
     assert_equal 1, @provider.templates.size
-    assert_equal "Hay actividad en 2 conversaciones.", @provider.templates.first.dig(:variables, "1")
+    assert_equal "Hay actividad nueva en 2 conversaciones.", @provider.templates.first.dig(:variables, "1")
     assert_equal "https://ayla.test/conversations?filter=unread", @provider.templates.first.dig(:variables, "2")
     assert_equal 8, @account.conversation_observer_activities.sum(:unread_activity_count)
   end
@@ -130,7 +138,21 @@ class ObserverActivityRecorderTest < ActiveSupport::TestCase
     assert message.persisted?
     assert_not result.sent?
     assert_nil activity.observer_notified_at
-    assert_equal "Twilio observer delivery failed", activity.last_notification_error
+    assert_equal "21656: The ContentVariables Parameter is invalid.", activity.last_notification_error
+
+    error = OperationalError.where(source: "observer_notifier").order(:created_at).last
+    assert_equal "21656", error.context["twilio_error_code"].to_s
+    assert_equal "The ContentVariables Parameter is invalid.", error.context["twilio_error_message"]
+    assert_equal "owner_observer_activity_notice_v2", error.context["content_name"]
+    assert_equal "HX_OBSERVER", error.context["content_sid"]
+    assert_equal 2, error.context["variable_count"]
+    assert_equal @account.owner_whatsapp_number, error.context["recipient_phone"]
+    assert_equal @conversation.id, error.context["conversation_id"]
+    assert_equal 1, error.context["pending_conversations"]
+  end
+
+  test "observer has no WhatsApp session model" do
+    assert_nil defined?(ObserverWhatsappSession)
   end
 
   test "active operational workflow postpones observer without changing it" do
@@ -171,6 +193,22 @@ class ObserverActivityRecorderTest < ActiveSupport::TestCase
       title: "Pedido",
       description: message.body,
       source_channel: "whatsapp"
+    )
+
+    result = Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+
+    assert result.sent?
+    assert @account.owner_whatsapp_sessions.active.exists?
+  end
+
+  test "observer activity never blocks an operational alert notification" do
+    @conversation.messages.create!(sender: "guest", channel: "whatsapp", body: "Hay humo en la cocina")
+    @conversation.alerts.create!(
+      property: @property,
+      guest: @guest,
+      alert_type: "emergency",
+      title: "Humo en la cocina",
+      description: "Hay humo en la cocina"
     )
 
     result = Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)

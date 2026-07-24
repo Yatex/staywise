@@ -3,9 +3,14 @@ require "json"
 
 module AI
   class DecisionService
-    RETRYABLE_TRANSPORT_ERRORS = [Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, EOFError, Errno::ECONNRESET].freeze
+    RETRYABLE_CONNECTION_ERRORS = [Net::OpenTimeout, EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError].freeze
+    RETRYABLE_HTTP_STATUSES = [502, 503].freeze
     MAX_REMOTE_ATTEMPTS = 2
-    RETRY_DELAY_SECONDS = 2
+    CONNECT_TIMEOUT_SECONDS = 3
+    RESPONSE_TIMEOUT_SECONDS = 24
+    TOTAL_DEADLINE_SECONDS = 25
+    AI_SERVICE_DEADLINE_SECONDS = 22
+    RETRY_DELAY_SECONDS = 0.25
 
     def self.call(conversation:, guest_message:)
       new(conversation: conversation, guest_message: guest_message).call
@@ -97,6 +102,7 @@ module AI
       request["Content-Type"] = "application/json"
       request["Authorization"] = "Bearer #{ENV.fetch("AI_SERVICE_TOKEN", "")}"
       request["X-Request-ID"] = payload[:correlation_id].to_s if payload[:correlation_id].present?
+      request["X-Ayla-Deadline-At"] = ((Time.now.to_f + AI_SERVICE_DEADLINE_SECONDS) * 1000).round.to_s
       request.body = payload.to_json
       response = request_with_timeout_retry(uri, request)
 
@@ -134,30 +140,115 @@ module AI
 
     def request_with_timeout_retry(uri, request)
       attempts = 0
+      deadline = monotonic_now + TOTAL_DEADLINE_SECONDS
+      @ai_service_attempt_trace = []
 
-      begin
+      loop do
+        remaining = deadline - monotonic_now
+        raise Net::ReadTimeout, "AI service total deadline exceeded" if remaining <= 0
+
         attempts += 1
         @ai_service_attempts = attempts
         request["X-Ayla-Attempt"] = attempts.to_s
-        Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 30) do |http|
-          http.request(request)
-        end
-      rescue *RETRYABLE_TRANSPORT_ERRORS => error
-        @ai_service_retry_errors ||= []
-        @ai_service_retry_errors << { "attempt" => attempts, "error_class" => error.class.name }
-        raise if attempts >= MAX_REMOTE_ATTEMPTS
+        started_at = monotonic_now
+        attempt_trace = {
+          "attempt_number" => attempts,
+          "started_at" => Time.current.iso8601(3),
+          "provider" => "ai-service",
+          "correlation_id" => @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
+          "tools_started" => nil,
+          "tools_completed" => nil
+        }
 
-        Rails.logger.warn(
-          "[ai-decision] retrying remote request after #{error.class} " \
-          "attempt=#{attempts} request_id=#{@ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h['correlation_id']}"
-        )
-        pause_before_timeout_retry
-        retry
+        begin
+          response = Net::HTTP.start(
+            uri.hostname,
+            uri.port,
+            use_ssl: uri.scheme == "https",
+            open_timeout: [CONNECT_TIMEOUT_SECONDS, remaining].min,
+            read_timeout: [RESPONSE_TIMEOUT_SECONDS, remaining].min
+          ) do |http|
+            http.request(request)
+          end
+
+          attempt_trace.merge!(
+            "duration_ms" => elapsed_ms(started_at),
+            "http_status" => response.code.to_i,
+            "timeout_type" => nil
+          ).merge!(tool_attempt_counts(response))
+          @ai_service_attempt_trace << attempt_trace
+
+          if RETRYABLE_HTTP_STATUSES.include?(response.code.to_i) && retry_available?(attempts, deadline)
+            record_retry_error(attempts, "HTTP_#{response.code}")
+            pause_before_timeout_retry(deadline)
+            next
+          end
+
+          return response
+        rescue StandardError => error
+          attempt_trace.merge!(
+            "duration_ms" => elapsed_ms(started_at),
+            "http_status" => nil,
+            "timeout_type" => timeout_type(error),
+            "error_class" => error.class.name
+          )
+          @ai_service_attempt_trace << attempt_trace
+          raise unless retryable_connection_error?(error) && retry_available?(attempts, deadline)
+
+          record_retry_error(attempts, error.class.name)
+          Rails.logger.warn(
+            "[ai-decision] retrying remote request after #{error.class} " \
+            "attempt=#{attempts} request_id=#{@ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h['correlation_id']}"
+          )
+          pause_before_timeout_retry(deadline)
+        end
       end
     end
 
-    def pause_before_timeout_retry
-      sleep(RETRY_DELAY_SECONDS)
+    def retryable_connection_error?(error)
+      RETRYABLE_CONNECTION_ERRORS.any? { |error_class| error.is_a?(error_class) }
+    end
+
+    def retry_available?(attempts, deadline)
+      attempts < MAX_REMOTE_ATTEMPTS && (deadline - monotonic_now) > (RETRY_DELAY_SECONDS + 0.1)
+    end
+
+    def record_retry_error(attempt, error_class)
+      @ai_service_retry_errors ||= []
+      @ai_service_retry_errors << { "attempt" => attempt, "error_class" => error_class }
+    end
+
+    def pause_before_timeout_retry(deadline = nil)
+      delay = deadline ? [RETRY_DELAY_SECONDS, deadline - monotonic_now].min : RETRY_DELAY_SECONDS
+      sleep(delay) if delay.positive?
+    end
+
+    def timeout_type(error)
+      return "connect_timeout" if error.is_a?(Net::OpenTimeout)
+      return "read_timeout" if error.is_a?(Net::ReadTimeout)
+      return "network_reset" if error.is_a?(EOFError) || error.is_a?(Errno::ECONNRESET)
+      return "connection_error" if error.is_a?(Errno::ECONNREFUSED) || error.is_a?(SocketError)
+
+      nil
+    end
+
+    def tool_attempt_counts(response)
+      parsed = JSON.parse(response.body.to_s)
+      tools = Array(parsed.dig("audit", "tool_calls"))
+      {
+        "tools_started" => tools.size,
+        "tools_completed" => tools.count { |tool| tool.to_h["error"].blank? }
+      }
+    rescue JSON::ParserError, NoMethodError
+      {}
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def elapsed_ms(started_at)
+      ((monotonic_now - started_at) * 1000).round
     end
 
     def safe_no_reply(description, flag: "contract_validation_failed")
@@ -288,6 +379,7 @@ module AI
         latency_ms: latency_ms,
         ai_service_attempts: @ai_service_attempts || 0,
         ai_service_retry_errors: @ai_service_retry_errors || [],
+        ai_service_attempt_trace: @ai_service_attempt_trace || [],
         model: ENV["AI_MODEL"],
         correlation_id: @ai_request_payload.to_h[:correlation_id] || @ai_request_payload.to_h["correlation_id"],
         tool_calls: @tool_calls,

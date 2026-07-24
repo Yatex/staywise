@@ -1259,7 +1259,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test "retries one timeout with the same request id before using a successful response" do
+  test "retries one immediate connection reset with the same request id before using a successful response" do
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora es el check-in?", channel: "whatsapp")
     response = Net::HTTPOK.new("1.1", "200", "OK")
@@ -1274,12 +1274,12 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     fake_http = Object.new
     fake_http.define_singleton_method(:request) do |request|
       attempts << { request_id: request["X-Request-ID"], attempt: request["X-Ayla-Attempt"] }
-      raise Net::ReadTimeout, "first timeout" if attempts.one?
+      raise Errno::ECONNRESET, "first reset" if attempts.one?
 
       response
     end
     service = AI::DecisionService.new(conversation: @conversation, guest_message: message)
-    service.define_singleton_method(:pause_before_timeout_retry) {}
+    service.define_singleton_method(:pause_before_timeout_retry) { |_deadline = nil| }
 
     assert_no_difference -> { OperationalError.where(source: "ai_service").count } do
       Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
@@ -1293,10 +1293,13 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
     assert_equal 1, attempts.map { |attempt| attempt[:request_id] }.uniq.size
     audit = AIDecisionLog.where(message: message).last
     assert_equal 2, audit.payload["ai_service_attempts"]
-    assert_equal [{ "attempt" => 1, "error_class" => "Net::ReadTimeout" }], audit.payload["ai_service_retry_errors"]
+    assert_equal [{ "attempt" => 1, "error_class" => "Errno::ECONNRESET" }], audit.payload["ai_service_retry_errors"]
+    assert_equal 2, audit.payload["ai_service_attempt_trace"].size
+    assert_equal "network_reset", audit.payload["ai_service_attempt_trace"].first["timeout_type"]
+    assert_equal 200, audit.payload["ai_service_attempt_trace"].last["http_status"]
   end
 
-  test "uses the technical fallback only after the timeout retry also fails" do
+  test "a long read timeout is not retried and uses the technical fallback once" do
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     @property.update!(owner_contact_phone: "+59899007777")
     message = @conversation.messages.create!(sender: "guest", body: "Necesito ayuda", channel: "whatsapp")
@@ -1307,7 +1310,7 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       raise Net::ReadTimeout, "timeout #{attempts}"
     end
     service = AI::DecisionService.new(conversation: @conversation, guest_message: message)
-    service.define_singleton_method(:pause_before_timeout_retry) {}
+    service.define_singleton_method(:pause_before_timeout_retry) { |_deadline = nil| }
 
     assert_difference -> { OperationalError.where(source: "ai_service").count }, 1 do
       Net::HTTP.stub(:start, ->(*_args, **_kwargs, &block) { block.call(fake_http) }) do
@@ -1317,17 +1320,61 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal 2, attempts
+    assert_equal 1, attempts
     audit = AIDecisionLog.where(message: message).last
     assert_equal "local_fallback", audit.route
-    assert_equal 2, audit.payload["ai_service_attempts"]
-    assert_equal 2, audit.payload["ai_service_retry_errors"].size
+    assert_equal 1, audit.payload["ai_service_attempts"]
+    assert_empty audit.payload["ai_service_retry_errors"]
+    assert_equal 1, audit.payload["ai_service_attempt_trace"].size
+    assert_equal "read_timeout", audit.payload["ai_service_attempt_trace"].first["timeout_type"]
     assert_match(/Net::ReadTimeout/, audit.fallback_reason)
     assert_equal "AI_TIMEOUT", audit.payload.dig("fallback_diagnostic", "type")
     assert_equal 0, audit.payload.dig("fallback_diagnostic", "tools_executed")
     assert_includes audit.payload.dig("fallback_diagnostic", "message_sent"), @property.owner_contact_phone
     assert_equal "Net::ReadTimeout", audit.payload.dig("fallback_diagnostic", "exception_class")
     assert_nil audit.payload.dig("fallback_diagnostic", "backtrace")
+  end
+
+  test "two attempts share one deadline and reduce the second read timeout to the remaining budget" do
+    ENV["AI_SERVICE_URL"] = "https://ai-service.test"
+    message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora entro?", channel: "whatsapp")
+    unavailable = Struct.new(:code, :body).new("503", { error: "temporarily_unavailable" }.to_json)
+    success = Net::HTTPOK.new("1.1", "200", "OK")
+    success_body = ai_reply(
+      language: "es",
+      message_body: "El check-in es a las 15:00.",
+      evidence_ids: ["property.check_in_time"],
+      detected_intents: [{ type: "check_in", status: "answered" }]
+    ).to_json
+    success.define_singleton_method(:body) { success_body }
+    responses = [unavailable, success]
+    timeout_options = []
+    deadline_headers = []
+    fake_http = Object.new
+    fake_http.define_singleton_method(:request) do |request|
+      deadline_headers << request["X-Ayla-Deadline-At"]
+      responses.shift
+    end
+    clock_values = [0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 10.0, 24.0]
+    service = AI::DecisionService.new(conversation: @conversation, guest_message: message)
+    service.define_singleton_method(:monotonic_now) { clock_values.shift || 24.0 }
+    service.define_singleton_method(:pause_before_timeout_retry) { |_deadline = nil| }
+
+    decision = Net::HTTP.stub(:start, lambda { |*_args, **kwargs, &block|
+      timeout_options << kwargs.slice(:open_timeout, :read_timeout)
+      block.call(fake_http)
+    }) do
+      service.call
+    end
+
+    assert_equal "reply", decision.outcome
+    assert_equal 2, timeout_options.size
+    assert_equal 24, timeout_options.first[:read_timeout]
+    assert_operator timeout_options.second[:read_timeout], :<=, 15
+    assert_equal 1, deadline_headers.uniq.size
+    audit = AIDecisionLog.where(message: message).last
+    assert_equal [503, 200], audit.payload["ai_service_attempt_trace"].map { |attempt| attempt["http_status"] }
+    assert_equal 2, audit.payload["ai_service_attempts"]
   end
 
   test "classifies an AI service tool timeout returned over HTTP" do

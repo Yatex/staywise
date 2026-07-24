@@ -77,6 +77,18 @@ test("decision prompts preserve operational data and directly relevant video URL
   }
 });
 
+test("decision prompts classify actual operational risk independently from urgency words", () => {
+  for (const prompt of [DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT]) {
+    assert.match(prompt, /real risk described, never merely by urgency words/i);
+    assert.match(prompt, /fire, flames, smoke, gas smell or gas leak/i);
+    assert.match(prompt, /thief or intruder/i);
+    assert.match(prompt, /short circuit, sparks or electrical danger/i);
+    assert.match(prompt, /Routine owner-managed needs remain create_owner_task/i);
+    assert.match(prompt, /milk or groceries, a crib, extra towels, an extra bed/i);
+    assert.match(prompt, /immediate safety instructions/i);
+  }
+});
+
 test("decision prompt uses contextual no_action without hiding new needs", () => {
   assert.match(DECISION_SYSTEM_PROMPT, /latest message and the conversation history/i);
   assert.match(DECISION_SYSTEM_PROMPT, /action no_action with message=null/i);

@@ -529,6 +529,9 @@ function shouldRepairDecisionDiagnostic(decision: any): RepairDecisionDiagnostic
   const unknownIntent = arrayOf(decision?.detected_intents).some((intent: any) => intent?.type === "unknown");
   const fallback = arrayOf(decision?.safety_flags).some((flag) => String(flag) === "fallback");
 
+  if (decision?.action === "create_alert" || decision?.alert_type === "emergency") {
+    return { value: false, reason: "operational_emergency_must_not_be_repaired_as_request_or_reply" };
+  }
   if (["escalate", "propose_action"].includes(outcome)) {
     return { value: true, reason: `outcome_${outcome}_requires_grounding_check` };
   }

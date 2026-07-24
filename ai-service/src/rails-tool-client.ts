@@ -10,6 +10,7 @@ type RailsToolClientOptions = {
   fetchImpl?: typeof fetch;
   token?: string;
   environment?: string;
+  deadlineAt?: number | null;
 };
 
 type RailsToolEnvironment = {
@@ -43,6 +44,7 @@ export async function callRailsTool(
         "Content-Type": "application/json",
         ...(toolEndpoint.correlation_id ? { "X-Request-ID": toolEndpoint.correlation_id } : {}),
       },
+      ...(options.deadlineAt ? { signal: AbortSignal.timeout(Math.max(1, options.deadlineAt - Date.now())) } : {}),
       body: JSON.stringify({
         decision_context_id: toolEndpoint.decision_context_id,
         ...input,

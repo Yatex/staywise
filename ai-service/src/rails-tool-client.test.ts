@@ -132,6 +132,34 @@ test("Rails tool calls preserve the safe request correlation id", async () => {
   assert.equal((receivedHeaders as Record<string, string>)["X-Request-ID"], "request-correlation-123");
 });
 
+test("Rails tool calls use the shared request deadline", async () => {
+  let receivedSignal: AbortSignal | null | undefined;
+  const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit) => {
+    receivedSignal = init?.signal;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ evidence: [] }),
+    } as Response;
+  };
+
+  await callRailsTool(
+    { base_url: "https://aylamanager.example", decision_context_id: "signed-context" },
+    "property_brain",
+    { query: "cerradura" },
+    {
+      fetchImpl,
+      token: "shared-token",
+      environment: "production",
+      deadlineAt: Date.now() + 10,
+    },
+  );
+
+  assert.ok(receivedSignal);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(receivedSignal?.aborted, true);
+});
+
 test("production boot requires and reports the configured HTTPS Rails tools origin", () => {
   assert.throws(
     () => validateRailsToolClientBootConfig("production", { AI_SERVICE_TOKEN: "shared-token" }),

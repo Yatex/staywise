@@ -19,6 +19,7 @@ import { DECISION_SYSTEM_PROMPT, GROUNDED_REVIEW_SYSTEM_PROMPT } from "./decisio
 import { sanitizeDecisionGuestText } from "./guest-message-sanitizer.js";
 import { safeFallbackResponseFor } from "./safe-fallback-response.js";
 import { classifyTechnicalFallback } from "./technical-fallback-diagnostic.js";
+import { applyOperationalEmergencyGuardrail } from "./operational-emergency-classifier.js";
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 import { captureSafeException, withSentryRequestContext } from "./sentry.js";
@@ -64,9 +65,12 @@ type ToolMandatoryTrace = {
 
 const server = createServer(async (request, response) => {
   const correlationId = headerValue(request, "x-request-id") || randomUUID();
+  const requestStartedAt = Date.now();
+  const attemptNumber = headerValue(request, "x-ayla-attempt") || "1";
+  const requestDeadlineAt = numericHeaderValue(request, "x-ayla-deadline-at");
   response.setHeader("X-Request-ID", correlationId);
   console.log(
-    `[ai-service-request] correlation_id=${correlationId} method=${request.method || "unknown"} path=${(request.url || "/").split("?")[0]}`,
+    `[ai-service-request] correlation_id=${correlationId} attempt=${attemptNumber} method=${request.method || "unknown"} path=${(request.url || "/").split("?")[0]} deadline_at=${requestDeadlineAt || "none"}`,
   );
 
   return withSentryRequestContext(correlationId, {
@@ -127,7 +131,7 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const toolResults = await collectToolResults(payload, toolTrace, mandatoryTrace);
+    const toolResults = await collectToolResults(payload, toolTrace, mandatoryTrace, requestDeadlineAt);
     const evidenceCatalog = buildEvidenceCatalog(toolResults);
     const modelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog);
     console.log("MODEL_INPUT_TRACE", JSON.stringify(modelInputTrace));
@@ -141,14 +145,16 @@ const server = createServer(async (request, response) => {
         tool_results: toolResults,
         evidence_catalog: evidenceCatalog,
       }),
+      abortSignal: deadlineAbortSignal(requestDeadlineAt),
     }, generateObjectTrace);
 
-    let groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
+    let decisionObject = applyOperationalEmergencyGuardrail(result.object, payload?.guest_message);
+    let groundedDecision = buildGroundedDecision(decisionObject, payload, evidenceCatalog);
     let groundingRetry = false;
     let retryModelInputTrace: any = null;
-    if (!groundedDecision.override?.applied && shouldRetryGroundedDecision(result.object, evidenceCatalog)) {
+    if (!groundedDecision.override?.applied && shouldRetryGroundedDecision(decisionObject, evidenceCatalog)) {
       groundingRetry = true;
-      const previousDecisionForTrace = result.object as any;
+      const previousDecisionForTrace = decisionObject as any;
       retryModelInputTrace = buildModelInputTrace(payload, toolResults, evidenceCatalog, {
         previous_decision_outcome: previousDecisionForTrace?.outcome || previousDecisionForTrace?.decision || null,
         previous_decision_intents: previousDecisionForTrace?.detected_intents || [],
@@ -164,10 +170,12 @@ const server = createServer(async (request, response) => {
           base_context: safeBaseContext(payload),
           tool_results: toolResults,
           evidence_catalog: evidenceCatalog,
-          previous_decision: result.object,
+          previous_decision: decisionObject,
         }),
+        abortSignal: deadlineAbortSignal(requestDeadlineAt),
       }, generateObjectTrace);
-      groundedDecision = buildGroundedDecision(result.object, payload, evidenceCatalog);
+      decisionObject = applyOperationalEmergencyGuardrail(result.object, payload?.guest_message);
+      groundedDecision = buildGroundedDecision(decisionObject, payload, evidenceCatalog);
     }
     const finalDecision = sanitizeDecisionGuestText(groundedDecision.decision);
     const finalDecisionAudit = {
@@ -212,8 +220,14 @@ const server = createServer(async (request, response) => {
         tool_mandatory_trace: finalizeToolMandatoryTrace(mandatoryTrace, toolTrace),
       },
     });
+    console.log(
+      `[ai-service-response] correlation_id=${correlationId} attempt=${attemptNumber} status=200 duration_ms=${Date.now() - requestStartedAt} tools_started=${toolTrace.length} tools_completed=${toolTrace.filter((tool) => !tool?.error).length}`,
+    );
   } catch (error) {
-    console.error(`[ai-service] correlation_id=${correlationId}`, error);
+    console.error(
+      `[ai-service] correlation_id=${correlationId} attempt=${attemptNumber} duration_ms=${Date.now() - requestStartedAt} tools_started=${toolTrace.length} tools_completed=${toolTrace.filter((tool) => !tool?.error).length}`,
+      error,
+    );
     captureSafeException(error, {
       correlation_id: correlationId,
       endpoint: request.url || "unknown",
@@ -267,6 +281,17 @@ function sendJson(response: ServerResponse, status: number, payload: unknown) {
 function headerValue(request: IncomingMessage, name: string) {
   const value = request.headers[name];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function numericHeaderValue(request: IncomingMessage, name: string) {
+  const value = Number(headerValue(request, name));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function deadlineAbortSignal(deadlineAt: number | null) {
+  if (!deadlineAt) return undefined;
+
+  return AbortSignal.timeout(Math.max(1, deadlineAt - Date.now()));
 }
 
 function safeNumericTag(value: unknown) {
@@ -754,17 +779,27 @@ function ownerText(language: string, spanish: string, english: string) {
   return normalizeLanguage(language) === "en" ? english : spanish;
 }
 
-async function collectToolResults(payload: any, toolTrace: any[] = [], mandatoryTrace = newToolMandatoryTrace(payload)) {
+async function collectToolResults(
+  payload: any,
+  toolTrace: any[] = [],
+  mandatoryTrace = newToolMandatoryTrace(payload),
+  deadlineAt: number | null = null,
+) {
   if (process.env.AI_TOOLS_ENABLED === "false") {
     mandatoryTrace.should_run_tools = false;
     mandatoryTrace.skip_reason = "ai_tools_disabled";
     return [];
   }
 
-  return mandatoryToolResults(payload, toolTrace, mandatoryTrace);
+  return mandatoryToolResults(payload, toolTrace, mandatoryTrace, deadlineAt);
 }
 
-async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandatoryTrace = newToolMandatoryTrace(payload)) {
+async function mandatoryToolResults(
+  payload: any,
+  toolTrace: any[] = [],
+  mandatoryTrace = newToolMandatoryTrace(payload),
+  deadlineAt: number | null = null,
+) {
   const mandatoryStartedAt = Date.now();
   const guestContextInput = {
     query: payload?.guest_message,
@@ -798,12 +833,12 @@ async function mandatoryToolResults(payload: any, toolTrace: any[] = [], mandato
   if (payload?.tool_endpoint?.base_url && payload?.tool_endpoint?.decision_context_id) {
     try {
       const calls: Array<Promise<ToolResultRecord>> = [
-        tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace, mandatoryTrace),
-        tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace, mandatoryTrace),
-        tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace, mandatoryTrace),
+        tracedMandatoryRailsTool(payload.tool_endpoint, "guest_context", guestContextInput, toolTrace, mandatoryTrace, deadlineAt),
+        tracedMandatoryRailsTool(payload.tool_endpoint, "stay_facts", stayFactsInput, toolTrace, mandatoryTrace, deadlineAt),
+        tracedMandatoryRailsTool(payload.tool_endpoint, "property_brain", propertyBrainInput, toolTrace, mandatoryTrace, deadlineAt),
       ];
       if (includeSensitiveAccess) {
-        calls.push(tracedOptionalRailsTool(payload.tool_endpoint, "sensitive_access_info", sensitiveAccessInput, toolTrace));
+        calls.push(tracedOptionalRailsTool(payload.tool_endpoint, "sensitive_access_info", sensitiveAccessInput, toolTrace, deadlineAt));
       }
 
       return await Promise.all(calls);
@@ -868,12 +903,13 @@ async function tracedMandatoryRailsTool(
   input: Record<string, unknown>,
   toolTrace: any[],
   mandatoryTrace: ToolMandatoryTrace,
+  deadlineAt: number | null = null,
 ) {
   const startedAt = Date.now();
   markMandatoryAttempt(mandatoryTrace, toolName);
 
   try {
-    const result = await callRailsTool(toolEndpoint, toolName, input);
+    const result = await callRailsTool(toolEndpoint, toolName, input, { deadlineAt });
     const error = classifyMandatoryToolResult(result);
     toolTrace.push(traceToolResult(toolName, input, result, error, Date.now() - startedAt));
     markMandatoryResult(mandatoryTrace, toolName, result, error);
@@ -896,11 +932,12 @@ async function tracedOptionalRailsTool(
   toolName: string,
   input: Record<string, unknown>,
   toolTrace: any[],
+  deadlineAt: number | null = null,
 ) {
   const startedAt = Date.now();
 
   try {
-    const result = await callRailsTool(toolEndpoint, toolName, input);
+    const result = await callRailsTool(toolEndpoint, toolName, input, { deadlineAt });
     toolTrace.push(traceToolResult(toolName, input, result, result?.error, Date.now() - startedAt));
 
     return {

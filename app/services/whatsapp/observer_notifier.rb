@@ -28,7 +28,7 @@ module Whatsapp
         unless delivery_success?(delivery)
           error = delivery_error(delivery)
           mark_delivery_failure(activities, error)
-          report_delivery_failure(activities, error)
+          report_delivery_failure(activities, delivery, error, url)
           return result(error: error, count: activities.size, url: url)
         end
 
@@ -78,12 +78,12 @@ module Whatsapp
     end
 
     def deliver_notification(activities, url)
-      template_sid = ENV["TWILIO_OWNER_OBSERVER_NOTICE_CONTENT_SID"]
+      template_sid = observer_template_sid
       if template_sid.present?
         @provider.send_template(
           to: @actor.phone_number,
           template_sid: template_sid,
-          variables: { "1" => notification_summary(activities), "2" => url }
+          variables: { "1" => notification_summary(activities), "2" => single_line(url) }
         )
       else
         @provider.send_message(to: @actor.phone_number, body: notification_body(activities, url))
@@ -91,12 +91,10 @@ module Whatsapp
     end
 
     def notification_summary(activities)
-      return "Hay actividad en #{activities.size} conversaciones." if activities.many?
+      return "Hay actividad nueva en #{activities.size} conversaciones." if activities.many?
 
       activity = activities.first
-      guest = activity.conversation.guest
-      guest_name = guest&.name.presence || guest&.phone_number.presence || "Huésped de WhatsApp"
-      "Hay actividad nueva en una conversación.\n\nHuésped: #{guest_name}\nPropiedad: #{activity.property.display_name}"
+      single_line("Hay actividad nueva en una conversación de huéspedes. Propiedad: #{activity.property.display_name}.")
     end
 
     def notification_body(activities, url)
@@ -119,11 +117,15 @@ module Whatsapp
       )
     end
 
-    def report_delivery_failure(activities, error)
+    def report_delivery_failure(activities, delivery, error, url)
+      twilio_error = twilio_error_details(delivery)
       ErrorReporter.report(source: "observer_notifier", severity: "error", account: @actor.account,
         message: "Observer WhatsApp notification failed",
         context: { recipient_type: @actor.type, recipient_id: @actor.id, recipient_phone: @actor.phone_number,
-                   pending_conversations: activities.size, error: error })
+                   pending_conversations: activities.size, conversation_id: activities.one? ? activities.first.conversation_id : nil,
+                   notification_url: url, content_name: "owner_observer_activity_notice_v2",
+                   content_sid: observer_template_sid, variable_count: 2, error: error,
+                   twilio_error_code: twilio_error[:code], twilio_error_message: twilio_error[:message] }.compact)
     end
 
     def delivery_success?(delivery)
@@ -131,7 +133,29 @@ module Whatsapp
     end
 
     def delivery_error(delivery)
+      details = twilio_error_details(delivery)
+      return [details[:code], details[:message]].compact.join(": ") if details.values.any?(&:present?)
+
       delivery.respond_to?(:error) && delivery.error.present? ? delivery.error : "observer_whatsapp_delivery_failed"
+    end
+
+    def twilio_error_details(delivery)
+      raw = delivery.respond_to?(:raw_response) ? delivery.raw_response : nil
+      parsed = raw.is_a?(Hash) ? raw : JSON.parse(raw.to_s)
+      {
+        code: parsed["code"] || parsed[:code] || parsed["error_code"] || parsed[:error_code],
+        message: single_line(parsed["message"] || parsed[:message] || parsed["error_message"] || parsed[:error_message]).presence
+      }
+    rescue JSON::ParserError, TypeError
+      {}
+    end
+
+    def observer_template_sid
+      ENV["TWILIO_OWNER_OBSERVER_NOTICE_CONTENT_SID"]
+    end
+
+    def single_line(value)
+      value.to_s.gsub(/[\r\n\t]+/, " ").squish
     end
 
     def result(error:, count: nil, url: nil)

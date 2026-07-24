@@ -90,3 +90,30 @@ test("public projection removes candidate and safe fallback fields", () => {
   assert.equal("candidate_response" in projected, false);
   assert.equal(projected.action, "reply");
 });
+
+test("operational emergency is projected to the existing Rails alert contract", () => {
+  const emergency = DecisionSchema.parse({
+    ...reply,
+    action: "create_alert",
+    owner_task_kind: null,
+    message: "Salí de la cocina si podés hacerlo con seguridad y llamá a emergencias. Estoy avisando al anfitrión.",
+    task_summary: "El huésped informa un incendio en la cocina.",
+    title: "Incendio en la cocina",
+  });
+  const projected = toPublicDecision(emergency);
+
+  assert.equal(projected.action, "reply");
+  assert.equal(projected.outcome, "escalate");
+  assert.equal(projected.escalation_required, true);
+  assert.equal(projected.alert_type, "emergency");
+  assert.equal(projected.alert_title, "Incendio en la cocina");
+  assert.equal(projected.owner_task_kind, null);
+  assert.equal(projected.owner_task_id, null);
+  assert.equal(projected.escalation.category, "emergency");
+});
+
+test("create_alert requires an AI-generated short title and cannot reference an owner task", () => {
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_alert", title: null }).success, false);
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_alert", title: "Incendio en la cocina", owner_task_id: 7 }).success, false);
+  assert.equal(DecisionSchema.safeParse({ ...reply, action: "create_alert", title: "Uno dos tres cuatro cinco seis siete ocho nueve" }).success, false);
+});

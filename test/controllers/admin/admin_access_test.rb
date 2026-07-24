@@ -453,6 +453,16 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
       fallback_reason: "Net::ReadTimeout: execution expired",
       payload: {
         "final_response_text" => "Estoy teniendo un inconveniente técnico temporal.",
+        "ai_service_attempt_trace" => [{
+          "attempt_number" => 1,
+          "started_at" => "2026-07-23T20:00:00.000Z",
+          "duration_ms" => 24_000,
+          "timeout_type" => "read_timeout",
+          "provider" => "ai-service",
+          "correlation_id" => "correlation-123",
+          "tools_started" => nil,
+          "tools_completed" => nil
+        }],
         "fallback_diagnostic" => {
           "type" => "AI_TIMEOUT",
           "description" => "La solicitud al AI service no recibió respuesta antes del tiempo límite.",
@@ -477,6 +487,9 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Tools ejecutadas"
     assert_includes response.body, "Fallback enviado"
     assert_includes response.body, "correlation-123"
+    assert_includes response.body, "Intentos al AI service"
+    assert_includes response.body, "read_timeout"
+    assert_includes response.body, "Desconocido"
     assert_not_includes response.body, "app/services/ai/decision_service.rb"
   end
 

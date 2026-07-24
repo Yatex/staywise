@@ -7,7 +7,7 @@ const AttachmentSchema = z.object({
 }).strict();
 
 const PublicDecisionSchema = z.object({
-  action: z.enum(["reply", "clarify", "create_owner_task", "check_out", "no_action"]),
+  action: z.enum(["reply", "clarify", "create_owner_task", "create_alert", "check_out", "no_action"]),
   owner_task_kind: z.enum(["request", "inquiry"]).nullable().default(null),
   language: z.string().min(2),
   message: z.string().min(1).nullable(),
@@ -24,14 +24,20 @@ const PublicDecisionSchema = z.object({
   if (decision.action === "create_owner_task" && !decision.title?.trim()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title is required" });
   }
-  if (decision.action === "create_owner_task" && decision.title && decision.title.trim().split(/\s+/).length > 8) {
+  if (decision.action === "create_alert" && !decision.title?.trim()) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title is required" });
+  }
+  if (["create_owner_task", "create_alert"].includes(decision.action) && decision.title && decision.title.trim().split(/\s+/).length > 8) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title must have at most 8 words" });
   }
   if (decision.action !== "create_owner_task" && decision.owner_task_kind) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["owner_task_kind"], message: "owner_task_kind is only valid for create_owner_task" });
   }
-  if (decision.action !== "create_owner_task" && (decision.title || decision.owner_task_id)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "task fields are only valid for create_owner_task" });
+  if (!["create_owner_task", "create_alert"].includes(decision.action) && (decision.title || decision.owner_task_id)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["title"], message: "title is only valid for owner work" });
+  }
+  if (decision.action === "create_alert" && decision.owner_task_id) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["owner_task_id"], message: "owner_task_id is not valid for create_alert" });
   }
   if (decision.action === "no_action" && decision.message !== null) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message must be null for no_action" });
@@ -55,15 +61,15 @@ export function toPublicDecision(decision: any) {
     decision?.answer_confidence ?? scores.answer_confidence ?? Number(decision?.confidence || 0) * 100,
   );
 
-  return {
+  const result: any = {
     action,
     owner_task_kind: ownerTaskKind,
     language: String(decision?.language || "").trim() || "es",
     message: action === "no_action" ? null : sanitizeGuestVisibleText(decision?.message || decision?.message_body || decision?.response_text || ""),
-    task_summary: action === "create_owner_task"
+    task_summary: ["create_owner_task", "create_alert"].includes(action)
       ? String(decision?.task_summary || decision?.intent_summary || decision?.escalation?.summary_for_host || "").trim() || null
       : null,
-    title: action === "create_owner_task"
+    title: ["create_owner_task", "create_alert"].includes(action)
       ? String(decision?.title || decision?.proposed_action?.payload?.title || "").trim() || null
       : null,
     owner_task_id: action === "create_owner_task" && Number.isInteger(Number(decision?.owner_task_id))
@@ -73,6 +79,34 @@ export function toPublicDecision(decision: any) {
     evidence_ids: uniqueStrings(decision?.evidence_ids || decision?.used_source_ids),
     attachments: normalizeAttachments(decision?.attachments),
   };
+
+  if (action === "create_alert") {
+    return {
+      ...result,
+      action: "reply",
+      title: null,
+      task_summary: null,
+      outcome: "escalate",
+      decision: "escalate",
+      escalation_required: true,
+      alert_type: "emergency",
+      alert_title: result.title,
+      alert_description: result.task_summary,
+      suggested_owner_action: "Contactá al huésped de inmediato y verificá la emergencia.",
+      escalation: {
+        required: true,
+        category: "emergency",
+        reason_code: "emergency",
+        urgency: "urgent",
+        summary_for_host: result.task_summary,
+      },
+      detected_intents: [{ type: "operational_emergency", status: "escalated" }],
+      owner_task_kind: null,
+      owner_task_id: null,
+    };
+  }
+
+  return result;
 }
 
 export function recoverDecisionFromRawText(rawText: unknown) {
@@ -93,8 +127,11 @@ function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
     ? "check_out"
     : value.action === "clarify"
     ? "ask_clarifying_question"
+    : value.action === "create_alert"
+    ? "escalate"
     : value.action === "create_owner_task" ? "propose_action" : "reply";
-  const escalationRequired = value.action === "create_owner_task";
+  const escalationRequired = ["create_owner_task", "create_alert"].includes(value.action);
+  const operationalEmergency = value.action === "create_alert";
 
   return {
     ...value,
@@ -107,14 +144,19 @@ function toInternalDecision(value: z.infer<typeof PublicDecisionSchema>) {
     detected_intents: [],
     used_source_ids: value.evidence_ids,
     required_capabilities: escalationRequired ? ["owner_attention"] : [],
-    proposed_action: escalationRequired ? { type: "guest_request", payload: {} } : null,
+    proposed_action: value.action === "create_owner_task" ? { type: "guest_request", payload: {} } : null,
     escalation: {
       required: escalationRequired,
-      reason_code: value.owner_task_kind,
+      category: operationalEmergency ? "emergency" : value.owner_task_kind,
+      reason_code: operationalEmergency ? "emergency" : value.owner_task_kind,
+      urgency: operationalEmergency ? "urgent" : null,
       summary_for_host: value.task_summary,
     },
     escalation_required: escalationRequired,
-    escalation_reason: escalationRequired ? value.owner_task_kind : null,
+    escalation_reason: operationalEmergency ? "emergency" : (escalationRequired ? value.owner_task_kind : null),
+    alert_type: operationalEmergency ? "emergency" : null,
+    alert_title: operationalEmergency ? value.title : null,
+    alert_description: operationalEmergency ? value.task_summary : null,
     sensitive_info_used: false,
     missing_information: [],
     safety_flags: [],
@@ -127,6 +169,7 @@ function publicAction(decision: any) {
   if (decision?.action === "no_action" || decision?.outcome === "no_reply" || decision?.decision === "no_reply") return "no_action";
   if (decision?.action === "check_out" || decision?.outcome === "check_out" || decision?.decision === "check_out") return "check_out";
   if (decision?.action === "clarify" || decision?.outcome === "ask_clarifying_question") return "clarify";
+  if (decision?.action === "create_alert" || decision?.alert_type === "emergency") return "create_alert";
   if (decision?.action === "create_owner_task" || decision?.owner_task_kind) return "create_owner_task";
   if (["escalate", "propose_action"].includes(String(decision?.outcome || decision?.decision))) return "create_owner_task";
   return "reply";
