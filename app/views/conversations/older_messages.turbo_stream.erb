@@ -1,10 +1,15 @@
 <%= turbo_stream.prepend "conversation-messages-list" do %>
-  <%= render "message_rows", messages: @messages, guest_request_message_ids: @guest_request_message_ids %>
+  <%= render "message_rows",
+    messages: @messages,
+    guest_request_message_ids: @guest_request_message_ids,
+    preferred_language: @preferred_conversation_language,
+    translation_mode: @translation_mode %>
 <% end %>
 
 <%= turbo_stream.replace "older-messages-control" do %>
   <%= render "older_messages_control",
     conversation: @conversation,
     messages: @messages,
-    has_older_messages: @has_older_messages %>
+    has_older_messages: @has_older_messages,
+    translation_mode: @translation_mode %>
 <% end %>

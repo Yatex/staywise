@@ -46,6 +46,10 @@ Rails.application.routes.draw do
 
   resources :conversations, only: [:index, :show] do
     post :reply, on: :member
+    post :translate_reply, on: :member
+    patch :update_reply_draft, on: :member
+    post :send_reply_draft, on: :member
+    post :translate_messages, on: :member
     get :refresh, on: :member
     get :older_messages, on: :member
   end
@@ -70,6 +74,7 @@ Rails.application.routes.draw do
 
   resource :settings, only: [:show, :update]
   patch "settings/co_hosts/:id/observer_mode", to: "settings#update_co_host_observer_mode", as: :co_host_observer_mode
+  patch "settings/co_hosts/:id/conversation_language", to: "settings#update_co_host_conversation_language", as: :co_host_conversation_language
 
   namespace :webhooks do
     post :whatsapp, to: "whatsapp#create"

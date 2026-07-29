@@ -2,14 +2,17 @@ module Whatsapp
   class OwnerReplySender
     Result = Struct.new(:success?, :message, :error, keyword_init: true)
 
-    def self.call(conversation:, user:, body:, provider: ProviderFactory.build)
-      new(conversation: conversation, user: user, body: body, provider: provider).call
+    def self.call(conversation:, user:, body:, original_body: nil, reply_draft: nil, provider: ProviderFactory.build)
+      new(conversation: conversation, user: user, body: body, original_body: original_body,
+        reply_draft: reply_draft, provider: provider).call
     end
 
-    def initialize(conversation:, user:, body:, provider:)
+    def initialize(conversation:, user:, body:, original_body:, reply_draft:, provider:)
       @conversation = conversation
       @user = user
       @body = body.to_s.strip
+      @original_body = original_body.to_s.presence || @body
+      @reply_draft = reply_draft
       @provider = provider
     end
 
@@ -18,7 +21,7 @@ module Whatsapp
       return failure("El huésped no tiene teléfono de WhatsApp configurado.") if guest_phone.blank?
       return failure("WhatsApp no está conectado. Configurá Twilio antes de responder desde Ayla.") if null_provider?
 
-      guest_body = translated_body
+      guest_body = @body
       message = @conversation.messages.create!(
         sender: "owner",
         channel: "whatsapp",
@@ -27,8 +30,8 @@ module Whatsapp
           sent_by_user_id: @user.id,
           sent_by_user_name: @user.name,
           sent_via: "ayla_dashboard",
-          original_owner_body: @body,
-          translated_to: guest_language,
+          original_owner_body: @original_body,
+          owner_reply_draft_id: @reply_draft&.id,
           delivery_status: "pending",
           delivery_status_updated_at: Time.current.iso8601
         }.compact
@@ -51,7 +54,7 @@ module Whatsapp
 
       KnowledgeSuggestions::OwnerAnswerFaqCreator.call(
         alert: alert,
-        owner_answer: @body,
+        owner_answer: @original_body,
         owner_message: message
       )
     end
@@ -96,20 +99,6 @@ module Whatsapp
 
     def guest_phone
       @conversation.guest&.phone_number
-    end
-
-    def translated_body
-      AI::Translator.call(
-        text: @body,
-        source_language: AI::LanguageHelper.owner_language(@conversation.property.account),
-        target_language: guest_language,
-        context: "Translate the host's dashboard reply before sending it to the guest on WhatsApp."
-      )
-    end
-
-    def guest_language
-      @guest_language ||= @conversation.guest.language.presence ||
-        AI::LanguageHelper.owner_language(@conversation.property.account)
     end
 
     def failure(error, message: nil)

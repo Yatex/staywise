@@ -34,6 +34,14 @@ class SettingsController < ApplicationController
     redirect_to settings_path(section: "whatsapp"), notice: "Modo observador del co-host actualizado."
   end
 
+  def update_co_host_conversation_language
+    return head :forbidden unless observer_preference_authorized?
+
+    co_host = current_account.co_hosts.find(params[:id])
+    co_host.update!(preferred_conversation_language: params[:preferred_conversation_language])
+    redirect_to settings_path(section: "whatsapp"), notice: "Idioma de conversaciones del co-host actualizado."
+  end
+
   private
 
   def account_params
@@ -51,8 +59,13 @@ class SettingsController < ApplicationController
   helper_method :settings_section
 
   def update_user!
-    permitted = params.require(:user).permit(:name, :current_password, :password, :password_confirmation)
+    permitted = params.require(:user).permit(
+      :name, :preferred_conversation_language, :current_password, :password, :password_confirmation
+    )
     @user.name = permitted[:name] if permitted.key?(:name)
+    if permitted.key?(:preferred_conversation_language)
+      @user.preferred_conversation_language = permitted[:preferred_conversation_language]
+    end
 
     if password_change_requested?(permitted)
       raise PasswordUpdateError, "La contraseña actual no es correcta." unless @user.authenticate(permitted[:current_password].to_s)

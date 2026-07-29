@@ -486,9 +486,10 @@ module AI
 
     def persist_decision_language(decision)
       language = LanguageHelper.normalize_code(decision.language).presence || @fallback_language
-      return if language.blank? || @conversation.guest.language == language
+      return if language.blank?
 
-      @conversation.guest.update_column(:language, language)
+      @guest_message.update_column(:detected_language, language) if @guest_message.detected_language.blank?
+      @conversation.guest.update_column(:language, language) unless @conversation.guest.language == language
     end
 
     def ai_context

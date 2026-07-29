@@ -6,6 +6,7 @@ class Message < ApplicationRecord
   belongs_to :account, optional: true
   belongs_to :property, optional: true
   has_one :checkout_event, foreign_key: :source_message_id, dependent: :restrict_with_exception
+  has_many :message_translations, dependent: :destroy
 
   validates :sender, inclusion: { in: SENDERS }
   validates :channel, inclusion: { in: CHANNELS }
@@ -14,6 +15,11 @@ class Message < ApplicationRecord
   before_validation :set_tenant_from_conversation
   after_create_commit :update_conversation_timestamp
   after_create_commit :record_observer_activity
+
+  def translation_for(language)
+    normalized = AI::LanguageHelper.normalize_code(language)
+    message_translations.find { |translation| translation.target_language == normalized && translation.completed? }
+  end
 
   private
 
@@ -34,4 +40,5 @@ class Message < ApplicationRecord
     ErrorReporter.report(error, source: "observer_activity_recorder", severity: "error", account: account,
       property: property, context: { conversation_id: conversation_id, message_id: id, sender: sender })
   end
+
 end

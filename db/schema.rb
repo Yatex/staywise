@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -171,6 +171,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
     t.datetime "updated_at", null: false
     t.boolean "observer_mode_enabled", default: false, null: false
     t.datetime "observer_mode_activated_at"
+    t.string "preferred_conversation_language", default: "es", null: false
     t.index ["account_id"], name: "index_co_hosts_on_account_id"
     t.index ["whatsapp_number"], name: "index_co_hosts_on_whatsapp_number", unique: true
   end
@@ -316,6 +317,22 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
     t.index ["property_id"], name: "index_knowledge_blocks_on_property_id"
   end
 
+  create_table "message_translations", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.string "target_language", null: false
+    t.text "translated_body"
+    t.string "source_language"
+    t.string "provider"
+    t.string "model"
+    t.string "status", default: "pending", null: false
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id", "target_language"], name: "index_message_translations_on_message_id_and_target_language", unique: true
+    t.index ["message_id"], name: "index_message_translations_on_message_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying]::text[])", name: "message_translations_status_check"
+  end
+
   create_table "messages", force: :cascade do |t|
     t.bigint "conversation_id", null: false
     t.string "sender", null: false
@@ -326,6 +343,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
     t.datetime "updated_at", null: false
     t.bigint "account_id"
     t.bigint "property_id"
+    t.string "detected_language"
     t.index ["account_id", "conversation_id", "created_at"], name: "index_messages_on_account_id_conversation_id_created_at"
     t.index ["account_id"], name: "index_messages_on_account_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
@@ -350,6 +368,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
     t.index ["resolved_at"], name: "index_operational_errors_on_resolved_at"
     t.index ["severity", "created_at"], name: "index_operational_errors_on_severity_and_created_at"
     t.index ["source", "created_at"], name: "index_operational_errors_on_source_and_created_at"
+  end
+
+  create_table "owner_reply_drafts", force: :cascade do |t|
+    t.bigint "conversation_id", null: false
+    t.bigint "user_id"
+    t.bigint "co_host_id"
+    t.text "original_body", null: false
+    t.text "translated_body"
+    t.text "sent_body"
+    t.string "source_language"
+    t.string "target_language"
+    t.string "translation_provider"
+    t.string "translation_model"
+    t.string "translation_status", default: "not_requested", null: false
+    t.string "confirmed_by"
+    t.datetime "confirmed_at"
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["co_host_id"], name: "index_owner_reply_drafts_on_co_host_id"
+    t.index ["conversation_id"], name: "index_owner_reply_drafts_on_conversation_id"
+    t.index ["user_id"], name: "index_owner_reply_drafts_on_user_id"
   end
 
   create_table "owner_whatsapp_sessions", force: :cascade do |t|
@@ -483,6 +523,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
     t.string "privacy_version"
     t.string "legal_acceptance_ip"
     t.text "legal_acceptance_user_agent"
+    t.string "preferred_conversation_language", default: "es", null: false
     t.index ["account_id"], name: "index_users_on_account_id"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["email_verification_token"], name: "index_users_on_email_verification_token", unique: true
@@ -523,11 +564,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_201000) do
   add_foreign_key "guests", "accounts"
   add_foreign_key "guests", "properties"
   add_foreign_key "knowledge_blocks", "properties"
+  add_foreign_key "message_translations", "messages", on_delete: :cascade
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "properties"
   add_foreign_key "operational_errors", "accounts"
   add_foreign_key "operational_errors", "properties"
+  add_foreign_key "owner_reply_drafts", "co_hosts"
+  add_foreign_key "owner_reply_drafts", "conversations"
+  add_foreign_key "owner_reply_drafts", "users"
   add_foreign_key "owner_whatsapp_sessions", "accounts"
   add_foreign_key "owner_whatsapp_sessions", "alerts"
   add_foreign_key "owner_whatsapp_sessions", "co_hosts"

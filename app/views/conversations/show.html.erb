@@ -1,6 +1,6 @@
 <% content_for :page_title, "Conversación" %>
 
-<div class="grid gap-6 xl:grid-cols-[1fr_340px]" data-controller="conversation-refresh" data-conversation-refresh-url-value="<%= refresh_conversation_path(@conversation) %>" data-conversation-refresh-interval-value="30000">
+<div class="grid gap-6 xl:grid-cols-[1fr_340px]" data-controller="conversation-refresh" data-conversation-refresh-url-value="<%= refresh_conversation_path(@conversation, translation: @translation_mode) %>" data-conversation-refresh-interval-value="30000">
   <section class="<%= card_class %> overflow-hidden">
     <div class="border-b border-slate-200 px-5 py-4">
       <%= link_to "Volver a conversaciones", conversations_path, class: "text-sm font-semibold text-slate-500 hover:text-slate-950" %>
@@ -20,24 +20,96 @@
       <% end %>
     </div>
 
+    <% source_labels = conversation_translation_source_labels(@messages, @preferred_conversation_language) %>
+    <% has_translation_work = @messages.any? { |message| message.translation_for(@preferred_conversation_language).present? } %>
+    <% has_failed_translations = @messages.any? { |message| message.message_translations.any? { |translation| translation.target_language == @preferred_conversation_language && translation.status == "failed" } } %>
+    <% source_labels = [language_label(@conversation.guest.language)] if source_labels.empty? && @conversation.guest.language.present? %>
+    <% has_foreign_messages = source_labels.any? { |label| label != language_label(@preferred_conversation_language) } %>
+    <% pending_translation_count = @messages.count { |message| message.body.present? && AI::LanguageHelper.normalize_code(message.detected_language || @conversation.guest.language) != @preferred_conversation_language && message.translation_for(@preferred_conversation_language).blank? } %>
+    <% if has_foreign_messages || has_translation_work %>
+      <div class="flex flex-col gap-3 border-b border-slate-200 bg-sky-50 px-5 py-4 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p class="font-semibold">Esta conversación contiene mensajes en <%= source_labels.to_sentence(last_word_connector: t("support.array.last_word_connector")).downcase %>.</p>
+          <p class="mt-1 text-xs text-sky-700"><%= t("ui.conversation_translation.original_preserved") %></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <% if pending_translation_count.positive? || has_failed_translations %>
+            <%= button_to has_translation_work ? "Traducir mensajes nuevos" : "Traducir al #{language_label(@preferred_conversation_language).downcase}",
+              translate_messages_conversation_path(@conversation), class: primary_button_class %>
+          <% end %>
+          <% if has_translation_work %>
+            <% if @translation_mode == "original" %>
+              <%= link_to t("ui.conversation_translation.show_translated"), conversation_path(@conversation, translation: "translated"), class: secondary_button_class %>
+            <% else %>
+              <%= link_to t("ui.conversation_translation.show_original"), conversation_path(@conversation, translation: "original"), class: secondary_button_class %>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
     <%= render "messages",
       conversation: @conversation,
       messages: @messages,
       guest_request_message_ids: @guest_request_message_ids,
-      has_older_messages: @has_older_messages %>
+      has_older_messages: @has_older_messages,
+      preferred_language: @preferred_conversation_language,
+      translation_mode: @translation_mode %>
 
     <% if @can_reply %>
       <div class="border-t border-slate-200 bg-white px-5 py-5">
         <h3 class="text-base font-semibold text-slate-950">Responder al huésped</h3>
         <p class="mt-1 text-sm text-slate-500">El mensaje se envía por WhatsApp desde Ayla. El huésped no ve tu número personal.</p>
-        <%= form_with scope: :reply, url: reply_conversation_path(@conversation), class: "mt-4 space-y-3" do |form| %>
-          <%= form.text_area :body,
-            rows: 4,
-            class: field_class,
-            required: true,
-            placeholder: "Escribí la respuesta para el huésped..." %>
-          <div class="flex justify-end">
-            <%= form.submit "Enviar por WhatsApp", class: primary_button_class %>
+        <% if @reply_draft.present? %>
+          <div class="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div>
+              <p class="text-xs font-semibold uppercase text-slate-500">Tu mensaje</p>
+              <p class="mt-1 whitespace-pre-line text-sm"><%= @reply_draft.original_body %></p>
+            </div>
+            <% if @reply_draft.translation_status == "completed" %>
+              <div>
+                <p class="text-xs font-semibold uppercase text-slate-500">El huésped recibirá</p>
+                <p class="mt-1 whitespace-pre-line text-sm"><%= @reply_draft.translated_body %></p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <%= button_to "Enviar traducción", send_reply_draft_conversation_path(@conversation), params: { reply_draft_id: @reply_draft.id, version: "translated" }, class: primary_button_class %>
+                <%= button_to "Enviar original", send_reply_draft_conversation_path(@conversation), params: { reply_draft_id: @reply_draft.id, version: "original" }, class: secondary_button_class %>
+              </div>
+              <%= form_with url: update_reply_draft_conversation_path(@conversation), method: :patch, class: "space-y-2" do |form| %>
+                <%= hidden_field_tag :reply_draft_id, @reply_draft.id %>
+                <%= hidden_field_tag :operation, "edit_translation" %>
+                <%= text_area_tag :translated_body, @reply_draft.translated_body, rows: 3, class: field_class %>
+                <%= form.submit "Guardar traducción editada", class: secondary_button_class %>
+              <% end %>
+            <% elsif @reply_draft.translation_status == "failed" %>
+              <p class="text-sm text-amber-700">No se pudo traducir. Podés reintentar o enviar el original.</p>
+              <div class="flex gap-2">
+                <%= button_to "Reintentar", update_reply_draft_conversation_path(@conversation), method: :patch, params: { reply_draft_id: @reply_draft.id, operation: "retry" }, class: secondary_button_class %>
+                <%= button_to "Enviar original", send_reply_draft_conversation_path(@conversation), params: { reply_draft_id: @reply_draft.id, version: "original" }, class: primary_button_class %>
+              </div>
+            <% else %>
+              <%= button_to "Traducir nuevamente", update_reply_draft_conversation_path(@conversation), method: :patch, params: { reply_draft_id: @reply_draft.id, operation: "retry" }, class: secondary_button_class %>
+            <% end %>
+            <%= form_with url: update_reply_draft_conversation_path(@conversation), method: :patch, class: "space-y-2" do |form| %>
+              <%= hidden_field_tag :reply_draft_id, @reply_draft.id %>
+              <%= hidden_field_tag :operation, "edit_original" %>
+              <%= text_area_tag :original_body, @reply_draft.original_body, rows: 3, class: field_class %>
+              <%= form.submit "Editar original", class: secondary_button_class %>
+            <% end %>
+            <%= button_to "Cancelar", update_reply_draft_conversation_path(@conversation), method: :patch, params: { reply_draft_id: @reply_draft.id, operation: "cancel" }, class: secondary_button_class %>
+          </div>
+        <% else %>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <%= form_with scope: :reply, url: reply_conversation_path(@conversation), class: "contents" do |form| %>
+              <%= form.text_area :body, rows: 4, class: "#{field_class} sm:col-span-2", required: true, placeholder: "Escribí la respuesta para el huésped..." %>
+              <%= form.submit "Enviar tal cual", class: secondary_button_class %>
+            <% end %>
+            <%= form_with scope: :reply, url: translate_reply_conversation_path(@conversation), class: "contents" do |form| %>
+              <%= form.hidden_field :body, value: "", data: { reply_translation_body: true } %>
+              <%= form.submit "Traducir al idioma del huésped",
+                class: primary_button_class,
+                onclick: "this.form.querySelector('[data-reply-translation-body]').value = document.querySelector('textarea[name=\"reply[body]\"]').value" %>
+            <% end %>
           </div>
         <% end %>
       </div>

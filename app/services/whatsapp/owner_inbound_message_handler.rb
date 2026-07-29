@@ -6,6 +6,12 @@ module Whatsapp
       omitir: "omitir",
       salir: "salir",
       enviar: "enviar",
+      traducir: "traducir",
+      reintentar: "reintentar",
+      enviar_traduccion: "enviar traduccion",
+      enviar_original: "enviar original",
+      editar_traduccion: "editar traduccion",
+      editar_original: "editar original",
       editar: "editar",
       cancelar: "cancelar",
       recordar: "recordar",
@@ -16,7 +22,10 @@ module Whatsapp
     }.freeze
     CATEGORIES = %w[pedidos consultas alertas checkouts].freeze
     ITEM_ACTIONS = ACTION_IDS.values_at(:responder, :siguiente, :omitir, :salir).freeze
-    CONFIRMATION_ACTIONS = ACTION_IDS.values_at(:enviar, :editar, :cancelar).freeze
+    CONFIRMATION_ACTIONS = ACTION_IDS.values_at(
+      :enviar, :traducir, :reintentar, :enviar_traduccion, :enviar_original,
+      :editar, :editar_traduccion, :editar_original, :cancelar
+    ).freeze
     LEARNING_ACTIONS = ACTION_IDS.values_at(:recordar, :no_recordar).freeze
     CHECKOUT_ACTIONS = ACTION_IDS.values_at(:checkout_visto, :siguiente, :salir).freeze
     def self.owner_message?(parsed)
@@ -44,7 +53,12 @@ module Whatsapp
         return handle_menu(session) if session.state == "menu"
         return handle_viewing_item(session) if session.state == "viewing_item"
         return capture_reply_draft(session) if session.state == "awaiting_reply_text"
-        if session.state == "awaiting_send_confirmation" && @current_action == ACTION_IDS[:enviar]
+        if session.state == "awaiting_send_confirmation" &&
+            @current_action.in?(ACTION_IDS.values_at(:enviar, :enviar_traduccion, :enviar_original))
+          unless prepare_reply_version!(session, @current_action)
+            send_owner_message("No hay una traducción lista. Elegí Traducir o Enviar original.")
+            return handled(session, false)
+          end
           if prepare_confirmed_reply!(session)
             delivery_session_id = session.id
             next handled(session, true, sending: true)
@@ -122,20 +136,53 @@ module Whatsapp
         return handled(session, true)
       end
 
+      if session.metadata["reply_edit_target"] == "translation"
+        reply_draft = OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"])
+        return invalid_active_item(session) unless reply_draft
+        reply_draft.update!(translated_body: draft, translation_status: "completed")
+        session.update!(state: "awaiting_send_confirmation",
+          metadata: session.metadata.except("reply_edit_target"), expires_at: 30.minutes.from_now)
+        send_translation_confirmation(reply_draft)
+        return handled(session, true, draft_saved: true)
+      end
+
+      reply_draft = OwnerReplyDraft.create!(
+        conversation: item.conversation,
+        co_host: @actor.co_host,
+        original_body: draft,
+        source_language: actor_language,
+        target_language: item.conversation.guest.language.presence || "es"
+      )
       session.update!(
         state: "awaiting_send_confirmation",
         draft_reply_body: draft,
         draft_item_type: session.active_item_type,
         draft_item_id: session.active_item_id,
+        metadata: session.metadata.merge("owner_reply_draft_id" => reply_draft.id),
         expires_at: 30.minutes.from_now
       )
       send_confirmation(draft)
+      send_owner_message("Podés elegir Enviar para mandarlo tal cual o escribir Traducir para ver una traducción antes de enviarla.")
       handled(session, true, draft_saved: true)
     end
 
     def handle_send_confirmation(session)
       case @current_action
+      when ACTION_IDS[:traducir], ACTION_IDS[:reintentar]
+        translate_reply_draft(session)
+      when ACTION_IDS[:editar_traduccion]
+        session.update!(state: "awaiting_reply_text",
+          metadata: session.metadata.merge("reply_edit_target" => "translation"), expires_at: 30.minutes.from_now)
+        send_owner_message("Escribí la traducción corregida.")
+        handled(session, true)
+      when ACTION_IDS[:editar_original]
+        invalidate_session_translation(session)
+        session.update!(state: "awaiting_reply_text", draft_reply_body: nil,
+          draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
+        send_owner_message("Escribí nuevamente el mensaje original.")
+        handled(session, true)
       when ACTION_IDS[:editar]
+        invalidate_session_translation(session)
         session.update!(state: "awaiting_reply_text", draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil, expires_at: 30.minutes.from_now)
         send_owner_message("Escribí nuevamente el mensaje que querés enviar.")
         handled(session, true)
@@ -164,6 +211,53 @@ module Whatsapp
 
       session.update!(state: "sending_guest_message", expires_at: 30.minutes.from_now)
       true
+    end
+
+    def prepare_reply_version!(session, action)
+      draft = OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"])
+      return true if action == ACTION_IDS[:enviar]
+      return false if draft.blank?
+
+      if action == ACTION_IDS[:enviar_traduccion] && draft.translation_status == "completed"
+        session.update!(draft_reply_body: draft.translated_body,
+          metadata: session.metadata.merge("reply_version" => "translated"))
+        true
+      elsif action == ACTION_IDS[:enviar_original]
+        session.update!(draft_reply_body: draft.original_body,
+          metadata: session.metadata.merge("reply_version" => "original"))
+        true
+      else
+        false
+      end
+    end
+
+    def translate_reply_draft(session)
+      draft = OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"])
+      return invalid_active_item(session) unless draft
+      draft.update!(translation_status: "pending")
+      if Translation::ReplyDraftTranslator.call(draft: draft)
+        send_translation_confirmation(draft)
+      else
+        send_owner_message("No pude traducir el borrador. Podés escribir Reintentar, Enviar original o Cancelar.")
+      end
+      handled(session, true)
+    end
+
+    def invalidate_session_translation(session)
+      draft = OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"])
+      draft&.invalidate_translation!(draft.original_body)
+    end
+
+    def send_translation_confirmation(draft)
+      send_owner_message(
+        "Tu mensaje:\n#{draft.original_body}\n\nEl huésped recibirá:\n#{draft.translated_body}\n\n" \
+        "Opciones: Enviar traducción, Editar traducción, Editar original, Enviar original o Cancelar."
+      )
+    end
+
+    def actor_language
+      @actor.co_host&.preferred_conversation_language.presence ||
+        @account.users.find_by(role: "owner")&.preferred_conversation_language.presence || "es"
     end
 
     def deliver_confirmed_reply(session_id)
@@ -268,13 +362,22 @@ module Whatsapp
         draft_item_id: nil,
         metadata: session.metadata.except(
           "learning_item_id", "learning_owner_message_id", "learning_answer",
-          "learning_actor_type", "learning_actor_id"
+          "learning_actor_type", "learning_actor_id", "owner_reply_draft_id",
+          "reply_version", "reply_edit_target"
         ),
         expires_at: 30.minutes.from_now
       )
     end
 
     def finalize_sent_case!(session, item, owner_message, category)
+      if (reply_draft = OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"]))
+        reply_draft.update!(
+          sent_body: owner_message.body,
+          translation_status: "sent",
+          confirmed_by: @owner_whatsapp_number,
+          confirmed_at: Time.current
+        )
+      end
       attributes = {
         last_owner_message_at: Time.current,
         active_item_type: nil,
@@ -516,12 +619,15 @@ module Whatsapp
                       draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil,
                       metadata: session.metadata.except(
                         "learning_item_id", "learning_owner_message_id", "learning_answer",
-                        "learning_actor_type", "learning_actor_id"
+                        "learning_actor_type", "learning_actor_id", "owner_reply_draft_id",
+                        "reply_version", "reply_edit_target"
                       ))
     end
 
     def clear_draft!(session)
-      session.update!(draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil)
+      OwnerReplyDraft.find_by(id: session.metadata["owner_reply_draft_id"])&.update!(translation_status: "cancelled")
+      session.update!(draft_reply_body: nil, draft_item_type: nil, draft_item_id: nil,
+        metadata: session.metadata.except("owner_reply_draft_id", "reply_version", "reply_edit_target"))
     end
 
     def invalid_active_item(session)

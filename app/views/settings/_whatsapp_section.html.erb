@@ -69,11 +69,20 @@
               <% property_count = co_host.properties.count %>
               <p class="text-xs text-slate-500"><%= co_host.whatsapp_number %> · <%= property_count %> <%= property_count == 1 ? "propiedad" : "propiedades" %></p>
             </div>
-            <%= button_to co_host.observer_mode_enabled? ? "Desactivar" : "Activar",
-              co_host_observer_mode_path(co_host),
-              method: :patch,
-              params: { observer_mode_enabled: co_host.observer_mode_enabled? ? "0" : "1" },
-              class: co_host.observer_mode_enabled? ? secondary_button_class : primary_button_class %>
+            <div class="flex items-center gap-2">
+              <%= form_with url: co_host_conversation_language_path(co_host), method: :patch, class: "flex items-center gap-2" do |form| %>
+                <%= form.select :preferred_conversation_language,
+                  language_options,
+                  { selected: co_host.preferred_conversation_language },
+                  class: "rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm" %>
+                <%= form.submit "Guardar idioma", class: secondary_button_class %>
+              <% end %>
+              <%= button_to co_host.observer_mode_enabled? ? "Desactivar" : "Activar",
+                co_host_observer_mode_path(co_host),
+                method: :patch,
+                params: { observer_mode_enabled: co_host.observer_mode_enabled? ? "0" : "1" },
+                class: co_host.observer_mode_enabled? ? secondary_button_class : primary_button_class %>
+            </div>
           </div>
         <% end %>
       </div>

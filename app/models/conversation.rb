@@ -8,6 +8,7 @@ class Conversation < ApplicationRecord
   has_many :messages, dependent: :destroy
   has_many :alerts, dependent: :nullify
   has_many :owner_tasks, dependent: :destroy
+  has_many :owner_reply_drafts, dependent: :destroy
   has_many :conversation_observer_activities, dependent: :destroy
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
 

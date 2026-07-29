@@ -203,6 +203,43 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     assert_equal 1, @provider.sent_messages.count { |message| message[:to] == @guest.phone_number && message[:body] == "Texto EXACTO, sin traducir." }
   end
 
+  test "owner explicitly translates previews edits and confirms a whatsapp reply" do
+    @guest.update!(language: "tr")
+    task = create_task("request", "Necesito una almohada")
+    Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
+    inbound("Pedidos", "SM-TR-1", action_id: "pedidos")
+    inbound("Responder", "SM-TR-2", action_id: "responder")
+    inbound("La dejamos en la puerta 12:00.", "SM-TR-3")
+
+    translator = lambda do |draft:|
+      draft.update!(
+        translated_body: "Saat 12:00'de kapıya bırakacağız.",
+        source_language: "es",
+        translation_provider: "test",
+        translation_status: "completed"
+      )
+      true
+    end
+    Translation::ReplyDraftTranslator.stub(:call, translator) do
+      inbound("Traducir", "SM-TR-4", action_id: "traducir")
+    end
+
+    draft = OwnerReplyDraft.find_by!(conversation: @conversation)
+    preview = @provider.sent_messages.reverse.find { |message| message[:body]&.include?("El huésped recibirá") }
+    assert_includes preview[:body], draft.original_body
+    assert_includes preview[:body], draft.translated_body
+
+    inbound("Editar traducción", "SM-TR-5", action_id: "editar traduccion")
+    inbound("Saat tam 12:00'de kapıya bırakacağız.", "SM-TR-6")
+    inbound("Enviar traducción", "SM-TR-7", action_id: "enviar traduccion")
+
+    owner_message = @conversation.messages.where(sender: "owner").last
+    assert_equal "Saat tam 12:00'de kapıya bırakacağız.", owner_message.body
+    assert_equal owner_message.body, draft.reload.sent_body
+    assert_equal "sent", draft.translation_status
+    assert_equal "resolved", task.reload.status
+  end
+
   test "remember creates approved property FAQ and no_recordar does not" do
     inquiry = create_task("inquiry", "¿Cómo enciendo el horno?")
     Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
