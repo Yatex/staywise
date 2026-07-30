@@ -161,8 +161,7 @@ module Whatsapp
         metadata: session.metadata.merge("owner_reply_draft_id" => reply_draft.id),
         expires_at: 30.minutes.from_now
       )
-      send_confirmation(draft)
-      send_owner_message("Podés elegir Enviar para mandarlo tal cual o escribir Traducir para ver una traducción antes de enviarla.")
+      send_confirmation(draft, item: item)
       handled(session, true, draft_saved: true)
     end
 
@@ -190,8 +189,8 @@ module Whatsapp
         clear_draft!(session)
         show_active_item(session)
       else
-        send_owner_guidance("Tenés una respuesta preparada. Elegí Enviar, Editar o Cancelar para continuar.")
-        send_confirmation(session.draft_reply_body.to_s)
+        send_owner_guidance("Tenés una respuesta preparada. Elegí Enviar, Traducir, Editar o Cancelar para continuar.")
+        send_confirmation(session.draft_reply_body.to_s, item: session.active_item)
         handled(session, true)
       end
     end
@@ -511,12 +510,24 @@ module Whatsapp
       )
     end
 
-    def send_confirmation(draft)
+    def send_confirmation(draft, item:)
+      language = guest_language_label(item)
       send_interactive(
         content_key: :confirm_reply,
-        variables: { "1" => draft },
-        fallback_body: "Vas a enviar al huésped:\n\n“#{draft}”\n\n¿Está correcto? Respondé enviar, editar o cancelar."
+        variables: { "1" => draft, "2" => language },
+        fallback_body: [
+          "Vas a enviar al huésped:",
+          "“#{draft}”",
+          "Idioma del huésped: #{language}.",
+          "Opciones: enviar, traducir, editar o cancelar."
+        ].join("\n\n")
       )
+    end
+
+    def guest_language_label(item)
+      code = AI::LanguageHelper.normalize_code(item&.conversation&.guest&.language).presence || "es"
+
+      I18n.t("ui.language_names.#{code}", locale: :es, default: code.upcase).to_s.downcase
     end
 
     def send_learning_options

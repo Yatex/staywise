@@ -195,19 +195,14 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "New Owner Name", @user.reload.name
   end
 
-  test "conversation language is stored per user and is independent from interface locale" do
+  test "profile does not expose a separate conversation language preference" do
     sign_in_as(@user)
 
-    patch settings_path(locale: "en"), params: {
-      section: "profile",
-      user: {
-        name: @user.name,
-        preferred_conversation_language: "es"
-      }
-    }
+    get settings_path(locale: "en")
 
-    assert_redirected_to settings_path(section: "profile")
-    assert_equal "es", @user.reload.preferred_conversation_language
+    assert_response :success
+    assert_select "select[name='user[preferred_conversation_language]']", count: 0
+    assert_not_includes response.body, "Preferred conversation language"
   end
 
   test "owner can configure each co-host conversation language independently" do

@@ -24,16 +24,18 @@ module Whatsapp
         }
       },
       confirm_reply: {
-        "friendly_name" => "ayla_owner_confirm_reply_v1",
+        "friendly_name" => "ayla_owner_confirm_reply_v2",
         "language" => "es",
-        "variables" => { "1" => "Mensaje para el huésped" },
+        "variables" => { "1" => "Mensaje para el huésped", "2" => "inglés" },
         "types" => {
-          "twilio/quick-reply" => {
-            "body" => "Vas a enviar al huésped:\n\n“{{1}}”\n\n¿Está correcto?",
-            "actions" => [
-              { "type" => "QUICK_REPLY", "title" => "Enviar", "id" => "enviar" },
-              { "type" => "QUICK_REPLY", "title" => "Editar", "id" => "editar" },
-              { "type" => "QUICK_REPLY", "title" => "Cancelar", "id" => "cancelar" }
+          "twilio/list-picker" => {
+            "body" => "Vas a enviar al huésped:\n\n“{{1}}”\n\nIdioma del huésped: {{2}}.\n\n¿Qué querés hacer?",
+            "button" => "Elegir opción",
+            "items" => [
+              { "item" => "Enviar", "id" => "enviar", "description" => "Mandar el mensaje tal cual" },
+              { "item" => "Traducir: {{2}}", "id" => "traducir", "description" => "Ver la traducción antes de enviarla" },
+              { "item" => "Editar", "id" => "editar", "description" => "Cambiar el mensaje original" },
+              { "item" => "Cancelar", "id" => "cancelar", "description" => "Volver al caso sin enviar" }
             ]
           }
         }

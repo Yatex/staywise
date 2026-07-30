@@ -60,12 +60,9 @@ class SettingsController < ApplicationController
 
   def update_user!
     permitted = params.require(:user).permit(
-      :name, :preferred_conversation_language, :current_password, :password, :password_confirmation
+      :name, :current_password, :password, :password_confirmation
     )
     @user.name = permitted[:name] if permitted.key?(:name)
-    if permitted.key?(:preferred_conversation_language)
-      @user.preferred_conversation_language = permitted[:preferred_conversation_language]
-    end
 
     if password_change_requested?(permitted)
       raise PasswordUpdateError, "La contraseña actual no es correcta." unless @user.authenticate(permitted[:current_password].to_s)

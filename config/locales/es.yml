@@ -157,8 +157,6 @@ es:
       it: "Italiano"
       unknown: "Desconocido"
     conversation_translation:
-      preference_label: "Idioma preferido para conversaciones"
-      preference_help: "Es independiente del idioma de la interfaz. Solo cambia cómo leés los mensajes en el panel."
       banner: "Esta conversación fue traducida de %{sources} a %{target}."
       translating_banner: "Traduciendo mensajes al %{target}…"
       original_preserved: "Los mensajes originales enviados por WhatsApp se conservan sin cambios."

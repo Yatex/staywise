@@ -320,6 +320,50 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a", text: "Ver traducida"
   end
 
+  test "interface locale is also the conversation translation language" do
+    @user.update!(preferred_conversation_language: "es")
+    message = @conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "Merhaba",
+      detected_language: "tr"
+    )
+    message.message_translations.create!(
+      target_language: "en",
+      source_language: "tr",
+      translated_body: "Hello",
+      provider: "test",
+      status: "completed"
+    )
+
+    get conversation_path(@conversation, locale: "en")
+
+    assert_response :success
+    assert_includes response.body, "Hello"
+    assert_not_includes response.body, "Merhaba"
+    assert_select "a", text: "View original"
+  end
+
+  test "translation request uses the interface locale as its target" do
+    captured_target = nil
+    result = MessageTranslations::BatchTranslator::Result.new(
+      success?: true,
+      translated_count: 1,
+      reused_count: 0
+    )
+    translator = lambda do |messages:, target_language:, context:|
+      captured_target = target_language
+      result
+    end
+
+    MessageTranslations::BatchTranslator.stub(:call, translator) do
+      post translate_messages_conversation_path(@conversation, locale: "en")
+    end
+
+    assert_equal "en", captured_target
+    assert_redirected_to conversation_path(@conversation, translation: "translated")
+  end
+
   test "opening a foreign conversation does not create translations automatically" do
     original = @conversation.messages.create!(
       sender: "guest",

@@ -61,7 +61,7 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
 
     assert_equal first, second
     assert_equal 1, client.created_definitions.size
-    assert_equal "ayla_owner_confirm_reply_v1", client.created_definitions.first["friendly_name"]
+    assert_equal "ayla_owner_confirm_reply_v2", client.created_definitions.first["friendly_name"]
   end
 
   test "concurrent requests create one content resource" do
@@ -90,7 +90,8 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
   test "definitions preserve every interactive action id and never include approval requests" do
     definitions = Whatsapp::TwilioContentRegistry::DEFINITIONS
     item_ids = definitions.dig(:item_actions, "types", "twilio/list-picker", "items").map { |item| item["id"] }
-    confirm_ids = definitions.dig(:confirm_reply, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
+    confirmation = definitions.fetch(:confirm_reply)
+    confirm_ids = confirmation.dig("types", "twilio/list-picker", "items").map { |item| item["id"] }
     learning_ids = definitions.dig(:learning, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
     checkout_ids = definitions.dig(:checkout_actions, "types", "twilio/quick-reply", "actions").map { |action| action["id"] }
     notice = definitions.fetch(:owner_escalation_notice_with_checkouts)
@@ -98,7 +99,8 @@ class WhatsappTwilioContentRegistryTest < ActiveSupport::TestCase
     observer_notice = definitions.fetch(:owner_observer_activity_notice)
 
     assert_equal %w[responder siguiente omitir salir], item_ids
-    assert_equal %w[enviar editar cancelar], confirm_ids
+    assert_equal %w[enviar traducir editar cancelar], confirm_ids
+    assert_equal({ "1" => "Mensaje para el huésped", "2" => "inglés" }, confirmation.fetch("variables"))
     assert_equal %w[recordar no_recordar], learning_ids
     assert_equal %w[checkout_visto siguiente salir], checkout_ids
     assert_equal %w[pedidos consultas alertas checkouts], notice_ids

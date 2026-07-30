@@ -209,7 +209,15 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     Whatsapp::OwnerEscalationNotifier.call(account: @account, provider: @provider)
     inbound("Pedidos", "SM-TR-1", action_id: "pedidos")
     inbound("Responder", "SM-TR-2", action_id: "responder")
+    messages_before_draft = @provider.sent_messages.size
     inbound("La dejamos en la puerta 12:00.", "SM-TR-3")
+
+    confirmation_messages = @provider.sent_messages.drop(messages_before_draft)
+    assert_equal 1, confirmation_messages.size
+    assert_equal :confirm_reply, confirmation_messages.first[:content_key]
+    assert_equal({ "1" => "La dejamos en la puerta 12:00.", "2" => "turco" }, confirmation_messages.first[:variables])
+    assert_includes confirmation_messages.first[:fallback_body], "Opciones: enviar, traducir, editar o cancelar."
+    assert_not @provider.sent_messages.any? { |message| message[:body]&.include?("Podés elegir Enviar") }
 
     translator = lambda do |draft:|
       draft.update!(
@@ -507,7 +515,7 @@ class WhatsappOwnerNotificationQueueTest < ActiveSupport::TestCase
     assert_equal "La dejamos en recepción.", session.draft_reply_body
     assert_equal "open", task.reload.status
     assert_empty @conversation.messages.where(sender: "owner")
-    assert_includes @provider.sent_messages[-2][:body], "Enviar, Editar o Cancelar"
+    assert_includes @provider.sent_messages[-2][:body], "Enviar, Traducir, Editar o Cancelar"
   end
 
   test "menu and help remain valid reply text when Ayla is awaiting the owner draft" do

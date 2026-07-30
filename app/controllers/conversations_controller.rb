@@ -87,7 +87,7 @@ class ConversationsController < ApplicationController
     draft = current_user.owner_reply_drafts.create!(
       conversation: @conversation,
       original_body: reply_params[:body],
-      source_language: current_user.preferred_conversation_language,
+      source_language: interface_language,
       target_language: @conversation.guest.language.presence || "es",
       translation_status: "pending"
     )
@@ -243,8 +243,12 @@ class ConversationsController < ApplicationController
   end
 
   def set_translation_preferences
-    @preferred_conversation_language = AI::LanguageHelper.normalize_code(current_user.preferred_conversation_language).presence || "es"
+    @preferred_conversation_language = interface_language
     @translation_mode = params[:translation].to_s == "translated" ? "translated" : "original"
+  end
+
+  def interface_language
+    AI::LanguageHelper.normalize_code(I18n.locale).presence || "es"
   end
 
   def visible_guest_request_message_ids(messages)
