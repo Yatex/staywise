@@ -27,7 +27,7 @@
     <% has_foreign_messages = source_labels.any? { |label| label != language_label(@preferred_conversation_language) } %>
     <% pending_translation_count = @messages.count { |message| message.body.present? && AI::LanguageHelper.normalize_code(message.detected_language || @conversation.guest.language) != @preferred_conversation_language && message.translation_for(@preferred_conversation_language).blank? } %>
     <% if has_foreign_messages || has_translation_work %>
-      <div class="flex flex-col gap-3 border-b border-slate-200 bg-sky-50 px-5 py-4 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+      <div class="sticky top-16 z-10 flex flex-col gap-3 border-b border-slate-200 bg-sky-50 px-5 py-4 text-sm text-sky-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="font-semibold">Esta conversación contiene mensajes en <%= source_labels.to_sentence(last_word_connector: t("support.array.last_word_connector")).downcase %>.</p>
           <p class="mt-1 text-xs text-sky-700"><%= t("ui.conversation_translation.original_preserved") %></p>

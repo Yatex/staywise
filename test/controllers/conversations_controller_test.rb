@@ -335,6 +335,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes response.body, "Bonjour"
     assert_includes response.body, "Traducir al español"
+    assert_select "div.sticky.top-16", count: 1
   end
 
   test "show page includes real guest inbound and ai outbound messages from whatsapp flow" do
