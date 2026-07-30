@@ -26,6 +26,15 @@ import { captureSafeException, withSentryRequestContext } from "./sentry.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
+  source_language: z.string(),
+}).strict();
+const MessageTranslationsSchema = z.object({
+  translations: z.array(z.object({
+    id: z.union([z.string(), z.number()]),
+    source_language: z.string(),
+    target_language: z.string(),
+    translated_body: z.string(),
+  }).strict()),
 }).strict();
 
 type MandatoryToolName = "guest_context" | "stay_facts" | "property_brain";
@@ -81,7 +90,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || !["/decide", "/property_import", "/translate"].includes(request.url || "")) {
+  if (request.method !== "POST" || !["/decide", "/property_import", "/translate", "/translate/messages"].includes(request.url || "")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -110,6 +119,10 @@ const server = createServer(async (request, response) => {
 
     if (request.url === "/translate") {
       await handleTranslate(payload, response, generateObjectTrace);
+      return;
+    }
+    if (request.url === "/translate/messages") {
+      await handleTranslateMessages(payload, response, generateObjectTrace);
       return;
     }
 
@@ -559,7 +572,9 @@ async function handleTranslate(payload: any, response: ServerResponse, generateO
     system: [
       "You translate short-term rental guest/host messages for Ayla Manager.",
       "Translate the text into target_language.",
-      "Preserve concrete facts exactly: times, dates, names, addresses, WiFi names, passwords, codes, URLs, phone numbers, prices, and proper nouns.",
+      "Detect the language of the source text and return its ISO 639-1 language code in source_language.",
+      "Preserve concrete facts exactly: times, dates, names, addresses, WiFi names, passwords, codes, URLs (including all query parameters), phone numbers, prices, IDs, unit/floor/door references, and proper nouns.",
+      "Preserve button and keypad sequences exactly, including symbols such as # and *.",
       "Do not add new information, apologies, explanations, signatures, or formatting that was not present.",
       "Keep the tone natural, warm, and concise.",
       "Return only the translated text in translated_text.",
@@ -579,6 +594,56 @@ async function handleTranslate(payload: any, response: ServerResponse, generateO
       generate_object_trace: generateObjectTrace,
       token_usage: result.usage,
     },
+  });
+}
+
+async function handleTranslateMessages(payload: any, response: ServerResponse, generateObjectTrace: any[] = []) {
+  if (!gatewayConfigured()) {
+    sendJson(response, 503, { error: "AI gateway is not configured" });
+    return;
+  }
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  const characterCount = messages.reduce((total: number, message: any) => total + String(message?.body || "").length, 0);
+  const validMessages = messages.every((message: any) =>
+    (typeof message?.id === "string" || typeof message?.id === "number") &&
+    typeof message?.body === "string" &&
+    message.body.length > 0
+  );
+  if (
+    messages.length === 0 ||
+    messages.length > 50 ||
+    characterCount > 30_000 ||
+    !validMessages ||
+    typeof payload?.target_language !== "string" ||
+    payload.target_language.length === 0
+  ) {
+    sendJson(response, 422, { error: "Invalid translation batch" });
+    return;
+  }
+
+  const result = await tracedGenerateObject({
+    model: gatewayModel(),
+    schema: MessageTranslationsSchema,
+    schemaName: "AylaMessageTranslations",
+    system: [
+      "Translate each short-term rental conversation message independently into target_language.",
+      "Return exactly one result for every input message, preserve input order, and copy each id exactly.",
+      "When source_language is auto, detect the language separately for every message.",
+      "Never combine messages or add facts from context or another message.",
+      "Preserve URLs with parameters, phone numbers, times, prices, IDs, codes, WiFi names, passwords, addresses, and keypad sequences exactly.",
+      "Context is only for tone and disambiguation; never translate it or add its information to a message.",
+    ].join("\n"),
+    prompt: JSON.stringify({
+      source_language: payload?.source_language || "auto",
+      target_language: payload?.target_language,
+      context: payload?.context,
+      messages,
+    }),
+  }, generateObjectTrace);
+
+  sendJson(response, 200, {
+    ...(result.object as Record<string, unknown>),
+    audit: { model: gatewayModelId(), generate_object_trace: generateObjectTrace, token_usage: result.usage },
   });
 }
 

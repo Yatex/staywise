@@ -33,19 +33,27 @@ class ConversationsController < ApplicationController
     load_initial_messages
     load_conversation_sidebar
     mark_observer_activity_seen!
+    @reply_draft = current_user.owner_reply_drafts.find_by(id: params[:reply_draft_id], conversation_id: @conversation.id)
   end
 
   def refresh
     set_conversation
+    set_translation_preferences
     @messages = messages_after(params[:after_message_id]).limit(REFRESH_LIMIT).to_a
     return head :no_content if @messages.empty?
 
     @guest_request_message_ids = visible_guest_request_message_ids(@messages)
-    render partial: "message_rows", locals: { messages: @messages, guest_request_message_ids: @guest_request_message_ids }
+    render partial: "message_rows", locals: {
+      messages: @messages,
+      guest_request_message_ids: @guest_request_message_ids,
+      preferred_language: @preferred_conversation_language,
+      translation_mode: @translation_mode
+    }
   end
 
   def older_messages
     set_conversation
+    set_translation_preferences
     @messages, @has_older_messages = message_page_before(
       created_at: params[:before_created_at],
       id: params[:before_id]
@@ -71,6 +79,81 @@ class ConversationsController < ApplicationController
     else
       target = result.message.present? ? conversation_path(@conversation, anchor: "message-#{result.message.id}") : conversation_path(@conversation)
       redirect_to target, alert: result.error
+    end
+  end
+
+  def translate_reply
+    set_conversation
+    draft = current_user.owner_reply_drafts.create!(
+      conversation: @conversation,
+      original_body: reply_params[:body],
+      source_language: current_user.preferred_conversation_language,
+      target_language: @conversation.guest.language.presence || "es",
+      translation_status: "pending"
+    )
+    Translation::ReplyDraftTranslator.call(draft: draft)
+    redirect_to conversation_path(@conversation, reply_draft_id: draft.id)
+  end
+
+  def update_reply_draft
+    set_conversation
+    draft = current_user.owner_reply_drafts.find_by!(id: params[:reply_draft_id], conversation: @conversation)
+    case params[:operation]
+    when "edit_original"
+      draft.invalidate_translation!(params[:original_body].to_s)
+    when "edit_translation"
+      draft.update!(translated_body: params[:translated_body].to_s, translation_status: "completed")
+    when "retry"
+      draft.update!(translation_status: "pending")
+      Translation::ReplyDraftTranslator.call(draft: draft)
+    when "cancel"
+      draft.update!(translation_status: "cancelled")
+      return redirect_to conversation_path(@conversation)
+    end
+    redirect_to conversation_path(@conversation, reply_draft_id: draft.id)
+  end
+
+  def send_reply_draft
+    set_conversation
+    draft = current_user.owner_reply_drafts.find_by!(id: params[:reply_draft_id], conversation: @conversation)
+    if params[:version] == "translated" && draft.translation_status != "completed"
+      return redirect_to conversation_path(@conversation, reply_draft_id: draft.id),
+        alert: "La traducción ya no está vigente. Volvé a traducir el mensaje antes de enviarlo."
+    end
+    sent_body = params[:version] == "translated" ? draft.translated_body : draft.original_body
+    return redirect_to conversation_path(@conversation, reply_draft_id: draft.id), alert: "No hay una traducción lista para enviar." if sent_body.blank?
+
+    result = Whatsapp::OwnerReplySender.call(
+      conversation: @conversation, user: current_user, body: sent_body,
+      original_body: draft.original_body, reply_draft: draft
+    )
+    unless result.success?
+      return redirect_to conversation_path(@conversation, reply_draft_id: draft.id), alert: result.error
+    end
+    draft.update!(
+      sent_body: sent_body,
+      translation_status: "sent",
+      confirmed_by: current_user.email,
+      confirmed_at: Time.current
+    )
+    redirect_to conversation_path(@conversation, anchor: "message-#{result.message.id}"), notice: "Mensaje enviado al huésped por WhatsApp desde Ayla."
+  end
+
+  def translate_messages
+    set_conversation
+    set_translation_preferences
+    messages, = message_page_before
+    result = MessageTranslations::BatchTranslator.call(
+      messages: messages,
+      target_language: @preferred_conversation_language,
+      context: "Conversation ##{@conversation.id} at #{@display_property&.display_name || @conversation.property&.display_name}"
+    )
+    if result.translated_count.positive?
+      redirect_to conversation_path(@conversation, translation: "translated"),
+        notice: "Tradujimos #{result.translated_count} mensajes."
+    else
+      redirect_to conversation_path(@conversation, translation: "original"),
+        alert: result.error.presence || "No hay mensajes nuevos para traducir."
     end
   end
 
@@ -105,7 +188,13 @@ class ConversationsController < ApplicationController
   end
 
   def load_initial_messages
+    set_translation_preferences
     @messages, @has_older_messages = message_page_before
+    if params[:translation] == "original"
+      @translation_mode = "original"
+    elsif params[:translation] == "translated" || @messages.any? { |message| message.translation_for(@preferred_conversation_language).present? }
+      @translation_mode = "translated"
+    end
     @guest_request_message_ids = visible_guest_request_message_ids(@messages)
   end
 
@@ -115,7 +204,7 @@ class ConversationsController < ApplicationController
   end
 
   def message_page_before(created_at: nil, id: nil)
-    scope = readable_messages.where(conversation_id: @conversation.id)
+    scope = readable_messages.includes(:message_translations).where(conversation_id: @conversation.id)
     if created_at.present? && id.present?
       cursor_time = Time.zone.parse(created_at.to_s)
       scope = scope.where(
@@ -135,7 +224,7 @@ class ConversationsController < ApplicationController
     return Message.none if message_id.blank?
 
     if message_id.to_i.zero?
-      return readable_messages
+      return readable_messages.includes(:message_translations)
         .where(conversation_id: @conversation.id)
         .order(created_at: :asc, id: :asc)
     end
@@ -143,7 +232,7 @@ class ConversationsController < ApplicationController
     cursor = readable_messages.where(conversation_id: @conversation.id, id: message_id).pick(:created_at, :id)
     return Message.none if cursor.blank?
 
-    readable_messages
+    readable_messages.includes(:message_translations)
       .where(conversation_id: @conversation.id)
       .where(
         "messages.created_at > :created_at OR (messages.created_at = :created_at AND messages.id > :id)",
@@ -151,6 +240,11 @@ class ConversationsController < ApplicationController
         id: cursor.last
       )
       .order(created_at: :asc, id: :asc)
+  end
+
+  def set_translation_preferences
+    @preferred_conversation_language = AI::LanguageHelper.normalize_code(current_user.preferred_conversation_language).presence || "es"
+    @translation_mode = params[:translation].to_s == "translated" ? "translated" : "original"
   end
 
   def visible_guest_request_message_ids(messages)

@@ -127,6 +127,27 @@ en:
     stripe_portal: "Stripe Portal"
     email_service: "Email"
   ui:
+    language_names:
+      es: "Spanish"
+      en: "English"
+      pt: "Portuguese"
+      fr: "French"
+      tr: "Turkish"
+      de: "German"
+      it: "Italian"
+      unknown: "Unknown"
+    conversation_translation:
+      preference_label: "Preferred conversation language"
+      preference_help: "This is independent from the interface language and only changes how you read messages in the dashboard."
+      banner: "This conversation was translated from %{sources} to %{target}."
+      translating_banner: "Translating messages into %{target}…"
+      original_preserved: "The original messages sent through WhatsApp are preserved unchanged."
+      show_translated: "View translation"
+      show_original: "View original"
+      retry: "Retry translation"
+      pending: "Translating… The original is shown in the meantime."
+      failed: "Translation failed. The original message is shown."
+      translated_from: "Translated from %{source}"
     locales:
       es: "ES"
       en: "EN"

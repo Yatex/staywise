@@ -5,6 +5,7 @@
         conversation,
         before_created_at: messages.first.created_at.iso8601(6),
         before_id: messages.first.id,
+        translation: translation_mode,
         format: :turbo_stream
       ),
       class: secondary_button_class,

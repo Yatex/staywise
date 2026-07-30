@@ -252,6 +252,7 @@ module Whatsapp
         sender: "ai",
         channel: "whatsapp",
         body: body,
+        detected_language: AI::LanguageHelper.normalize_code(decision.language),
         metadata: decision.to_h.merge(
           "attachments" => attachments,
           "delivery_status" => "pending",

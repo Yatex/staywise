@@ -152,11 +152,33 @@ module ApplicationHelper
   end
 
   def language_label(value)
-    { "en" => "Inglés", "es" => "Español" }.fetch(value.to_s, "Español")
+    code = AI::LanguageHelper.normalize_code(value)
+    t("ui.language_names.#{code}", default: code.to_s.upcase.presence || t("ui.language_names.unknown"))
   end
 
   def language_options
-    [["Español", "es"], ["Inglés", "en"]]
+    [[language_label("es"), "es"], [language_label("en"), "en"]]
+  end
+
+  def conversation_message_body(message, preferred_language:, translation_mode:)
+    return message.body if translation_mode == "original"
+
+    message.translation_for(preferred_language)&.translated_body.presence || message.body
+  end
+
+  def conversation_message_translation_pending?(message, preferred_language:, translation_mode:)
+    return false if translation_mode == "original"
+
+    message.message_translations.any? do |translation|
+      translation.target_language == preferred_language && translation.status.in?(%w[pending processing])
+    end
+  end
+
+  def conversation_translation_source_labels(messages, preferred_language)
+    messages.filter_map do |message|
+      source = AI::LanguageHelper.normalize_code(message.detected_language)
+      source if source.present? && source != preferred_language
+    end.uniq.map { |language| language_label(language) }
   end
 
   def subscription_commercial_label(subscription)

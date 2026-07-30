@@ -1,9 +1,11 @@
 class User < ApplicationRecord
   ROLES = %w[owner admin member].freeze
+  CONVERSATION_LANGUAGES = %w[es en].freeze
   TERMS_VERSION = "2026-07-01".freeze
   PRIVACY_VERSION = "2026-07-01".freeze
 
   belongs_to :account
+  has_many :owner_reply_drafts, dependent: :nullify
 
   has_secure_password
   has_secure_token :email_verification_token
@@ -12,6 +14,7 @@ class User < ApplicationRecord
   validates :email, presence: true, uniqueness: true, format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :role, inclusion: { in: ROLES }
   validates :password, length: { minimum: 8 }, allow_nil: true
+  validates :preferred_conversation_language, inclusion: { in: CONVERSATION_LANGUAGES }
 
   before_validation :normalize_email
 

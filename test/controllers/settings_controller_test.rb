@@ -195,6 +195,32 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "New Owner Name", @user.reload.name
   end
 
+  test "conversation language is stored per user and is independent from interface locale" do
+    sign_in_as(@user)
+
+    patch settings_path(locale: "en"), params: {
+      section: "profile",
+      user: {
+        name: @user.name,
+        preferred_conversation_language: "es"
+      }
+    }
+
+    assert_redirected_to settings_path(section: "profile")
+    assert_equal "es", @user.reload.preferred_conversation_language
+  end
+
+  test "owner can configure each co-host conversation language independently" do
+    co_host = @account.co_hosts.create!(name: "English co-host", whatsapp_number: "+59899101012")
+    sign_in_as(@user)
+
+    patch co_host_conversation_language_path(co_host), params: { preferred_conversation_language: "en" }
+
+    assert_redirected_to settings_path(section: "whatsapp")
+    assert_equal "en", co_host.reload.preferred_conversation_language
+    assert_equal "es", @user.reload.preferred_conversation_language
+  end
+
   test "owner can change password with current password" do
     sign_in_as(@user)
 

@@ -24,6 +24,8 @@ module Whatsapp
           sent_via: "owner_whatsapp_queue", owner_phone_number: @actor.phone_number,
           actor_role: @actor.role, actor_type: @actor.type, actor_id: @actor.id,
           active_item_type: @session.active_item_type, active_item_id: @session.active_item_id,
+          owner_reply_draft_id: @session.metadata["owner_reply_draft_id"],
+          original_owner_body: OwnerReplyDraft.find_by(id: @session.metadata["owner_reply_draft_id"])&.original_body,
           delivery_status: "pending", delivery_status_updated_at: Time.current.iso8601
         }
       )

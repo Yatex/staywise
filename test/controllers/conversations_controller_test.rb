@@ -53,6 +53,105 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "queued", owner_message.metadata["delivery_status"]
   end
 
+  test "owner sends reply as written without calling the translator" do
+    Translation::ReplyDraftTranslator.stub(:call, ->(*) { flunk("translator should not be called") }) do
+      Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
+        post reply_conversation_path(@conversation), params: { reply: { body: "Mensaje exacto 1234#" } }
+      end
+    end
+
+    assert_equal "Mensaje exacto 1234#", @conversation.messages.where(sender: "owner").last.body
+    assert_equal 0, OwnerReplyDraft.where(conversation: @conversation).count
+  end
+
+  test "owner previews a translation and confirms the exact translated body" do
+    @guest.update!(language: "tr")
+    translator = lambda do |draft:|
+      draft.update!(
+        translated_body: "Çevrilmiş mesaj 1234#",
+        source_language: "es",
+        translation_provider: "test",
+        translation_status: "completed"
+      )
+      true
+    end
+
+    Translation::ReplyDraftTranslator.stub(:call, translator) do
+      post translate_reply_conversation_path(@conversation), params: { reply: { body: "Mensaje original 1234#" } }
+    end
+
+    draft = @user.owner_reply_drafts.find_by!(conversation: @conversation)
+    assert_redirected_to conversation_path(@conversation, reply_draft_id: draft.id)
+    follow_redirect!
+    assert_includes response.body, "Mensaje original 1234#"
+    assert_includes response.body, "Çevrilmiş mesaj 1234#"
+
+    Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
+      post send_reply_draft_conversation_path(@conversation),
+        params: { reply_draft_id: draft.id, version: "translated" }
+    end
+
+    owner_message = @conversation.messages.where(sender: "owner").last
+    assert_equal "Çevrilmiş mesaj 1234#", owner_message.body
+    assert_equal owner_message.body, draft.reload.sent_body
+    assert_equal "sent", draft.translation_status
+  end
+
+  test "editing the original invalidates its previous translation" do
+    draft = @user.owner_reply_drafts.create!(
+      conversation: @conversation,
+      original_body: "Original",
+      translated_body: "Translation",
+      source_language: "es",
+      target_language: "tr",
+      translation_status: "completed"
+    )
+
+    patch update_reply_draft_conversation_path(@conversation),
+      params: { reply_draft_id: draft.id, operation: "edit_original", original_body: "Changed original" }
+
+    assert_equal "Changed original", draft.reload.original_body
+    assert_nil draft.translated_body
+    assert_equal "invalidated", draft.translation_status
+  end
+
+  test "owner can edit and send the translated version" do
+    draft = @user.owner_reply_drafts.create!(
+      conversation: @conversation,
+      original_body: "Original",
+      translated_body: "First translation",
+      source_language: "es",
+      target_language: "tr",
+      translation_status: "completed"
+    )
+    patch update_reply_draft_conversation_path(@conversation),
+      params: { reply_draft_id: draft.id, operation: "edit_translation", translated_body: "Edited translation" }
+
+    Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
+      post send_reply_draft_conversation_path(@conversation),
+        params: { reply_draft_id: draft.id, version: "translated" }
+    end
+
+    assert_equal "Edited translation", @conversation.messages.where(sender: "owner").last.body
+    assert_equal "Edited translation", draft.reload.sent_body
+  end
+
+  test "translation failure preserves the owner draft and sends nothing" do
+    Translation::ReplyDraftTranslator.stub(:call, lambda { |draft:|
+      draft.update!(translation_status: "failed", error_message: "provider unavailable")
+      false
+    }) do
+      assert_no_difference -> { @conversation.messages.where(sender: "owner").count } do
+        post translate_reply_conversation_path(@conversation), params: { reply: { body: "Keep this draft" } }
+      end
+    end
+
+    draft = @user.owner_reply_drafts.find_by!(conversation: @conversation)
+    assert_equal "Keep this draft", draft.original_body
+    assert_equal "failed", draft.translation_status
+    assert_nil draft.sent_body
+  end
+
   test "show page marks conversation panels for automatic refresh" do
     get conversation_path(@conversation)
 
@@ -188,6 +287,54 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_includes @response.body, "Falló el envío por WhatsApp"
     assert_includes @response.body, "Aceptado por Twilio"
+  end
+
+  test "show defaults to translated messages and can toggle the complete conversation to originals" do
+    original = @conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "Merhaba, kapı kodu 1234#",
+      detected_language: "tr"
+    )
+    original.message_translations.find_or_initialize_by(target_language: "es").update!(
+      source_language: "tr",
+      translated_body: "Hola, el código de la puerta es 1234#",
+      provider: "ai_service",
+      model: "translation-model",
+      status: "completed"
+    )
+
+    get conversation_path(@conversation)
+
+    assert_response :success
+    assert_includes response.body, "Esta conversación contiene mensajes en turco."
+    assert_includes response.body, "Hola, el código de la puerta es 1234#"
+    assert_not_includes response.body, "Merhaba, kapı kodu 1234#"
+    assert_select "a", text: "Ver original"
+
+    get conversation_path(@conversation, translation: "original")
+
+    assert_response :success
+    assert_includes response.body, "Merhaba, kapı kodu 1234#"
+    assert_not_includes response.body, "Hola, el código de la puerta es 1234#"
+    assert_select "a", text: "Ver traducida"
+  end
+
+  test "opening a foreign conversation does not create translations automatically" do
+    original = @conversation.messages.create!(
+      sender: "guest",
+      channel: "whatsapp",
+      body: "Bonjour",
+      detected_language: "fr"
+    )
+
+    assert_no_difference -> { MessageTranslation.count } do
+      get conversation_path(@conversation)
+    end
+
+    assert_response :success
+    assert_includes response.body, "Bonjour"
+    assert_includes response.body, "Traducir al español"
   end
 
   test "show page includes real guest inbound and ai outbound messages from whatsapp flow" do

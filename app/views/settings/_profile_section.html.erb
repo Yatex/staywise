@@ -10,6 +10,14 @@
       <%= form.label :name, "Tu nombre", class: label_class %>
       <%= form.text_field :name, value: @user.name, class: field_class %>
     </div>
+    <div class="mt-5 max-w-xl">
+      <%= form.label :preferred_conversation_language, t("ui.conversation_translation.preference_label"), class: label_class %>
+      <%= form.select :preferred_conversation_language,
+        language_options,
+        { selected: @user.preferred_conversation_language },
+        class: field_class %>
+      <p class="mt-2 text-xs text-slate-500"><%= t("ui.conversation_translation.preference_help") %></p>
+    </div>
   </section>
 
   <section class="<%= card_class %> p-5">
