@@ -14,7 +14,6 @@ class Message < ApplicationRecord
 
   before_validation :set_tenant_from_conversation
   after_create_commit :update_conversation_timestamp
-  after_create_commit :record_observer_activity
 
   def translation_for(language)
     normalized = AI::LanguageHelper.normalize_code(language)
@@ -32,13 +31,6 @@ class Message < ApplicationRecord
 
   def update_conversation_timestamp
     conversation.mark_message_received!
-  end
-
-  def record_observer_activity
-    Observer::ActivityRecorder.call(message: self)
-  rescue StandardError => error
-    ErrorReporter.report(error, source: "observer_activity_recorder", severity: "error", account: account,
-      property: property, context: { conversation_id: conversation_id, message_id: id, sender: sender })
   end
 
 end

@@ -11,6 +11,7 @@ class AIDecisionLog < ApplicationRecord
   belongs_to :conversation, optional: true
   belongs_to :message, optional: true
   belongs_to :original_message, class_name: "Message", optional: true
+  belongs_to :copilot_run, optional: true
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :with_fallback, -> { where.not(fallback_reason: [nil, ""]) }

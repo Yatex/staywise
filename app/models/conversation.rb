@@ -17,7 +17,6 @@ class Conversation < ApplicationRecord
   validates :channel_participant, presence: true, uniqueness: { scope: :channel }
 
   before_validation :set_channel_participant
-  after_update_commit :record_observable_status_change, if: :saved_change_to_status?
 
   scope :recent, -> { order(last_message_at: :desc, updated_at: :desc) }
   scope :open, -> { where(status: %w[active escalated]) }
@@ -33,10 +32,4 @@ class Conversation < ApplicationRecord
     self.channel_participant = guest&.phone_number if channel_participant.blank?
   end
 
-  def record_observable_status_change
-    Observer::ActivityRecorder.call(conversation: self, direction: "system")
-  rescue StandardError => error
-    ErrorReporter.report(error, source: "observer_activity_recorder", severity: "error", account: property&.account,
-      property: property, context: { conversation_id: id, event: "status_change" })
-  end
 end

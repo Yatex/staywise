@@ -38,6 +38,9 @@ class Account < ApplicationRecord
   has_many :guest_requests, -> { requests }, class_name: "OwnerTask"
   has_many :checkout_events, dependent: :destroy
   has_many :co_hosts, dependent: :destroy
+  has_many :copilot_threads, dependent: :destroy
+  has_many :copilot_messages, dependent: :destroy
+  has_many :copilot_runs, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true
@@ -57,8 +60,6 @@ class Account < ApplicationRecord
   before_validation :assign_slug, on: :create
   before_validation :normalize_ai_configuration
   before_validation :normalize_owner_whatsapp_number
-  before_save :stamp_observer_mode_activation
-  after_update :close_observer_mode_if_disabled
 
   def active_subscription
     subscriptions.order(created_at: :desc).first
@@ -107,18 +108,6 @@ class Account < ApplicationRecord
   end
 
   private
-
-  def stamp_observer_mode_activation
-    return unless will_save_change_to_observer_mode_enabled?
-
-    self.observer_mode_activated_at = observer_mode_enabled? ? Time.current : nil
-  end
-
-  def close_observer_mode_if_disabled
-    return unless saved_change_to_observer_mode_enabled? && !observer_mode_enabled?
-
-    conversation_observer_activities.unseen.update_all(observer_seen_at: Time.current, unread_activity_count: 0, updated_at: Time.current)
-  end
 
   def normalize_ai_configuration
     self.ai_escalation_rules = DEFAULT_ESCALATION_RULES.merge((ai_escalation_rules || {}).deep_stringify_keys)

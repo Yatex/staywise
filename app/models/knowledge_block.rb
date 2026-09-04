@@ -1,4 +1,5 @@
 class KnowledgeBlock < ApplicationRecord
+  YOUTUBE_HOSTS = %w[youtube.com www.youtube.com m.youtube.com youtu.be].freeze
   CATEGORIES = %w[
     check_in
     checkout
@@ -18,7 +19,22 @@ class KnowledgeBlock < ApplicationRecord
   validates :title, :content, presence: true
   validates :category, inclusion: { in: CATEGORIES }
   validates :status, inclusion: { in: STATUSES }
-  validates :youtube_url, format: { with: /\Ahttps?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i, message: "debe ser un link de YouTube válido" }, allow_blank: true
+  validate :youtube_url_is_safe
 
   scope :active, -> { where(status: "active") }
+
+  private
+
+  def youtube_url_is_safe
+    return if youtube_url.blank?
+
+    uri = URI.parse(youtube_url)
+    valid = uri.is_a?(URI::HTTPS) &&
+      uri.userinfo.nil? &&
+      uri.port == 443 &&
+      YOUTUBE_HOSTS.include?(uri.host.to_s.downcase)
+    errors.add(:youtube_url, "debe ser un link HTTPS de YouTube válido") unless valid
+  rescue URI::InvalidURIError
+    errors.add(:youtube_url, "debe ser un link HTTPS de YouTube válido")
+  end
 end

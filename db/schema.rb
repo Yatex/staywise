@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -79,8 +79,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.string "fallback_reason"
     t.string "final_outcome"
     t.string "provider_delivery_status"
+    t.bigint "copilot_run_id"
     t.index ["account_id"], name: "index_ai_decision_logs_on_account_id"
     t.index ["conversation_id"], name: "index_ai_decision_logs_on_conversation_id"
+    t.index ["copilot_run_id"], name: "index_ai_decision_logs_on_copilot_run_id"
     t.index ["fallback_reason", "created_at"], name: "index_ai_decision_logs_on_fallback_reason_and_created_at"
     t.index ["final_outcome", "created_at"], name: "index_ai_decision_logs_on_final_outcome_and_created_at"
     t.index ["guest_id"], name: "index_ai_decision_logs_on_guest_id"
@@ -125,7 +127,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.index ["property_id"], name: "index_alerts_on_property_id"
     t.index ["response_delivery_state"], name: "index_alerts_on_response_delivery_state"
     t.index ["source_owner_message_sid"], name: "index_alerts_on_source_owner_message_sid_unique", unique: true, where: "(source_owner_message_sid IS NOT NULL)"
-    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying, 'sending'::character varying, 'responded'::character varying, 'failed'::character varying]::text[])", name: "alerts_response_delivery_state_check"
+    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying::text, 'sending'::character varying::text, 'responded'::character varying::text, 'failed'::character varying::text])", name: "alerts_response_delivery_state_check"
   end
 
   create_table "billing_events", force: :cascade do |t|
@@ -216,6 +218,75 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.index ["property_id"], name: "index_conversations_on_property_id"
   end
 
+  create_table "copilot_messages", force: :cascade do |t|
+    t.bigint "copilot_thread_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "property_id", null: false
+    t.bigint "user_id", null: false
+    t.string "role", null: false
+    t.text "content", null: false
+    t.text "host_context"
+    t.jsonb "structured_content", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_copilot_messages_on_account_id"
+    t.index ["copilot_thread_id", "created_at"], name: "index_copilot_messages_on_copilot_thread_id_and_created_at"
+    t.index ["copilot_thread_id"], name: "index_copilot_messages_on_copilot_thread_id"
+    t.index ["property_id"], name: "index_copilot_messages_on_property_id"
+    t.index ["user_id"], name: "index_copilot_messages_on_user_id"
+    t.check_constraint "role::text = ANY (ARRAY['host'::character varying::text, 'assistant'::character varying::text])", name: "copilot_messages_role_check"
+  end
+
+  create_table "copilot_runs", force: :cascade do |t|
+    t.bigint "copilot_thread_id", null: false
+    t.bigint "copilot_message_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "property_id", null: false
+    t.bigint "user_id", null: false
+    t.string "status", default: "pending", null: false
+    t.string "detected_language"
+    t.text "guest_question_es"
+    t.text "answer_summary_es"
+    t.text "guest_reply"
+    t.integer "confidence"
+    t.boolean "missing_information", default: false, null: false
+    t.jsonb "evidence_refs", default: [], null: false
+    t.jsonb "tool_calls", default: [], null: false
+    t.string "error_type"
+    t.text "error_message"
+    t.string "correlation_id"
+    t.integer "latency_ms"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.text "clarifying_question_es"
+    t.text "clarifying_question_guest"
+    t.index ["account_id"], name: "index_copilot_runs_on_account_id"
+    t.index ["copilot_message_id"], name: "index_copilot_runs_on_copilot_message_id"
+    t.index ["copilot_thread_id", "created_at"], name: "index_copilot_runs_on_copilot_thread_id_and_created_at"
+    t.index ["copilot_thread_id"], name: "index_copilot_runs_on_copilot_thread_id"
+    t.index ["correlation_id"], name: "index_copilot_runs_on_correlation_id"
+    t.index ["property_id"], name: "index_copilot_runs_on_property_id"
+    t.index ["user_id"], name: "index_copilot_runs_on_user_id"
+    t.check_constraint "confidence IS NULL OR confidence >= 0 AND confidence <= 100", name: "copilot_runs_confidence_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text])", name: "copilot_runs_status_check"
+  end
+
+  create_table "copilot_threads", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "property_id", null: false
+    t.bigint "user_id", null: false
+    t.string "status", default: "active", null: false
+    t.string "title"
+    t.datetime "last_message_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id", "last_message_at"], name: "index_copilot_threads_for_user"
+    t.index ["account_id"], name: "index_copilot_threads_on_account_id"
+    t.index ["property_id"], name: "index_copilot_threads_on_property_id"
+    t.index ["user_id"], name: "index_copilot_threads_on_user_id"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'archived'::character varying::text])", name: "copilot_threads_status_check"
+  end
+
   create_table "faqs", force: :cascade do |t|
     t.bigint "property_id", null: false
     t.string "question", null: false
@@ -283,8 +354,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.index ["property_id"], name: "index_guest_requests_on_property_id"
     t.index ["response_delivery_state"], name: "index_guest_requests_on_response_delivery_state"
     t.index ["source_owner_message_sid"], name: "index_guest_requests_on_source_owner_message_sid_unique", unique: true, where: "(source_owner_message_sid IS NOT NULL)"
-    t.check_constraint "kind::text = ANY (ARRAY['request'::character varying, 'inquiry'::character varying]::text[])", name: "guest_requests_kind_check"
-    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying, 'sending'::character varying, 'responded'::character varying, 'failed'::character varying]::text[])", name: "guest_requests_response_delivery_state_check"
+    t.check_constraint "kind::text = ANY (ARRAY['request'::character varying::text, 'inquiry'::character varying::text])", name: "guest_requests_kind_check"
+    t.check_constraint "response_delivery_state::text = ANY (ARRAY['pending'::character varying::text, 'sending'::character varying::text, 'responded'::character varying::text, 'failed'::character varying::text])", name: "guest_requests_response_delivery_state_check"
   end
 
   create_table "guests", force: :cascade do |t|
@@ -330,7 +401,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.datetime "updated_at", null: false
     t.index ["message_id", "target_language"], name: "index_message_translations_on_message_id_and_target_language", unique: true
     t.index ["message_id"], name: "index_message_translations_on_message_id"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying]::text[])", name: "message_translations_status_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text])", name: "message_translations_status_check"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -414,13 +485,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
     t.bigint "co_host_id"
     t.string "participant_phone", null: false
     t.string "actor_role", default: "owner", null: false
-    t.index ["account_id", "participant_phone"], name: "index_one_active_host_session_per_participant", unique: true, where: "((state)::text = ANY ((ARRAY['menu'::character varying, 'viewing_item'::character varying, 'awaiting_reply_text'::character varying, 'awaiting_send_confirmation'::character varying, 'sending_guest_message'::character varying, 'awaiting_learning_confirmation'::character varying, 'loading_next_case'::character varying])::text[]))"
+    t.index ["account_id", "participant_phone"], name: "index_one_active_host_session_per_participant", unique: true, where: "((state)::text = ANY (ARRAY[('menu'::character varying)::text, ('viewing_item'::character varying)::text, ('awaiting_reply_text'::character varying)::text, ('awaiting_send_confirmation'::character varying)::text, ('sending_guest_message'::character varying)::text, ('awaiting_learning_confirmation'::character varying)::text, ('loading_next_case'::character varying)::text]))"
     t.index ["account_id", "state"], name: "index_owner_whatsapp_sessions_on_account_id_and_state"
     t.index ["account_id"], name: "index_owner_whatsapp_sessions_on_account_id"
     t.index ["active_item_type", "active_item_id"], name: "index_owner_sessions_on_active_item"
     t.index ["alert_id"], name: "index_owner_whatsapp_sessions_on_alert_id", unique: true
     t.index ["co_host_id"], name: "index_owner_whatsapp_sessions_on_co_host_id"
-    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying, 'co_host'::character varying]::text[])", name: "owner_sessions_actor_role_check"
+    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying::text, 'co_host'::character varying::text])", name: "owner_sessions_actor_role_check"
   end
 
   create_table "properties", force: :cascade do |t|
@@ -531,6 +602,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
 
   add_foreign_key "ai_decision_logs", "accounts"
   add_foreign_key "ai_decision_logs", "conversations"
+  add_foreign_key "ai_decision_logs", "copilot_runs"
   add_foreign_key "ai_decision_logs", "guests"
   add_foreign_key "ai_decision_logs", "messages"
   add_foreign_key "ai_decision_logs", "messages", column: "original_message_id"
@@ -552,6 +624,18 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_28_121000) do
   add_foreign_key "conversation_observer_activities", "properties"
   add_foreign_key "conversations", "guests"
   add_foreign_key "conversations", "properties"
+  add_foreign_key "copilot_messages", "accounts"
+  add_foreign_key "copilot_messages", "copilot_threads"
+  add_foreign_key "copilot_messages", "properties"
+  add_foreign_key "copilot_messages", "users"
+  add_foreign_key "copilot_runs", "accounts"
+  add_foreign_key "copilot_runs", "copilot_messages"
+  add_foreign_key "copilot_runs", "copilot_threads"
+  add_foreign_key "copilot_runs", "properties"
+  add_foreign_key "copilot_runs", "users"
+  add_foreign_key "copilot_threads", "accounts"
+  add_foreign_key "copilot_threads", "properties"
+  add_foreign_key "copilot_threads", "users"
   add_foreign_key "faqs", "alerts", column: "source_alert_id"
   add_foreign_key "faqs", "messages", column: "source_message_id"
   add_foreign_key "faqs", "properties"

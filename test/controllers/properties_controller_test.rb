@@ -134,8 +134,8 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "article", text: /Existing host property.*Maria/m do
       assert_select "a", text: "Abrir", count: 1
-      assert_select "button[data-action='clipboard#copyText']", text: "Copiar link", count: 1
-      assert_select "a", text: "Descargar QR", count: 1
+      assert_select "button[data-action='clipboard#copyText']", count: 0
+      assert_select "a", text: "Descargar QR", count: 0
       assert_select "button", text: "Copiar QR", count: 0
       assert_select "p", text: /\+59899112233/, count: 0
     end

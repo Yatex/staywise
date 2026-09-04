@@ -1,7 +1,7 @@
 # syntax = docker/dockerfile:1
 
-# Production uses a newer patchline so RubyGems can resolve modern native gems.
-ARG RUBY_VERSION=3.2.2
+# Supported production runtime.
+ARG RUBY_VERSION=3.4.10
 FROM registry.docker.com/library/ruby:$RUBY_VERSION-slim as base
 
 # Rails app lives here
@@ -34,7 +34,7 @@ COPY . .
 # Precompile bootsnap code for faster boot times
 RUN bundle exec bootsnap precompile app/ lib/
 
-# Precompiling assets for production without requiring secret RAILS_MASTER_KEY
+# Precompile without copying production credentials into an image layer.
 RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 
 

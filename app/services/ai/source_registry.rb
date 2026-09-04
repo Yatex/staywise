@@ -62,12 +62,15 @@ module AI
       "dryer" => %w[secadora dryer]
     }.freeze
 
-    def initialize(conversation:, guest_message: nil)
+    def initialize(conversation: nil, property: nil, guest: nil, guest_message: nil, sensitive_access_authorized: nil)
       @conversation = conversation
-      @property = conversation.property
-      @guest = conversation.guest
-      @guest_message = guest_message || conversation.messages.where(sender: "guest").order(created_at: :desc).first
+      @property = property || conversation&.property
+      @guest = guest || conversation&.guest
+      raise ArgumentError, "property is required" unless @property
+
+      @guest_message = guest_message || conversation&.messages&.where(sender: "guest")&.order(created_at: :desc)&.first
       @authorization = ReservationAuthorization.new(guest: @guest, property: @property)
+      @sensitive_access_override = sensitive_access_authorized
     end
 
     def guest_context(query: nil)
@@ -79,11 +82,11 @@ module AI
         },
         reservation: {
           status: @authorization.reservation_status,
-          check_in_date: @guest.check_in_date&.iso8601,
-          check_out_date: @guest.checkout_date&.iso8601,
+          check_in_date: @guest&.check_in_date&.iso8601,
+          check_out_date: @guest&.checkout_date&.iso8601,
           check_in_time: @property.check_in_time,
           check_out_time: @property.checkout_time,
-          guest_is_authorized_for_access: @authorization.sensitive_access_authorized?
+          guest_is_authorized_for_access: sensitive_access_authorized?
         },
         public_facts: SAFE_PROPERTY_FACTS.keys.filter_map { |field| property_fact(field) },
         authorized_access_facts: authorized_sensitive_facts.values,
@@ -94,8 +97,8 @@ module AI
         available_capabilities: {
           can_request_early_checkin: true,
           can_request_late_checkout: true,
-          can_view_access_instructions: @authorization.sensitive_access_authorized?,
-          can_view_wifi: @authorization.sensitive_access_authorized?
+          can_view_access_instructions: sensitive_access_authorized?,
+          can_view_wifi: sensitive_access_authorized?
         },
         evidence: context_evidence
       }
@@ -106,7 +109,7 @@ module AI
       matched_sources = property_brain_sources(query: query, limit: limit)
 
       {
-        guest_authorized: @authorization.sensitive_access_authorized?,
+        guest_authorized: sensitive_access_authorized?,
         property: {
           id: @property.public_token,
           name: @property.display_name,
@@ -115,8 +118,8 @@ module AI
         },
         stay: {
           status: @authorization.reservation_status,
-          check_in_date: @guest.check_in_date&.iso8601,
-          check_out_date: @guest.checkout_date&.iso8601,
+          check_in_date: @guest&.check_in_date&.iso8601,
+          check_out_date: @guest&.checkout_date&.iso8601,
           check_in_time: @property.check_in_time,
           check_out_time: @property.checkout_time
         },
@@ -127,7 +130,7 @@ module AI
     end
 
     def sensitive_access_info(guest_message: nil)
-      unless @authorization.sensitive_access_authorized?
+      unless sensitive_access_authorized?
         return {
           authorized: false,
           reason: "guest_not_authorized",
@@ -145,7 +148,7 @@ module AI
       source_id = "property_fact:#{field}"
       attribute = SAFE_PROPERTY_FACTS[field.to_s] || SENSITIVE_PROPERTY_FACTS[field.to_s]
       return unless attribute
-      return if SENSITIVE_PROPERTY_FACTS.key?(field.to_s) && !@authorization.sensitive_access_authorized?
+      return if SENSITIVE_PROPERTY_FACTS.key?(field.to_s) && !sensitive_access_authorized?
 
       value = @property.public_send(attribute).presence
       return if value.blank?
@@ -157,7 +160,7 @@ module AI
       value =
         case field.to_s
         when "reservation_dates"
-          [@guest.check_in_date, @guest.checkout_date].compact.join(" to ")
+          [@guest&.check_in_date, @guest&.checkout_date].compact.join(" to ")
         when "reservation_status"
           @authorization.reservation_status
         end
@@ -249,7 +252,7 @@ module AI
     end
 
     def structured_sensitive_source_for(kind)
-      return unless @authorization.sensitive_access_authorized?
+      return unless sensitive_access_authorized?
       return unless PropertySensitiveDatum::KINDS.include?(kind.to_s)
 
       structured_sensitive_sources.find { |source| source["field"] == kind.to_s }
@@ -367,7 +370,7 @@ module AI
           "reservation_status" => reservation_fact("reservation_status"),
           "reservation_dates" => reservation_fact("reservation_dates")
         }.compact,
-        sensitive_access_authorized: @authorization.sensitive_access_authorized?,
+        sensitive_access_authorized: sensitive_access_authorized?,
         sensitive_property_facts: authorized_sensitive_facts,
         faqs: @property.faqs.active.order(:category, :question).map { |faq| faq_source(faq) },
         knowledge_blocks: @property.knowledge_blocks.active.order(:category, :title).map { |block| knowledge_source(block) },
@@ -404,7 +407,7 @@ module AI
     end
 
     def access_instructions
-      return { denied: true, reason: "Sensitive access is not authorized for this guest/reservation window." } unless @authorization.sensitive_access_authorized?
+      return { denied: true, reason: "Sensitive access is not authorized." } unless sensitive_access_authorized?
 
       authorized_sensitive_facts.values
     end
@@ -414,6 +417,12 @@ module AI
     end
 
     private
+
+    def sensitive_access_authorized?
+      return @sensitive_access_override unless @sensitive_access_override.nil?
+
+      @authorization.sensitive_access_authorized?
+    end
 
     def attachment_url_for(source, type)
       candidates = case type
@@ -595,7 +604,7 @@ module AI
     end
 
     def authorized_sensitive_facts
-      return {} unless @authorization.sensitive_access_authorized?
+      return {} unless sensitive_access_authorized?
 
       SENSITIVE_PROPERTY_FACTS.keys.index_with { |field| property_fact(field) }.compact
     end

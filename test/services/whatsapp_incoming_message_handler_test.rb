@@ -1179,6 +1179,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "new alert sends owner notification without opening an active reply session" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     previous_template_sid = ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"]
     ENV["TWILIO_OWNER_ESCALATION_TEMPLATE_SID"] = nil
     @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
@@ -1208,6 +1210,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner can list select and answer an alert by whatsapp" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     @account.update!(owner_whatsapp_number: "+15559990000", owner_whatsapp_escalations_enabled: true)
     provider = RecordingProvider.new
 
@@ -1278,6 +1282,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner answer to missing sensitive information stores encrypted datum instead of faq" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     owner_phone = "+15559990007"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000128", property: @property)
@@ -1322,6 +1328,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner whatsapp translates guest question to owner language and owner answer back to guest language" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     @account.update!(
       ai_preferred_language: "es",
       owner_whatsapp_number: "+15559990003",
@@ -1393,6 +1401,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner answer creates pending faq suggestion that becomes usable after approval" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     @account.update!(owner_whatsapp_number: "+15559990007", owner_whatsapp_escalations_enabled: true)
     provider = RecordingProvider.new
 
@@ -1448,6 +1458,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner whatsapp lists multiple alerts and only answers the selected one" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     @account.update!(owner_whatsapp_number: "+15559990001", owner_whatsapp_escalations_enabled: true)
     property_two = @account.properties.create!(name: "Second Apartment")
     guest_one = @account.guests.create!(phone_number: "+15550000101", property: @property)
@@ -1507,6 +1519,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner whatsapp numeric selection requires an open alert from the inbox" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     @account.update!(owner_whatsapp_number: "+15559990006", owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000123", property: @property)
     conversation = guest.conversations.create!(property: @property, status: "escalated")
@@ -1544,6 +1558,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner whatsapp inbox lists alerts across accounts when the same owner phone is reused" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     owner_phone = "+15559990002"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     other_account = Account.create!(name: "Other Owner Account", owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
@@ -1579,6 +1595,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner analytics only runs with explicit ayla trigger while an alert is selected" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     owner_phone = "+15559990004"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000121", property: @property)
@@ -1631,6 +1649,8 @@ class WhatsappIncomingMessageHandlerTest < ActiveSupport::TestCase
   end
 
   test "owner assistant can list pending alerts with explicit trigger" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
+
     owner_phone = "+15559990005"
     @account.update!(owner_whatsapp_number: owner_phone, owner_whatsapp_escalations_enabled: true)
     guest = @account.guests.create!(phone_number: "+15550000122", property: @property)

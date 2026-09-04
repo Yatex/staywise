@@ -1,5 +1,8 @@
 class SessionsController < ApplicationController
   skip_before_action :require_authentication
+  rate_limit to: 10, within: 3.minutes, only: :create,
+    by: -> { [request.remote_ip, params[:email].to_s.downcase.strip].join(":") },
+    with: -> { render plain: "Demasiados intentos. Probá nuevamente en unos minutos.", status: :too_many_requests }
 
   def new
   end

@@ -13,6 +13,10 @@ Rails.application.routes.draw do
 
   get "dashboard", to: "dashboard#index"
 
+  resources :copilot_threads, path: "copilot", only: [:index, :new, :create, :show] do
+    resources :messages, controller: "copilot_messages", only: :create
+  end
+
   namespace :admin do
     root to: redirect("/admin/users")
     resources :users, only: [:index] do
@@ -75,7 +79,6 @@ Rails.application.routes.draw do
   resource :settings, only: [:show, :update]
   patch "settings/co_hosts/:id/observer_mode", to: "settings#update_co_host_observer_mode", as: :co_host_observer_mode
   patch "settings/co_hosts/:id/conversation_language", to: "settings#update_co_host_conversation_language", as: :co_host_conversation_language
-
   namespace :webhooks do
     post :whatsapp, to: "whatsapp#create"
     post :whatsapp_status, to: "whatsapp_status#create"
@@ -94,6 +97,16 @@ Rails.application.routes.draw do
         post :access_instructions
         post :property_policy
         post :escalation_draft
+      end
+      scope "copilot_tools", controller: :copilot_tools do
+        post :property_brain
+        post :sensitive_access_info
+        post :guest_context
+        post :stay_facts
+        post :search_property_knowledge
+        post :approved_recommendations
+        post :access_instructions
+        post :property_policy
       end
     end
   end

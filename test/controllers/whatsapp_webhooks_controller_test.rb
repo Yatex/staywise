@@ -28,24 +28,29 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, Conversation.count
   end
 
-  test "accepts webhook without twilio signature when provider is not twilio" do
+  test "guest inbound is acknowledged but cannot create conversations, effects or replies" do
     ENV["WHATSAPP_PROVIDER"] = "null"
     ENV["TWILIO_AUTH_TOKEN"] = nil
 
-    post webhooks_whatsapp_path, params: whatsapp_payload
+    assert_no_difference ["Conversation.count", "Message.count", "OwnerTask.count", "Alert.count"] do
+      post webhooks_whatsapp_path, params: whatsapp_payload
+    end
 
     assert_response :success
-    assert_equal 1, Conversation.count
+    assert_equal true, response.parsed_body["ignored"]
+    assert_equal false, response.parsed_body["replied"]
+    assert_equal "guest_whatsapp_channel_retired", response.parsed_body["error"]
+    assert_equal "external", response.parsed_body["channel"]
   end
 
-  test "asks for property qr when webhook has no property context" do
+  test "property tokens no longer reactivate the retired guest channel" do
     ENV["WHATSAPP_PROVIDER"] = "null"
     ENV["TWILIO_AUTH_TOKEN"] = nil
 
     post webhooks_whatsapp_path, params: whatsapp_payload(body: "Can I get late checkout?")
 
     assert_response :success
-    assert_equal "missing_property_context", response.parsed_body["error"]
+    assert_equal "guest_whatsapp_channel_retired", response.parsed_body["error"]
     assert_nil response.parsed_body["conversation_id"]
     assert_equal 0, Conversation.count
   end
@@ -66,10 +71,10 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal true, response.parsed_body["ok"]
     assert_equal true, response.parsed_body["ignored"]
-    assert_equal "empty_or_unsupported_message", response.parsed_body["error"]
+    assert_equal "guest_whatsapp_channel_retired", response.parsed_body["error"]
   end
 
-  test "acknowledges a repeated guest MessageSid without processing the message twice" do
+  test "repeated guest MessageSid remains side effect free" do
     ENV["WHATSAPP_PROVIDER"] = "null"
     ENV["TWILIO_AUTH_TOKEN"] = nil
     payload = whatsapp_payload.merge("MessageSid" => "SM_REPEATED_GUEST")
@@ -82,8 +87,22 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_equal true, response.parsed_body["duplicate"]
-    assert_equal 1, Message.where("metadata ->> 'MessageSid' = ?", "SM_REPEATED_GUEST").count
+    assert_equal true, response.parsed_body["ignored"]
+    assert_equal 0, Message.where("metadata ->> 'MessageSid' = ?", "SM_REPEATED_GUEST").count
+  end
+
+  test "host inbound is classified separately but does not enter the legacy owner workflow" do
+    ENV["WHATSAPP_PROVIDER"] = "null"
+    @account.update!(owner_whatsapp_number: "+15550000008")
+
+    assert_no_difference ["OwnerWhatsappSession.count", "CopilotThread.count", "Message.count"] do
+      post webhooks_whatsapp_path, params: whatsapp_payload(body: "Necesito ayuda con una respuesta")
+    end
+
+    assert_response :success
+    assert_equal "host", response.parsed_body["channel"]
+    assert_equal "host_whatsapp_copilot_not_enabled", response.parsed_body["error"]
+    assert_equal false, response.parsed_body["replied"]
   end
 
   private

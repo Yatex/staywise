@@ -23,6 +23,7 @@ import { applyOperationalEmergencyGuardrail } from "./operational-emergency-clas
 import { PropertyImportSchema, PROPERTY_IMPORT_SYSTEM_PROMPT } from "./property-import-schema.js";
 import { classifyConversationalOnly, shouldBypassModelForConversational } from "./conversational-classifier.js";
 import { captureSafeException, withSentryRequestContext } from "./sentry.js";
+import { runCopilot } from "./copilot-runner.js";
 
 const TranslationSchema = z.object({
   translated_text: z.string(),
@@ -90,13 +91,21 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || !["/decide", "/property_import", "/translate", "/translate/messages"].includes(request.url || "")) {
+  if (request.method !== "POST" || !["/decide", "/copilot", "/property_import", "/translate", "/translate/messages"].includes(request.url || "")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
 
   if (!authorized(request)) {
     sendJson(response, 401, { error: "Unauthorized" });
+    return;
+  }
+
+  if (request.url === "/decide") {
+    sendJson(response, 410, {
+      error: "legacy_decision_endpoint_retired",
+      message: "Use the authenticated host Copilot endpoint.",
+    });
     return;
   }
 
@@ -123,6 +132,10 @@ const server = createServer(async (request, response) => {
     }
     if (request.url === "/translate/messages") {
       await handleTranslateMessages(payload, response, generateObjectTrace);
+      return;
+    }
+    if (request.url === "/copilot") {
+      await handleCopilot(payload, response, toolTrace, generateObjectTrace, requestDeadlineAt);
       return;
     }
 
@@ -325,6 +338,87 @@ function gatewayConfigured() {
       process.env.VERCEL_OIDC_TOKEN ||
       process.env.VERCEL,
   );
+}
+
+async function handleCopilot(
+  payload: any,
+  response: ServerResponse,
+  toolTrace: any[],
+  generateObjectTrace: any[],
+  deadlineAt: number | null,
+) {
+  if (!gatewayConfigured()) {
+    sendJson(response, 503, { error: "ai_gateway_not_configured", audit: { tool_calls: toolTrace } });
+    return;
+  }
+
+  const endpoint = resolveRailsToolEndpoint(payload?.tool_endpoint);
+  const message = String(payload?.guest_message || "").trim();
+  if (!message || !endpoint.base_url || !endpoint.decision_context_id) {
+    sendJson(response, 422, { error: "invalid_copilot_request", audit: { tool_calls: toolTrace } });
+    return;
+  }
+
+  const callTool = async (toolName: string, input: Record<string, unknown>) => {
+    const startedAt = Date.now();
+    try {
+      const result = await callRailsTool(endpoint, toolName, input, { deadlineAt });
+      toolTrace.push({ tool_name: toolName, input, result, latency_ms: Date.now() - startedAt });
+      return result;
+    } catch (error: any) {
+      toolTrace.push({ tool_name: toolName, input, error: error?.message || "tool_error", latency_ms: Date.now() - startedAt });
+      throw error;
+    }
+  };
+
+  const generationStartedAt = Date.now();
+  const generationTrace: any = {
+    schema_name: "AylaCopilotResponse",
+    model: gatewayModelId(),
+    started_at: new Date().toISOString(),
+    ok: false,
+  };
+  generateObjectTrace.push(generationTrace);
+
+  let result;
+  try {
+    result = await runCopilot({
+      model: gatewayModel(),
+      payload: {
+        property: payload?.property,
+        guest_message: message,
+        host_context: payload?.host_context || null,
+        thread_history: Array.isArray(payload?.thread_history) ? payload.thread_history.slice(-12) : [],
+      },
+      callTool,
+      abortSignal: deadlineAbortSignal(deadlineAt),
+    });
+    Object.assign(generationTrace, {
+      ok: true,
+      latency_ms: Date.now() - generationStartedAt,
+      steps: result.steps?.length || 0,
+      usage: sanitizeGenerateObjectValue(result.usage),
+      object_keys: Object.keys(result.output),
+      parsed_object_preview: sanitizeGenerateObjectValue(result.output),
+    });
+  } catch (error: any) {
+    Object.assign(generationTrace, {
+      latency_ms: Date.now() - generationStartedAt,
+      error_class: error?.constructor?.name || "Error",
+      error_message: String(error?.message || "copilot_generation_failed").slice(0, 500),
+    });
+    throw error;
+  }
+
+  sendJson(response, 200, {
+    ...(result.output as Record<string, unknown>),
+    audit: {
+      model: gatewayModelId(),
+      tool_calls: toolTrace,
+      generate_object_trace: generateObjectTrace,
+      token_usage: result.usage,
+    },
+  });
 }
 
 async function tracedGenerateObject(options: any, trace: any[]) {

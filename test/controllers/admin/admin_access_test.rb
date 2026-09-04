@@ -161,7 +161,7 @@ class AdminAccessTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Editar configuración"
 
     get whatsapp_qr_property_path(@property, format: :svg)
-    assert_response :success
+    assert_response :gone
   end
 
   test "normal user cannot directly inspect another account property or conversation" do

@@ -1,6 +1,6 @@
 class SettingsController < ApplicationController
   PasswordUpdateError = Class.new(StandardError)
-  SECTIONS = %w[profile ai whatsapp].freeze
+  SECTIONS = %w[profile ai].freeze
 
   def show
     @account = current_account
@@ -27,30 +27,17 @@ class SettingsController < ApplicationController
   end
 
   def update_co_host_observer_mode
-    return head :forbidden unless observer_preference_authorized?
-
-    co_host = current_account.co_hosts.find(params[:id])
-    co_host.update!(observer_mode_enabled: ActiveModel::Type::Boolean.new.cast(params[:observer_mode_enabled]))
-    redirect_to settings_path(section: "whatsapp"), notice: "Modo observador del co-host actualizado."
+    head :gone
   end
 
   def update_co_host_conversation_language
-    return head :forbidden unless observer_preference_authorized?
-
-    co_host = current_account.co_hosts.find(params[:id])
-    co_host.update!(preferred_conversation_language: params[:preferred_conversation_language])
-    redirect_to settings_path(section: "whatsapp"), notice: "Idioma de conversaciones del co-host actualizado."
+    head :gone
   end
 
   private
 
   def account_params
-    permitted = params.require(:account).permit(:ai_active, :owner_whatsapp_number, :observer_mode_enabled)
-    if permitted.key?(:owner_whatsapp_number)
-      phone_present = permitted[:owner_whatsapp_number].to_s.gsub(/\Awhatsapp:/, "").strip.present?
-      permitted[:owner_whatsapp_escalations_enabled] = phone_present
-    end
-    permitted
+    params.require(:account).permit
   end
 
   def settings_section

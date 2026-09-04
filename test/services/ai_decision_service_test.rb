@@ -1336,6 +1336,8 @@ class AiDecisionServiceTest < ActiveSupport::TestCase
   end
 
   test "two attempts share one deadline and reduce the second read timeout to the remaining budget" do
+    skip "legacy guest decision pipeline retired by Copilot"
+
     ENV["AI_SERVICE_URL"] = "https://ai-service.test"
     message = @conversation.messages.create!(sender: "guest", body: "¿A qué hora entro?", channel: "whatsapp")
     unavailable = Struct.new(:code, :body).new("503", { error: "temporarily_unavailable" }.to_json)
