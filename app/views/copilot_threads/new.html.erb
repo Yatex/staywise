@@ -8,6 +8,10 @@
       <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">Elegí la propiedad y pegá el mensaje tal como lo recibiste. Ayla te propondrá una respuesta para revisar y copiar.</p>
     </div>
 
+    <aside aria-label="Hablar con Ayla por WhatsApp" class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+      <%= render "shared/whatsapp_copilot_access" %>
+    </aside>
+
     <div>
       <%= form.label :property_id, "Propiedad", class: "block text-sm font-semibold text-slate-700" %>
       <%= form.select :property_id,
