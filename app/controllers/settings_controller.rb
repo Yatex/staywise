@@ -35,6 +35,16 @@ class SettingsController < ApplicationController
     head :gone
   end
 
+  def whatsapp_copilot_qr
+    return head :not_found if Whatsapp::HostCopilotDeepLink.call.blank?
+
+    expires_in 1.hour, public: false
+    send_data Whatsapp::HostCopilotQrCode.svg,
+      type: "image/svg+xml",
+      disposition: "inline",
+      filename: "ayla-whatsapp-copilot.svg"
+  end
+
   private
 
   def account_params

@@ -77,6 +77,7 @@ Rails.application.routes.draw do
   end
 
   resource :settings, only: [:show, :update]
+  get "settings/whatsapp_copilot_qr", to: "settings#whatsapp_copilot_qr", as: :whatsapp_copilot_qr_settings
   patch "settings/co_hosts/:id/observer_mode", to: "settings#update_co_host_observer_mode", as: :co_host_observer_mode
   patch "settings/co_hosts/:id/conversation_language", to: "settings#update_co_host_conversation_language", as: :co_host_conversation_language
   namespace :webhooks do

@@ -146,6 +146,21 @@ class CopilotThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Copiar pregunta"
   end
 
+  test "conversation shows a WhatsApp link and QR to contact Ayla" do
+    thread = @user.copilot_threads.create!(account: @account, property: @property)
+
+    Whatsapp::HostCopilotDeepLink.stub(:call, "https://wa.me/15550009999?text=Hola%20Ayla") do
+      Whatsapp::HostCopilotDeepLink.stub(:display_number, "+15550009999") do
+        get copilot_thread_path(thread)
+      end
+    end
+
+    assert_response :success
+    assert_select "aside[aria-label='Hablar con Ayla por WhatsApp']"
+    assert_select "a[href^='https://wa.me/15550009999']", text: "Abrir WhatsApp"
+    assert_select "img[src='#{whatsapp_copilot_qr_settings_path}']"
+  end
+
   private
 
   def response_payload

@@ -10,6 +10,10 @@
     <p class="max-w-sm text-sm text-slate-500 sm:text-right">Ayla prepara el texto para que vos lo revises y copies. Nada se envía automáticamente.</p>
   </header>
 
+  <aside class="mb-7 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 sm:p-5" aria-label="Hablar con Ayla por WhatsApp">
+    <%= render "shared/whatsapp_copilot_access" %>
+  </aside>
+
   <section class="space-y-7" aria-label="Conversación con Ayla">
     <% @messages.each_with_index do |message, index| %>
       <% if message.role == "host" %>

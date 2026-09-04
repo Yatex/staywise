@@ -73,6 +73,36 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "New Owner Name", @user.reload.name
   end
 
+  test "settings shows the official WhatsApp link and QR" do
+    sign_in_as(@user)
+
+    Whatsapp::HostCopilotDeepLink.stub(:call, "https://wa.me/15550009999?text=Hola%20Ayla") do
+      Whatsapp::HostCopilotDeepLink.stub(:display_number, "+15550009999") do
+        get settings_path
+      end
+    end
+
+    assert_response :success
+    assert_select "a[href^='https://wa.me/15550009999']", text: "Abrir WhatsApp"
+    assert_select "img[src='#{whatsapp_copilot_qr_settings_path}'][alt='QR para hablar con Ayla por WhatsApp']"
+    assert_includes response.body, "+15550009999"
+  end
+
+  test "authenticated user can load the WhatsApp Copilot QR" do
+    sign_in_as(@user)
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+
+    Whatsapp::HostCopilotDeepLink.stub(:call, "https://wa.me/15550009999?text=Hola%20Ayla") do
+      Whatsapp::HostCopilotQrCode.stub(:svg, svg) do
+        get whatsapp_copilot_qr_settings_path
+      end
+    end
+
+    assert_response :success
+    assert_equal "image/svg+xml", response.media_type
+    assert_equal svg, response.body
+  end
+
   test "profile does not expose a separate conversation language preference" do
     sign_in_as(@user)
 
