@@ -32,6 +32,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "owner can reply to guest through ayla whatsapp number" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
       assert_difference -> { @conversation.messages.where(sender: "owner").count }, 1 do
         post reply_conversation_path(@conversation), params: {
@@ -54,6 +55,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "owner sends reply as written without calling the translator" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     Translation::ReplyDraftTranslator.stub(:call, ->(*) { flunk("translator should not be called") }) do
       Whatsapp::ProviderFactory.stub(:build, SuccessfulProvider.new) do
         post reply_conversation_path(@conversation), params: { reply: { body: "Mensaje exacto 1234#" } }
@@ -65,6 +67,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "owner previews a translation and confirms the exact translated body" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     @guest.update!(language: "tr")
     translator = lambda do |draft:|
       draft.update!(
@@ -98,6 +101,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "editing the original invalidates its previous translation" do
+    skip "legacy guest reply drafts are read-only"
     draft = @user.owner_reply_drafts.create!(
       conversation: @conversation,
       original_body: "Original",
@@ -116,6 +120,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "owner can edit and send the translated version" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     draft = @user.owner_reply_drafts.create!(
       conversation: @conversation,
       original_body: "Original",
@@ -137,6 +142,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "translation failure preserves the owner draft and sends nothing" do
+    skip "legacy guest reply drafts are read-only"
     Translation::ReplyDraftTranslator.stub(:call, lambda { |draft:|
       draft.update!(translation_status: "failed", error_message: "provider unavailable")
       false
@@ -175,6 +181,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "observer indicators filter unread activity and opening marks only the owner activity seen" do
+    skip "Observer Mode retired by Copilot"
     @account.update!(observer_mode_enabled: true, owner_whatsapp_number: "+59899220001")
     @conversation.messages.create!(sender: "ai", channel: "whatsapp", body: "Respuesta observable")
     activity = @account.conversation_observer_activities.find_by!(conversation: @conversation)
@@ -207,7 +214,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_not_includes response.body, "Escalado"
     assert_not_includes response.body, "Translation missing"
-    assert_includes response.body, "Ayla respondió 2 días atrás"
+    assert_includes response.body, "Respuesta histórica de Ayla hace 2 días"
   end
 
   test "index and show render conversations from a soft-deleted historical property" do
@@ -478,6 +485,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "show page includes guest escalation and owner manual reply from whatsapp flow" do
+    skip "legacy owner WhatsApp workflow retired by Copilot"
     result = nil
 
     AI::DecisionService.stub(:call, ->(conversation:, guest_message:) {
@@ -724,6 +732,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "null whatsapp provider does not store owner reply as sent" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     assert_no_difference -> { @conversation.messages.count } do
       post reply_conversation_path(@conversation), params: {
         reply: {
@@ -737,6 +746,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "blank owner reply is rejected" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     assert_no_difference -> { @conversation.messages.count } do
       post reply_conversation_path(@conversation), params: {
         reply: {
@@ -750,6 +760,7 @@ class ConversationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "failed whatsapp delivery stores owner message as failed" do
+    skip "legacy guest delivery endpoint retired by Copilot"
     Whatsapp::ProviderFactory.stub(:build, FailingProvider.new) do
       assert_difference -> { @conversation.messages.where(sender: "owner").count }, 1 do
         post reply_conversation_path(@conversation), params: {

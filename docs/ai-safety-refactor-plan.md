@@ -1,4 +1,6 @@
-# AI tool-first WhatsApp flow
+# AI tool-first WhatsApp flow (legacy)
+
+> Deprecated: `/decide` and automatic guest response are retired. This file remains as a historical security record. See `COPILOT_ARCHITECTURE.md`.
 
 ## Goal
 

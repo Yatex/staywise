@@ -21,9 +21,6 @@
         <% end %>
       </div>
       <div class="flex flex-wrap gap-2">
-        <% if @whatsapp_link.present? %>
-          <button type="button" class="<%= secondary_button_class %>" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-action="clipboard#copyText">Copiar link de WhatsApp</button>
-        <% end %>
         <% unless @property_read_only %>
           <%= link_to "Editar propiedad", edit_property_path(@property), class: secondary_button_class %>
           <%= button_to "Eliminar propiedad",
@@ -37,7 +34,7 @@
     </div>
 
     <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-      <% sections = [["Resumen", "#overview"], ["Información completa", "#property-information"], ["Guías y electrodomésticos", "#knowledge"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Consultas pendientes", "#new-questions"], ["QR de WhatsApp", "#whatsapp-qr"]] %>
+      <% sections = [["Resumen", "#overview"], ["Información completa", "#property-information"], ["Guías y electrodomésticos", "#knowledge"], ["Recomendaciones locales", "#recommendations"], ["FAQs", "#faqs"], ["Consultas históricas", "#new-questions"]] %>
       <% sections << ["Configuración", "#settings"] unless @property_read_only %>
       <% sections.each do |label, href| %>
         <a href="<%= href %>" class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"><%= label %></a>
@@ -45,26 +42,7 @@
     </div>
   </section>
 
-  <section id="whatsapp-qr" class="grid gap-6 <%= "xl:grid-cols-[320px_1fr]" unless @property_read_only %>">
-    <div class="<%= card_class %> p-5">
-      <h3 class="text-base font-semibold text-slate-950">QR de WhatsApp de la propiedad</h3>
-      <p class="mt-1 text-sm text-slate-500">Los huéspedes lo escanean para hacer preguntas sobre esta propiedad.</p>
-      <% if @whatsapp_link.present? %>
-        <div class="mt-4 w-64 max-w-full rounded-xl border border-slate-200 bg-white p-4">
-          <%= image_tag whatsapp_qr_property_path(@property, format: :svg), alt: "#{@property.display_name} QR de WhatsApp", class: "aspect-square w-full rounded-lg bg-slate-50" %>
-        </div>
-        <div class="mt-4 flex flex-wrap gap-2" data-controller="clipboard" data-clipboard-text-value="<%= @whatsapp_link %>" data-clipboard-url-value="<%= whatsapp_qr_property_path(@property, format: :svg) %>">
-          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyText">Copiar link</button>
-          <button type="button" class="<%= secondary_button_class %>" data-action="clipboard#copyImage">Copiar QR</button>
-          <%= link_to "Descargar QR", whatsapp_qr_property_path(@property, format: :svg, download: 1), class: primary_button_class %>
-        </div>
-      <% else %>
-        <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Configurá TWILIO_WHATSAPP_FROM o WHATSAPP_FROM_NUMBER para generar links y QR reales.
-        </div>
-      <% end %>
-    </div>
-
+  <section class="grid gap-6">
     <% unless @property_read_only %>
       <div class="<%= card_class %> p-5">
         <h3 class="text-base font-semibold text-slate-950">Reutilizar contenido de otra propiedad</h3>

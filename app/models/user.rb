@@ -6,6 +6,9 @@ class User < ApplicationRecord
 
   belongs_to :account
   has_many :owner_reply_drafts, dependent: :nullify
+  has_many :copilot_threads, dependent: :destroy
+  has_many :copilot_messages, dependent: :destroy
+  has_many :copilot_runs, dependent: :destroy
 
   has_secure_password
   has_secure_token :email_verification_token

@@ -28,4 +28,21 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, 'data-controller="dismissable"'
     assert_includes @response.body, 'data-dismissable-timeout-value="3500"'
   end
+
+  test "repeated sign in attempts are rate limited" do
+    rate_limit_store = SessionsController.cache_store
+    attempts = 0
+
+    rate_limit_store.stub(:increment, ->(*) { attempts += 1 }) do
+      10.times do
+        post login_path, params: { email: "missing@staywise.test", password: "wrong-password" }
+        assert_response :unprocessable_entity
+      end
+
+      post login_path, params: { email: "missing@staywise.test", password: "wrong-password" }
+
+      assert_response :too_many_requests
+      assert_includes response.body, "Demasiados intentos"
+    end
+  end
 end

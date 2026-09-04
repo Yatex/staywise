@@ -36,14 +36,12 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, "Alertas importantes"
   end
 
-  test "shows whatsapp configuration warning with settings link" do
+  test "does not advertise retired whatsapp configuration" do
     get dashboard_path
 
     assert_response :success
-    assert_select "[data-testid='owner-whatsapp-warning']", 1 do
-      assert_select "a[href='#{settings_path}']", text: "Configurar WhatsApp"
-    end
-    assert_includes response.body, "No estás recibiendo notificaciones por WhatsApp"
+    assert_select "[data-testid='owner-whatsapp-warning']", 0
+    assert_not_includes response.body, "Configurar WhatsApp"
   end
 
   test "hides whatsapp warning when owner notifications are configured" do

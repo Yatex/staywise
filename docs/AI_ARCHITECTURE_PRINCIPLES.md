@@ -1,5 +1,7 @@
 # Ayla AI Architecture Principles
 
+> Current scope: host Copilot. AI-created operational effects and automatic guest delivery are legacy and are not part of the runtime contract.
+
 This document is the architectural source of truth for Ayla Stay / Ayla Manager.
 
 Any AI agent or developer proposing, reviewing, or writing code that touches WhatsApp, AI decisions, tools, evidence, alerts, guests, properties, reservations, or host workflows must read this document before making changes.

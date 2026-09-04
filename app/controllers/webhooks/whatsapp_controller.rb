@@ -14,11 +14,12 @@ module Webhooks
         return head :unauthorized
       end
 
-      result = Whatsapp::IncomingMessageHandler.new(params.to_unsafe_h).call
+      result = Whatsapp::CopilotInboundRouter.new(params.to_unsafe_h).call
       response = { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
       response[:error] = result[:error] if result[:error].present?
       response[:ignored] = true if result[:ignored]
       response[:duplicate] = true if result[:duplicate]
+      response[:channel] = result[:channel] if result[:channel].present?
       render json: response
     rescue StandardError => error
       Rails.logger.error("[whatsapp-webhook] #{error.class}: #{error.message}")

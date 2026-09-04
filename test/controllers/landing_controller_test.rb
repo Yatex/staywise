@@ -5,8 +5,10 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :success
-    assert_includes @response.body, "Dejá de responder siempre lo mismo"
+    assert_includes @response.body, "Respondé mejor a tus huéspedes"
     assert_includes @response.body, signup_path
+    assert_includes response.headers.fetch("Content-Security-Policy"), "default-src 'self'"
+    assert_includes response.headers.fetch("Content-Security-Policy"), "frame-ancestors 'none'"
   end
 
   test "authenticated users are redirected from landing to dashboard" do

@@ -200,3 +200,24 @@ test("AI service configured Rails URL overrides the callback URL received from R
     },
   );
 });
+
+test("copilot tools use their isolated signed-tool namespace", async () => {
+  let requestedUrl = "";
+  const fetchImpl = async (url: URL | RequestInfo) => {
+    requestedUrl = url.toString();
+    return { ok: true, status: 200, text: async () => "{}" } as Response;
+  };
+
+  await callRailsTool(
+    {
+      base_url: "https://aylamanager.example",
+      decision_context_id: "signed-copilot-context",
+      path_prefix: "/internal/ai/copilot_tools",
+    },
+    "property_brain",
+    { guest_message: "How does the heating work?" },
+    { fetchImpl, token: "shared-token", environment: "production" },
+  );
+
+  assert.equal(requestedUrl, "https://aylamanager.example/internal/ai/copilot_tools/property_brain");
+});

@@ -4,6 +4,7 @@ export type RailsToolEndpoint = {
   base_url: string;
   decision_context_id: string;
   correlation_id?: string;
+  path_prefix?: string;
 };
 
 type RailsToolClientOptions = {
@@ -32,7 +33,8 @@ export async function callRailsTool(
   if (!toolEndpoint?.decision_context_id) throw new Error("decision_context_id is required for Rails tool calls");
 
   const baseUrl = validatedBaseUrl(toolEndpoint.base_url, options.environment || process.env.NODE_ENV);
-  const url = new URL(`/internal/ai/tools/${toolName}`, baseUrl);
+  const pathPrefix = toolEndpoint.path_prefix || "/internal/ai/tools";
+  const url = new URL(`${pathPrefix.replace(/\/$/, "")}/${toolName}`, baseUrl);
   const fetchImpl = options.fetchImpl || fetch;
   let response: Response;
   try {
@@ -85,6 +87,7 @@ export function resolveRailsToolEndpoint(
     base_url: environment.RAILS_TOOLS_BASE_URL || toolEndpoint?.base_url || "",
     decision_context_id: toolEndpoint?.decision_context_id || "",
     ...(toolEndpoint?.correlation_id ? { correlation_id: toolEndpoint.correlation_id } : {}),
+    ...(toolEndpoint?.path_prefix ? { path_prefix: toolEndpoint.path_prefix } : {}),
   };
 }
 

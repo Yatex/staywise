@@ -8,9 +8,6 @@ class ConversationsController < ApplicationController
     scope = account_scoped_conversations
       .includes(:guest, :property)
       .recent
-    if params[:filter] == "unread" && observer_for_current_user.present?
-      scope = scope.where(id: observer_for_current_user.conversation_observer_activities.unseen.select(:conversation_id))
-    end
     @total_count = scope.count
     @total_pages = (@total_count.to_f / PER_PAGE).ceil
     @conversations = scope.limit(PER_PAGE).offset((@current_page - 1) * PER_PAGE).to_a
@@ -23,7 +20,6 @@ class ConversationsController < ApplicationController
       .each_with_object({}) { |(conversation_id, property_id), memo| memo[conversation_id] ||= property_id }
     @conversation_display_properties = Property.with_deleted.where(id: latest_property_ids.values.compact.uniq).index_by(&:id)
     @conversation_display_property_ids = latest_property_ids
-    @observer_activities = observer_activities_for(conversation_ids).index_by(&:conversation_id)
     @last_ai_responses = readable_messages.where(conversation_id: conversation_ids, sender: "ai")
       .group(:conversation_id).maximum(:created_at)
   end
@@ -32,8 +28,6 @@ class ConversationsController < ApplicationController
     set_conversation
     load_initial_messages
     load_conversation_sidebar
-    mark_observer_activity_seen!
-    @reply_draft = current_user.owner_reply_drafts.find_by(id: params[:reply_draft_id], conversation_id: @conversation.id)
   end
 
   def refresh
@@ -66,78 +60,12 @@ class ConversationsController < ApplicationController
     end
   end
 
-  def reply
-    @conversation = account_scoped_conversations.find(params[:id])
-    result = Whatsapp::OwnerReplySender.call(
-      conversation: @conversation,
-      user: current_user,
-      body: reply_params[:body]
-    )
-
-    if result.success?
-      redirect_to conversation_path(@conversation, anchor: "message-#{result.message.id}"), notice: "Mensaje enviado al huésped por WhatsApp desde Ayla."
-    else
-      target = result.message.present? ? conversation_path(@conversation, anchor: "message-#{result.message.id}") : conversation_path(@conversation)
-      redirect_to target, alert: result.error
-    end
-  end
-
-  def translate_reply
-    set_conversation
-    draft = current_user.owner_reply_drafts.create!(
-      conversation: @conversation,
-      original_body: reply_params[:body],
-      source_language: interface_language,
-      target_language: @conversation.guest.language.presence || "es",
-      translation_status: "pending"
-    )
-    Translation::ReplyDraftTranslator.call(draft: draft)
-    redirect_to conversation_path(@conversation, reply_draft_id: draft.id)
-  end
-
-  def update_reply_draft
-    set_conversation
-    draft = current_user.owner_reply_drafts.find_by!(id: params[:reply_draft_id], conversation: @conversation)
-    case params[:operation]
-    when "edit_original"
-      draft.invalidate_translation!(params[:original_body].to_s)
-    when "edit_translation"
-      draft.update!(translated_body: params[:translated_body].to_s, translation_status: "completed")
-    when "retry"
-      draft.update!(translation_status: "pending")
-      Translation::ReplyDraftTranslator.call(draft: draft)
-    when "cancel"
-      draft.update!(translation_status: "cancelled")
-      return redirect_to conversation_path(@conversation)
-    end
-    redirect_to conversation_path(@conversation, reply_draft_id: draft.id)
-  end
-
-  def send_reply_draft
-    set_conversation
-    draft = current_user.owner_reply_drafts.find_by!(id: params[:reply_draft_id], conversation: @conversation)
-    if params[:version] == "translated" && draft.translation_status != "completed"
-      return redirect_to conversation_path(@conversation, reply_draft_id: draft.id),
-        alert: "La traducción ya no está vigente. Volvé a traducir el mensaje antes de enviarlo."
-    end
-    sent_body = params[:version] == "translated" ? draft.translated_body : draft.original_body
-    return redirect_to conversation_path(@conversation, reply_draft_id: draft.id), alert: "No hay una traducción lista para enviar." if sent_body.blank?
-
-    result = Whatsapp::OwnerReplySender.call(
-      conversation: @conversation, user: current_user, body: sent_body,
-      original_body: draft.original_body, reply_draft: draft
-    )
-    unless result.success?
-      return redirect_to conversation_path(@conversation, reply_draft_id: draft.id), alert: result.error
-    end
-    draft.update!(
-      sent_body: sent_body,
-      translation_status: "sent",
-      confirmed_by: current_user.email,
-      confirmed_at: Time.current
-    )
-    redirect_to conversation_path(@conversation, anchor: "message-#{result.message.id}"), notice: "Mensaje enviado al huésped por WhatsApp desde Ayla."
-  end
+  # Compatibility tombstones. Historical conversations are read-only in the
+  # Copilot product and Ayla cannot deliver a message to their guest.
+  def reply = head(:gone)
+  def translate_reply = head(:gone)
+  def update_reply_draft = head(:gone)
+  def send_reply_draft = head(:gone)
 
   def translate_messages
     set_conversation
@@ -181,10 +109,6 @@ class ConversationsController < ApplicationController
       conversation_id: @conversation.id,
       property_id: @display_property&.id || @conversation.property_id
     )
-  end
-
-  def reply_params
-    params.require(:reply).permit(:body)
   end
 
   def load_initial_messages
@@ -286,20 +210,4 @@ class ConversationsController < ApplicationController
     conversation.guest_requests.where(account_id: current_account.id)
   end
 
-  def observer_for_current_user
-    return unless current_user.owner? || current_user.admin?
-
-    current_account
-  end
-
-  def observer_activities_for(conversation_ids)
-    return ConversationObserverActivity.none if observer_for_current_user.blank?
-
-    observer_for_current_user.conversation_observer_activities.where(conversation_id: conversation_ids)
-  end
-
-  def mark_observer_activity_seen!
-    activity = observer_activities_for([@conversation.id]).find_by(conversation_id: @conversation.id)
-    activity&.mark_seen! if activity&.observer_seen_at.nil? || activity&.unread_activity_count.to_i.positive?
-  end
 end

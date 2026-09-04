@@ -2,8 +2,7 @@
 
 <% sections = [
   ["profile", "Mi perfil", "Datos personales y contraseña"],
-  ["ai", "Ayla AI", "Respuesta automática"],
-  ["whatsapp", "WhatsApp", "Notificaciones y modo observador"]
+  ["ai", "Ayla Copilot", "Asistencia para el anfitrión"]
 ] %>
 
 <div class="mx-auto max-w-5xl space-y-5">
@@ -11,7 +10,7 @@
     <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><%= @settings_error %></div>
   <% end %>
 
-  <nav class="grid gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-3" aria-label="Secciones de configuración">
+  <nav class="grid gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2" aria-label="Secciones de configuración">
     <% sections.each do |key, title, description| %>
       <% active = settings_section == key %>
       <%= link_to settings_path(section: key),

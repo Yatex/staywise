@@ -1,8 +1,9 @@
 class OwnerAlertEmailJob < ApplicationJob
   queue_as :default
 
-  def perform(alert_id)
-    alert = Alert.includes(property: :account).find(alert_id)
-    Notifications::OwnerAlertNotifier.call(alert)
+  # Compatibility tombstone for jobs serialized before the Copilot migration.
+  # Automatic operational notifications are not part of the Copilot runtime.
+  def perform(_alert_id)
+    Rails.logger.info("[owner-alert-email] ignored retired notification job")
   end
 end

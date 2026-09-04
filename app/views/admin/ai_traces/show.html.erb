@@ -6,7 +6,7 @@
 <% alert_trace = payload["alert"].presence || { "created" => false } %>
 <% whatsapp_trace = payload["whatsapp_delivery"].presence || {} %>
 <% original_decision = payload["original_decision"].presence || payload["rejected_candidate"].presence || @trace.ai_response_payload.to_h %>
-<% generated_response = original_decision.to_h["response_text"].presence || original_decision.to_h["message_body"].presence || payload["outcome"].presence %>
+<% generated_response = @trace.copilot_run&.guest_reply.presence || @trace.copilot_run&.clarifying_question_guest.presence || original_decision.to_h["response_text"].presence || original_decision.to_h["message_body"].presence || payload["outcome"].presence %>
 <% safe_fallback_response = payload["safe_fallback_response"].presence || @trace.ai_response_payload.to_h["safe_fallback_response"].presence || payload["rejected_candidate"].to_h["safe_fallback_response"].presence %>
 <% final_response = payload["final_response_text"].presence %>
 <% fallback_diagnostic = payload["fallback_diagnostic"].to_h %>
@@ -22,6 +22,9 @@
     <div class="flex gap-2">
       <% if @trace.conversation.present? %>
         <%= link_to "Ver conversación", conversation_path(@trace.conversation), class: secondary_button_class %>
+      <% end %>
+      <% if @trace.copilot_run.present? %>
+        <%= link_to "Ver consulta Copilot", copilot_thread_path(@trace.copilot_run.copilot_thread), class: secondary_button_class %>
       <% end %>
       <% if @trace.property.present? %>
         <%= link_to "Ver propiedad", property_path(@trace.property), class: secondary_button_class %>
@@ -50,13 +53,30 @@
     </div>
   </section>
 
+  <% if @trace.copilot_run.present? %>
+    <% run = @trace.copilot_run %>
+    <section class="<%= card_class %> p-5">
+      <h3 class="text-base font-semibold text-slate-950">Resultado Copilot</h3>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Consulta entendida</p><p class="mt-1 whitespace-pre-wrap text-sm text-slate-800"><%= run.guest_question_es.presence || "Sin datos" %></p></div>
+        <div><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Resumen de respuesta</p><p class="mt-1 whitespace-pre-wrap text-sm text-slate-800"><%= run.answer_summary_es.presence || "Sin datos" %></p></div>
+        <div><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Confianza</p><p class="mt-1 text-sm text-slate-800"><%= run.confidence.present? ? "#{run.confidence}%" : "Sin datos" %></p></div>
+        <div><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Información faltante</p><p class="mt-1 text-sm text-slate-800"><%= run.missing_information? ? "Sí" : "No" %></p></div>
+      </div>
+      <div class="mt-4"><p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= run.missing_information? ? "Pregunta aclaratoria para el host" : "Mensaje sugerido" %></p><p class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm text-slate-800"><%= run.missing_information? ? run.clarifying_question_es : run.guest_reply %></p></div>
+      <% if run.clarifying_question_guest.present? %><div class="mt-4"><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Pregunta lista para el huésped</p><p class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm text-slate-800"><%= run.clarifying_question_guest %></p></div><% end %>
+      <div class="mt-4"><p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Evidence refs</p><p class="mt-1 text-sm text-slate-600"><%= run.evidence_refs.any? ? run.evidence_refs.join(", ") : "Sin referencias" %></p></div>
+    </section>
+  <% end %>
+
   <section class="<%= card_class %> p-5">
-    <h3 class="text-base font-semibold text-slate-950">Mensaje original del huésped</h3>
-    <p class="mt-3 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= @trace.original_message&.body || @trace.message&.body || "Mensaje no disponible" %></p>
+    <h3 class="text-base font-semibold text-slate-950"><%= @trace.copilot_run.present? ? "Mensaje pegado por el anfitrión" : "Mensaje original del huésped" %></h3>
+    <p class="mt-3 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= @trace.original_message&.body || @trace.message&.body || @trace.copilot_run&.copilot_message&.content || "Mensaje no disponible" %></p>
     <div class="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
       <span>Cuenta: <%= @trace.account&.name || "Sin cuenta" %></span>
       <span>· Propiedad: <%= @trace.property&.display_name || "Sin propiedad" %></span>
-      <span>· Conversación: #<%= @trace.conversation_id || "sin ID" %></span>
+      <% if @trace.copilot_run.present? %><span>· Usuario: <%= @trace.copilot_run.user.name.presence || @trace.copilot_run.user.email %> (#<%= @trace.copilot_run.user_id %>)</span><% end %>
+      <span>· <%= @trace.copilot_run_id.present? ? "Copilot run: ##{@trace.copilot_run_id}" : "Conversación: ##{@trace.conversation_id || 'sin ID'}" %></span>
       <span>· Correlación: <%= payload["correlation_id"].presence || "Sin datos" %></span>
       <span>· <%= local_datetime(@trace.created_at) %></span>
     </div>
@@ -131,7 +151,7 @@
           <% tool = tool.to_h %>
           <% tool_context = tool["context"].to_h %>
           <% tool_request = tool["request"].presence || tool["input"].presence || {} %>
-          <% tool_response = tool.key?("response") ? tool["response"] : tool["output_summary"] %>
+          <% tool_response = tool.key?("response") ? tool["response"] : (tool.key?("result") ? tool["result"] : tool["output_summary"]) %>
           <% returned_evidence = Array(tool["evidence_returned"]) %>
           <% referenced_evidence = Array(tool["evidence_referenced"]) %>
           <article class="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -293,7 +313,7 @@
     <h3 class="text-base font-semibold text-slate-950">Respuesta y validaciones</h3>
     <div class="mt-4 grid gap-4 lg:grid-cols-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Decisión original de la AI</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400"><%= @trace.copilot_run.present? ? "Respuesta estructurada de la AI" : "Decisión original de la AI" %></p>
         <p class="mt-2 whitespace-pre-line rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-800"><%= generated_response.presence || "Sin respuesta generada" %></p>
         <p class="mt-2 text-xs text-slate-500">Acción: <%= original_decision.to_h["action"] || original_decision.to_h["outcome"] || "Sin datos" %></p>
       </div>

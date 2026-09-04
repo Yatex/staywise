@@ -25,7 +25,6 @@ class PropertiesController < ApplicationController
     @sensitive_data = @property.sensitive_data.active.order(:kind)
     @new_questions = @property.alerts.unknown_questions.open.includes(:guest, :conversation).order(created_at: :desc).limit(10)
     @source_properties = current_account.properties.where.not(id: @property.id).order(:name)
-    @whatsapp_link = Whatsapp::PropertyDeepLink.call(@property)
   end
 
   def new
@@ -118,14 +117,10 @@ class PropertiesController < ApplicationController
     redirect_to property_path(@property), alert: "Elegí una propiedad desde donde copiar."
   end
 
+  # Compatibility tombstone for old printed QR codes and bookmarked URLs.
+  # The guest-facing WhatsApp channel has been retired.
   def whatsapp_qr
-    svg = Whatsapp::PropertyQrCode.svg_for(@property)
-    disposition = params[:download].present? ? "attachment" : "inline"
-
-    send_data svg,
-      type: "image/svg+xml",
-      disposition: disposition,
-      filename: "#{@property.display_name.parameterize.presence || "property"}-whatsapp-qr.svg"
+    head :gone
   end
 
   def update_co_host
