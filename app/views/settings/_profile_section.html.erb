@@ -12,9 +12,23 @@
     </div>
   </section>
 
-  <section class="<%= card_class %> p-5">
-    <h2 class="text-base font-semibold text-slate-950">Seguridad</h2>
-    <p class="mt-1 text-sm text-slate-500">Dejá estos campos vacíos si no querés cambiar tu contraseña.</p>
+  <section class="rounded-xl border border-amber-300 bg-amber-50/70 p-5 shadow-sm">
+    <div class="flex items-start gap-3">
+      <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 9v4" stroke-linecap="round" />
+          <path d="M12 17h.01" stroke-linecap="round" />
+          <path d="M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-base font-semibold text-amber-950">Seguridad</h2>
+          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-300">Cambio sensible</span>
+        </div>
+        <p class="mt-1 text-sm text-amber-800">Completá estos campos únicamente si querés cambiar tu contraseña.</p>
+      </div>
+    </div>
     <div class="mt-5 grid gap-4 md:grid-cols-3">
       <div>
         <%= form.label :current_password, "Contraseña actual", class: label_class %>

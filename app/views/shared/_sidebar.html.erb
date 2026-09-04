@@ -57,22 +57,6 @@
     </div>
   <% end %>
 
-  <details class="mt-5 hidden border-t border-slate-200 pt-4 lg:block" data-sidebar-target="label">
-    <summary class="cursor-pointer px-3 text-xs font-semibold text-slate-400 hover:text-slate-700">Operación anterior</summary>
-    <nav class="mt-2 space-y-1">
-      <% [
-        [t("ui.nav.dashboard"), dashboard_path],
-        [t("ui.nav.conversations"), conversations_path],
-        [t("ui.nav.guest_requests"), guest_requests_path],
-        [t("ui.nav.inquiries"), inquiries_path],
-        [t("ui.nav.alerts"), alerts_path],
-        [t("ui.nav.checkout_events"), checkout_events_path]
-      ].each do |label, path| %>
-        <%= link_to label, path, class: "block rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-white hover:text-slate-900" %>
-      <% end %>
-    </nav>
-  </details>
-
   <% if current_user.admin? %>
     <div class="mt-6 border-t border-slate-200 pt-5">
       <p class="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400" data-sidebar-target="label"><%= t("ui.nav.admin") %></p>

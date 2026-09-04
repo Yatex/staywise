@@ -21,6 +21,7 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "nav[aria-label='Secciones de configuración'] a", count: 2
     assert_includes response.body, "Mi perfil"
+    assert_includes response.body, "Cambio sensible"
     assert_not_includes response.body, "Número de WhatsApp"
     assert_not_includes response.body, "Modo observador"
 

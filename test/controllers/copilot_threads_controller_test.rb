@@ -47,7 +47,7 @@ class CopilotThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Historial"
     assert_includes response.body, "Propiedades"
     assert_includes response.body, "Configuración"
-    assert_includes response.body, "Operación anterior"
+    assert_not_includes response.body, "Operación anterior"
   end
 
   test "index only displays the authenticated user's threads" do
