@@ -7,6 +7,13 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     @account = Account.create!(name: "Webhook Controller Stays")
     @account.subscriptions.create!(plan: "growth", status: "trialing")
     @property = @account.properties.create!(name: "Webhook Controller Apartment")
+    @user = @account.users.create!(
+      name: "Webhook Owner",
+      email: "webhook-owner@example.test",
+      email_verified_at: Time.current,
+      password: "password123",
+      password_confirmation: "password123"
+    )
   end
 
   teardown do
@@ -91,18 +98,19 @@ class WhatsappWebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, Message.where("metadata ->> 'MessageSid' = ?", "SM_REPEATED_GUEST").count
   end
 
-  test "host inbound is classified separately but does not enter the legacy owner workflow" do
+  test "host inbound starts the Copilot interface without entering the legacy owner workflow" do
     ENV["WHATSAPP_PROVIDER"] = "null"
     @account.update!(owner_whatsapp_number: "+15550000008")
 
-    assert_no_difference ["OwnerWhatsappSession.count", "CopilotThread.count", "Message.count"] do
+    assert_no_difference ["OwnerWhatsappSession.count", "Message.count"] do
       post webhooks_whatsapp_path, params: whatsapp_payload(body: "Necesito ayuda con una respuesta")
     end
 
     assert_response :success
     assert_equal "host", response.parsed_body["channel"]
-    assert_equal "host_whatsapp_copilot_not_enabled", response.parsed_body["error"]
-    assert_equal false, response.parsed_body["replied"]
+    assert_nil response.parsed_body["error"]
+    assert_equal true, response.parsed_body["replied"]
+    assert CopilotThread.exists?(source: "whatsapp", user: @user, property: @property)
   end
 
   private

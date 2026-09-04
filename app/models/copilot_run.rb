@@ -1,5 +1,6 @@
 class CopilotRun < ApplicationRecord
   STATUSES = %w[pending completed failed].freeze
+  SOURCES = %w[web whatsapp].freeze
 
   belongs_to :copilot_thread
   belongs_to :copilot_message
@@ -9,6 +10,7 @@ class CopilotRun < ApplicationRecord
   has_one :ai_decision_log, dependent: :nullify
 
   validates :status, inclusion: { in: STATUSES }
+  validates :source, inclusion: { in: SOURCES }
   validates :confidence, numericality: { only_integer: true, in: 0..100 }, allow_nil: true
   validate :tenant_consistency
   validate :completed_contract

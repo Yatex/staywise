@@ -32,19 +32,19 @@ class SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action='#{settings_path}']", count: 0
   end
 
-  test "legacy account automation settings cannot be changed" do
+  test "owner can configure Copilot WhatsApp without changing legacy automation settings" do
     @account.update!(ai_active: true, owner_whatsapp_number: "+59899123456", observer_mode_enabled: false)
     sign_in_as(@user)
 
     patch settings_path, params: {
       section: "ai",
-      account: { ai_active: "0", owner_whatsapp_number: "+111", observer_mode_enabled: "1" }
+      account: { ai_active: "0", owner_whatsapp_number: "+59899123457", observer_mode_enabled: "1" }
     }
 
     assert_redirected_to settings_path(section: "ai")
     @account.reload
     assert @account.ai_active?
-    assert_equal "+59899123456", @account.owner_whatsapp_number
+    assert_equal "+59899123457", @account.owner_whatsapp_number
     assert_not @account.observer_mode_enabled?
   end
 

@@ -25,4 +25,11 @@ class CopilotRuntimeBoundaryTest < ActiveSupport::TestCase
 
     assert_empty violations, "Legacy automation leaked into a runtime entrypoint:\n#{violations.join("\n")}" 
   end
+
+  test "host Copilot responder exposes no arbitrary recipient argument" do
+    parameters = Whatsapp::HostCopilotResponder.instance_method(:send).parameters
+
+    assert_equal [[:keyreq, :body]], parameters
+    assert_not_includes parameters, [:keyreq, :to]
+  end
 end

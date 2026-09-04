@@ -9,6 +9,7 @@ class User < ApplicationRecord
   has_many :copilot_threads, dependent: :destroy
   has_many :copilot_messages, dependent: :destroy
   has_many :copilot_runs, dependent: :destroy
+  has_many :host_whatsapp_copilot_sessions, dependent: :destroy
 
   has_secure_password
   has_secure_token :email_verification_token

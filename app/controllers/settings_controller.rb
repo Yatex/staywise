@@ -10,6 +10,7 @@ class SettingsController < ApplicationController
   def update
     @account = current_account
     @user = current_user
+    return head :forbidden if params[:account].present? && !current_user.owner? && !current_user.admin?
     return head :forbidden if observer_preference_submitted? && !observer_preference_authorized?
 
     Account.transaction do
@@ -37,7 +38,7 @@ class SettingsController < ApplicationController
   private
 
   def account_params
-    params.require(:account).permit
+    params.require(:account).permit(:owner_whatsapp_number)
   end
 
   def settings_section

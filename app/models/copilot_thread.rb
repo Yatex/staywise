@@ -1,5 +1,6 @@
 class CopilotThread < ApplicationRecord
   STATUSES = %w[active archived].freeze
+  SOURCES = %w[web whatsapp].freeze
 
   belongs_to :account
   belongs_to :property
@@ -8,6 +9,7 @@ class CopilotThread < ApplicationRecord
   has_many :copilot_runs, dependent: :destroy
 
   validates :status, inclusion: { in: STATUSES }
+  validates :source, inclusion: { in: SOURCES }
   validate :tenant_consistency
 
   scope :recent, -> { order(last_message_at: :desc, created_at: :desc) }

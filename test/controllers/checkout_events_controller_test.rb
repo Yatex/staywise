@@ -29,11 +29,11 @@ class CheckoutEventsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@user)
   end
 
-  test "lists departures and exposes the navigation section" do
+  test "lists historical departures without exposing legacy navigation" do
     get checkout_events_path
 
     assert_response :success
-    assert_select "a[href='#{checkout_events_path}']", text: "Salidas"
+    assert_select "aside a[href='#{checkout_events_path}']", count: 0
     assert_includes response.body, "Apartamento Rambla"
     assert_includes response.body, "Juana Pérez"
     assert_includes response.body, "Ya dejamos las llaves y nos fuimos."

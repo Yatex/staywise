@@ -16,7 +16,7 @@ authenticated host
 
 Rails owns authentication, tenancy, authorization and persistence. The Node AI service owns semantic reasoning and retrieval. There is deliberately no edge from the Copilot pipeline to a WhatsApp provider, `Message`, `OwnerTask`, `Alert`, or `CheckoutEvent`.
 
-Guest conversations, messages, AI traces, OwnerTasks, alerts and checkout events from the previous product are retained as audit records. Their screens are grouped under **Operación anterior** and guest conversations are read-only. Guest QR links, automatic guest replies, Observer Mode and the owner operational WhatsApp state machine are retired from runtime.
+Guest conversations, messages, AI traces, OwnerTasks, alerts and checkout events from the previous product are retained as audit records. Guest conversations are read-only and their historical screens are no longer linked from the main navigation. Guest QR links, automatic guest replies, Observer Mode and the owner operational WhatsApp state machine are retired from runtime. WhatsApp is available only as a host interface to Copilot and can reply only to the verified owner/co-host sender.
 
 See [Copilot architecture](docs/COPILOT_ARCHITECTURE.md) and the [final legacy audit](docs/LEGACY_ARCHITECTURE_AUDIT.md).
 

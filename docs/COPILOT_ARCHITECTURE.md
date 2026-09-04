@@ -24,7 +24,9 @@ User session
 
 The Copilot pipeline has no provider parameter and no dependency on the `Whatsapp` namespace. It persists only Copilot records and audit traces. It does not create legacy `Message`, `OwnerTask`, `Alert`, or `CheckoutEvent` rows. The UI offers **Copiar respuesta**, not **Enviar**.
 
-Public WhatsApp inbound is handled by `Whatsapp::CopilotInboundRouter`. It acknowledges and classifies events but intentionally has no provider, AI client or persistence dependency. Guest events return `guest_whatsapp_channel_retired`; known host numbers return `host_whatsapp_copilot_not_enabled`. Neither produces an outbound message.
+Public WhatsApp inbound is handled by `Whatsapp::CopilotInboundRouter`. External and guest-only numbers remain side-effect free and return `guest_whatsapp_channel_retired`. A number configured as an account owner or assigned co-host enters the host-only Copilot adapter, selects only an authorized property, and reuses `Copilot::DraftService`. The response boundary, `Whatsapp::HostCopilotResponder`, has no recipient argument and can send only to the verified inbound host number. It cannot address a guest, reservation phone, AI-provided phone, or message-provided phone.
+
+Host WhatsApp state is stored in `HostWhatsappCopilotSession` and expires after 24 hours of inactivity. Its states are `awaiting_property`, `awaiting_guest_message`, and `active_thread`. Threads and runs created through this interface use `source: whatsapp` and appear in the same Copilot history as web consultations.
 
 The old Node `/decide` endpoint returns HTTP 410. The authenticated `/copilot` endpoint is the only endpoint for response drafting.
 
@@ -35,7 +37,7 @@ The old Node `/decide` endpoint returns HTTP 410. The authenticated `/copilot` e
 ## WhatsApp channels
 
 - Guest ↔ host: outside Ayla, through the booking platform or host's own channel.
-- Host ↔ Ayla: currently supported through authenticated web Copilot. The former central WhatsApp workflow is retired because it cannot safely select among properties without authenticated context.
+- Host ↔ Ayla: supported through the authenticated web Copilot and through the host-only WhatsApp adapter. WhatsApp identity comes from the configured owner/co-host phone and property selection is constrained server-side.
 - Twilio status callback: retained temporarily so late callbacks for historical messages can update delivery audit metadata.
 
 ## Tools

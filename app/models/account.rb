@@ -41,6 +41,7 @@ class Account < ApplicationRecord
   has_many :copilot_threads, dependent: :destroy
   has_many :copilot_messages, dependent: :destroy
   has_many :copilot_runs, dependent: :destroy
+  has_many :host_whatsapp_copilot_sessions, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, uniqueness: true, allow_blank: true
@@ -54,6 +55,10 @@ class Account < ApplicationRecord
   validates :property_limit_override,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 },
     allow_nil: true
+  validates :owner_whatsapp_number,
+    uniqueness: true,
+    format: { with: /\A\+\d{8,15}\z/, message: "debe incluir código de país, por ejemplo +598..." },
+    allow_blank: true
   validate :ai_decision_threshold_order
   validate :owner_phone_is_not_a_co_host_phone
 
@@ -137,7 +142,7 @@ class Account < ApplicationRecord
   end
 
   def normalize_owner_whatsapp_number
-    self.owner_whatsapp_number = owner_whatsapp_number.to_s.gsub(/\Awhatsapp:/, "").strip.presence
+    self.owner_whatsapp_number = owner_whatsapp_number.to_s.gsub(/\Awhatsapp:/, "").gsub(/[^\d+]/, "").strip.presence
   end
 
   def ai_decision_threshold_order

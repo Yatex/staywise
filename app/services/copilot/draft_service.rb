@@ -8,14 +8,16 @@ module Copilot
       end
     end
 
-    def self.call(thread:, content:, host_context: nil, client: AIClient.new)
-      new(thread: thread, content: content, host_context: host_context, client: client).call
+    def self.call(thread:, content:, host_context: nil, source: nil, channel_metadata: {}, client: AIClient.new)
+      new(thread: thread, content: content, host_context: host_context, source: source, channel_metadata: channel_metadata, client: client).call
     end
 
-    def initialize(thread:, content:, host_context:, client:)
+    def initialize(thread:, content:, host_context:, source:, channel_metadata:, client:)
       @thread = thread
       @content = content.to_s.strip
       @host_context = host_context.to_s.strip.presence
+      @source = source.presence || thread.source
+      @channel_metadata = channel_metadata.to_h
       @client = client
     end
 
@@ -54,6 +56,8 @@ module Copilot
         property: @thread.property,
         user: @thread.user,
         status: "pending",
+        source: @source,
+        channel_metadata: @channel_metadata,
         correlation_id: Current.request_id.presence || SecureRandom.uuid
       )
     end
@@ -148,6 +152,8 @@ module Copilot
           copilot_run_id: run.id,
           missing_information: run.missing_information,
           error_type: run.error_type,
+          source: run.source,
+          channel_metadata: run.channel_metadata,
           correlation_id: run.correlation_id
         )
       )
@@ -163,6 +169,7 @@ module Copilot
         property: { id: run.property_id, name: run.property.display_name },
         user: { id: run.user_id, email: run.user.email },
         thread_id: run.copilot_thread_id,
+        source: run.source,
         guest_message: message.content,
         host_context: message.host_context,
         thread_history: history_before(message)

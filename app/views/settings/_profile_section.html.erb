@@ -12,6 +12,24 @@
     </div>
   </section>
 
+  <% if current_user.owner? || current_user.admin? %>
+    <section class="<%= card_class %> p-5">
+      <div>
+        <h2 class="text-base font-semibold text-slate-950">WhatsApp Copilot</h2>
+        <p class="mt-1 text-sm text-slate-500">Este es el único número autorizado para consultar a Ayla por WhatsApp en nombre de la cuenta.</p>
+      </div>
+      <div class="mt-5 max-w-xl">
+        <%= label_tag "account_owner_whatsapp_number", "Tu número de WhatsApp", class: label_class %>
+        <%= telephone_field_tag "account[owner_whatsapp_number]", @account.owner_whatsapp_number,
+          id: "account_owner_whatsapp_number",
+          placeholder: "+5491112345678",
+          autocomplete: "tel",
+          class: field_class %>
+        <p class="mt-2 text-xs text-slate-500">Incluí el código de país. Ayla solo responderá a este número y nunca enviará la sugerencia al huésped.</p>
+      </div>
+    </section>
+  <% end %>
+
   <section class="rounded-xl border border-amber-300 bg-amber-50/70 p-5 shadow-sm">
     <div class="flex items-start gap-3">
       <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true">

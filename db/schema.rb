@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_04_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -45,6 +45,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
     t.boolean "observer_mode_enabled", default: false, null: false
     t.datetime "observer_mode_activated_at"
     t.index ["owner_whatsapp_number"], name: "index_accounts_on_owner_whatsapp_number"
+    t.index ["owner_whatsapp_number"], name: "index_accounts_on_unique_owner_whatsapp_number", unique: true, where: "(owner_whatsapp_number IS NOT NULL)"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
     t.check_constraint "property_limit_override IS NULL OR property_limit_override >= 0", name: "accounts_property_limit_override_non_negative"
   end
@@ -260,6 +261,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
     t.datetime "updated_at", null: false
     t.text "clarifying_question_es"
     t.text "clarifying_question_guest"
+    t.string "source", default: "web", null: false
+    t.jsonb "channel_metadata", default: {}, null: false
     t.index ["account_id"], name: "index_copilot_runs_on_account_id"
     t.index ["copilot_message_id"], name: "index_copilot_runs_on_copilot_message_id"
     t.index ["copilot_thread_id", "created_at"], name: "index_copilot_runs_on_copilot_thread_id_and_created_at"
@@ -268,6 +271,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
     t.index ["property_id"], name: "index_copilot_runs_on_property_id"
     t.index ["user_id"], name: "index_copilot_runs_on_user_id"
     t.check_constraint "confidence IS NULL OR confidence >= 0 AND confidence <= 100", name: "copilot_runs_confidence_check"
+    t.check_constraint "source::text = ANY (ARRAY['web'::character varying::text, 'whatsapp'::character varying::text])", name: "copilot_runs_source_check"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text])", name: "copilot_runs_status_check"
   end
 
@@ -280,11 +284,38 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
     t.datetime "last_message_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "source", default: "web", null: false
     t.index ["account_id", "user_id", "last_message_at"], name: "index_copilot_threads_for_user"
     t.index ["account_id"], name: "index_copilot_threads_on_account_id"
     t.index ["property_id"], name: "index_copilot_threads_on_property_id"
     t.index ["user_id"], name: "index_copilot_threads_on_user_id"
+    t.check_constraint "source::text = ANY (ARRAY['web'::character varying::text, 'whatsapp'::character varying::text])", name: "copilot_threads_source_check"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'archived'::character varying::text])", name: "copilot_threads_status_check"
+  end
+
+  create_table "host_whatsapp_copilot_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "co_host_id"
+    t.bigint "selected_property_id"
+    t.bigint "copilot_thread_id"
+    t.string "participant_phone", null: false
+    t.string "actor_role", null: false
+    t.string "state", default: "awaiting_property", null: false
+    t.datetime "last_activity_at", null: false
+    t.string "last_inbound_message_sid"
+    t.jsonb "delivery_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_host_whatsapp_copilot_sessions_on_account_id"
+    t.index ["co_host_id"], name: "index_host_whatsapp_copilot_sessions_on_co_host_id"
+    t.index ["copilot_thread_id"], name: "index_host_whatsapp_copilot_sessions_on_copilot_thread_id"
+    t.index ["last_activity_at"], name: "index_host_whatsapp_copilot_sessions_on_last_activity_at"
+    t.index ["participant_phone"], name: "index_host_copilot_sessions_on_phone", unique: true
+    t.index ["selected_property_id"], name: "index_host_whatsapp_copilot_sessions_on_selected_property_id"
+    t.index ["user_id"], name: "index_host_whatsapp_copilot_sessions_on_user_id"
+    t.check_constraint "actor_role::text = ANY (ARRAY['owner'::character varying::text, 'co_host'::character varying::text])", name: "host_copilot_sessions_actor_role_check"
+    t.check_constraint "state::text = ANY (ARRAY['awaiting_property'::character varying::text, 'awaiting_guest_message'::character varying::text, 'active_thread'::character varying::text])", name: "host_copilot_sessions_state_check"
   end
 
   create_table "faqs", force: :cascade do |t|
@@ -647,6 +678,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_04_123000) do
   add_foreign_key "guest_requests", "properties"
   add_foreign_key "guests", "accounts"
   add_foreign_key "guests", "properties"
+  add_foreign_key "host_whatsapp_copilot_sessions", "accounts"
+  add_foreign_key "host_whatsapp_copilot_sessions", "co_hosts"
+  add_foreign_key "host_whatsapp_copilot_sessions", "copilot_threads"
+  add_foreign_key "host_whatsapp_copilot_sessions", "properties", column: "selected_property_id"
+  add_foreign_key "host_whatsapp_copilot_sessions", "users"
   add_foreign_key "knowledge_blocks", "properties"
   add_foreign_key "message_translations", "messages", on_delete: :cascade
   add_foreign_key "messages", "accounts"

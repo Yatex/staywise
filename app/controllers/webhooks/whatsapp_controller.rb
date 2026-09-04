@@ -15,7 +15,12 @@ module Webhooks
       end
 
       result = Whatsapp::CopilotInboundRouter.new(params.to_unsafe_h).call
-      response = { ok: true, conversation_id: result[:conversation]&.id, replied: result[:replied] }
+      response = {
+        ok: true,
+        conversation_id: result[:conversation]&.id,
+        copilot_thread_id: result[:copilot_thread]&.id,
+        replied: result[:replied]
+      }
       response[:error] = result[:error] if result[:error].present?
       response[:ignored] = true if result[:ignored]
       response[:duplicate] = true if result[:duplicate]

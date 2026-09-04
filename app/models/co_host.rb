@@ -4,6 +4,7 @@ class CoHost < ApplicationRecord
   has_many :owner_whatsapp_sessions, dependent: :nullify
   has_many :conversation_observer_activities, as: :observer, dependent: :destroy
   has_many :owner_reply_drafts, dependent: :nullify
+  has_many :host_whatsapp_copilot_sessions, dependent: :destroy
 
   validates :name, :whatsapp_number, presence: true
   validates :whatsapp_number, uniqueness: true
