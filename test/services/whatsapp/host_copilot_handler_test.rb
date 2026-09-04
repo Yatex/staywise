@@ -77,10 +77,82 @@ class WhatsappHostCopilotHandlerTest < ActiveSupport::TestCase
     assert_equal "active_thread", session.reload.state
     assert_equal "whatsapp", session.copilot_thread.source
     assert_equal "whatsapp", session.copilot_thread.copilot_runs.last.source
-    assert_includes @provider.deliveries.last[:body], "El huésped pregunta:"
-    assert_includes @provider.deliveries.last[:body], "Idioma: Inglés"
-    assert_includes @provider.deliveries.last[:body], "Hi! Use code 4821#."
-    assert_equal [@account.owner_whatsapp_number] * 2, @provider.deliveries.map { |item| item[:to] }
+    owner_message, guest_reply = @provider.deliveries.last(2).map { |delivery| delivery[:body] }
+    assert_includes owner_message, "El huésped pregunta:"
+    assert_includes owner_message, "Respuesta:"
+    assert_includes owner_message, "Idioma: Inglés"
+    assert_equal "Hi! Use code 4821#.", guest_reply
+    assert_equal [@account.owner_whatsapp_number] * 3, @provider.deliveries.map { |item| item[:to] }
+  end
+
+  test "successful draft sends exactly two ordered messages and a clean guest reply" do
+    reply = "Hi! Open https://example.test/access?code=4821%23 and enter 4821#."
+    client = FakeClient.new(self.class.valid_response(reply: reply))
+    route("Hola", client: client)
+    initial_delivery_count = @provider.deliveries.size
+
+    route("How do I enter?", client: client)
+
+    outbound = @provider.deliveries.drop(initial_delivery_count)
+    assert_equal 2, outbound.size
+    assert_includes outbound.first[:body], "cómo ingresar al departamento."
+    assert_includes outbound.first[:body], "Debe usar el código 4821#"
+    assert_includes outbound.first[:body], "Idioma: Inglés"
+    assert_equal reply, outbound.second[:body]
+    assert_not_includes outbound.second[:body], "Mensaje para enviar"
+    assert_not_includes outbound.second[:body], "Idioma:"
+    assert_not_includes outbound.second[:body], "Palermo Soho"
+    assert outbound.all? { |delivery| delivery[:to] == @account.owner_whatsapp_number }
+  end
+
+  test "foreign-language guest reply is preserved exactly" do
+    reply = "Bonjour ! Utilisez le code 2-6-9-4, puis ouvrez https://example.test/entrée?a=1&b=2."
+    response = self.class.valid_response(reply: reply).merge("detected_language" => "fr")
+    client = FakeClient.new(response)
+    route("Hola", client: client)
+
+    route("Comment entrer ?", client: client)
+
+    assert_includes @provider.deliveries[-2][:body], "Idioma: Francés"
+    assert_equal reply, @provider.deliveries.last[:body]
+  end
+
+  test "missing information without a safe guest message sends only the owner explanation" do
+    response = self.class.valid_response.merge(
+      "guest_reply" => nil,
+      "missing_information" => true,
+      "clarifying_question_es" => "Falta saber qué cerradura está fallando.",
+      "clarifying_question_guest" => nil
+    )
+    client = FakeClient.new(response)
+    route("Hola", client: client)
+    initial_delivery_count = @provider.deliveries.size
+
+    route("The lock does not work", client: client)
+
+    outbound = @provider.deliveries.drop(initial_delivery_count)
+    assert_equal 1, outbound.size
+    assert_includes outbound.first[:body], "No tengo información suficiente para responder esto con seguridad."
+    assert_includes outbound.first[:body], "Falta saber qué cerradura está fallando."
+  end
+
+  test "missing information sends a clean clarifying question as the second message" do
+    question = "Which lock is not working?"
+    response = self.class.valid_response.merge(
+      "guest_reply" => nil,
+      "missing_information" => true,
+      "clarifying_question_es" => "Falta saber qué cerradura está fallando.",
+      "clarifying_question_guest" => question
+    )
+    client = FakeClient.new(response)
+    route("Hola", client: client)
+    initial_delivery_count = @provider.deliveries.size
+
+    route("The lock does not work", client: client)
+
+    outbound = @provider.deliveries.drop(initial_delivery_count)
+    assert_equal 2, outbound.size
+    assert_equal question, outbound.second[:body]
   end
 
   test "owner selects one of several authorized properties by number" do
@@ -191,10 +263,12 @@ class WhatsappHostCopilotHandlerTest < ActiveSupport::TestCase
     client = FakeClient.new(timeout)
     route("Hola", client: client)
 
+    initial_delivery_count = @provider.deliveries.size
     assert_no_difference ["Message.count", "OwnerTask.count", "Alert.count", "CheckoutEvent.count"] do
       route("Guest message", client: client)
     end
 
+    assert_equal 1, @provider.deliveries.size - initial_delivery_count
     assert_equal @account.owner_whatsapp_number, @provider.deliveries.last[:to]
     assert_equal Whatsapp::HostCopilotHandler::TECHNICAL_ERROR_MESSAGE, @provider.deliveries.last[:body]
     assert_equal "failed", HostWhatsappCopilotSession.last.copilot_thread.copilot_runs.last.status

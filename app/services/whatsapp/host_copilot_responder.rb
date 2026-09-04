@@ -14,5 +14,9 @@ module Whatsapp
 
       @provider.send_message(to: @identity.phone_number, body: body)
     end
+
+    def send_sequence(bodies:)
+      Array(bodies).map { |body| send(body: body) }
+    end
   end
 end

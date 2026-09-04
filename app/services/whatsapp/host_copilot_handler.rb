@@ -94,7 +94,7 @@ module Whatsapp
       @session.update!(state: "active_thread", copilot_thread: thread, last_activity_at: Time.current)
 
       if result.success?
-        deliver(format_draft(result.run), run: result.run)
+        deliver_sequence(draft_messages(result.run), run: result.run)
       else
         deliver(TECHNICAL_ERROR_MESSAGE, run: result.run, processing_error: result.run&.error_type || result.error&.class&.name)
       end
@@ -193,27 +193,38 @@ module Whatsapp
       properties.each_with_index.map { |property, index| "#{index + 1}. #{property.display_name}" }.join("\n")
     end
 
-    def format_draft(run)
+    def draft_messages(run)
+      owner_message = format_owner_summary(run)
+      copyable_message = run.missing_information? ? run.clarifying_question_guest : run.guest_reply
+
+      [owner_message, copyable_message.presence].compact
+    end
+
+    def format_owner_summary(run)
       language = language_name(run.detected_language)
       if run.missing_information?
         parts = [
           "No tengo información suficiente para responder esto con seguridad.",
-          "Entendí que el huésped pregunta:\n#{run.guest_question_es}",
+          "El huésped pregunta:\n#{normalized_guest_question(run.guest_question_es)}",
           "Me falta:\n#{run.clarifying_question_es}"
         ]
-        if run.clarifying_question_guest.present?
-          parts << "Podrías preguntarle:\n\n#{run.clarifying_question_guest}"
-        end
         parts << "Idioma: #{language}"
         return parts.join("\n\n")
       end
 
       [
-        "El huésped pregunta:\n#{run.guest_question_es}",
-        "Respuesta:\n#{run.answer_summary_es}",
-        "Idioma: #{language}",
-        "Mensaje para enviar:\n\n#{run.guest_reply}"
+        "El huésped pregunta:\n#{normalized_guest_question(run.guest_question_es)}",
+        "Respuesta:\n#{normalized_answer_summary(run.answer_summary_es)}",
+        "Idioma: #{language}"
       ].join("\n\n")
+    end
+
+    def normalized_guest_question(value)
+      value.to_s.sub(/\A(?:el\s+hu[eé]sped\s+pregunta(?:\s+que)?|pregunta)\s*:?\s*/i, "").presence || value
+    end
+
+    def normalized_answer_summary(value)
+      value.to_s.sub(/\A(?:la\s+respuesta\s+(?:es|indica)|respuesta)\s*:?\s*/i, "").presence || value
     end
 
     def language_name(code)
@@ -221,11 +232,19 @@ module Whatsapp
     end
 
     def deliver(body, run: nil, processing_error: nil)
-      delivery = @responder.send(body: body)
-      metadata = delivery_metadata(delivery, body: body, processing_error: processing_error)
+      deliver_sequence([body], run: run, processing_error: processing_error)
+    end
+
+    def deliver_sequence(bodies, run: nil, processing_error: nil)
+      deliveries = @responder.send_sequence(bodies: bodies)
+      message_metadata = deliveries.zip(bodies).map do |delivery, body|
+        delivery_metadata(delivery, body: body, processing_error: processing_error)
+      end
+      success = deliveries.all? { |delivery| delivery.respond_to?(:success?) ? delivery.success? : delivery == true }
+      metadata = aggregate_delivery_metadata(message_metadata, success: success, processing_error: processing_error)
       @session.update!(last_activity_at: Time.current, delivery_metadata: metadata) if @session.persisted?
       record_run_delivery(run, metadata) if run
-      success = delivery.respond_to?(:success?) ? delivery.success? : delivery == true
+      last_delivery = deliveries.last
       {
         conversation: nil,
         copilot_thread: @session.copilot_thread,
@@ -233,7 +252,23 @@ module Whatsapp
         ignored: false,
         channel: "host",
         error: success ? nil : "host_whatsapp_delivery_failed",
-        provider_message_id: delivery.respond_to?(:provider_message_id) ? delivery.provider_message_id : nil
+        provider_message_id: last_delivery.respond_to?(:provider_message_id) ? last_delivery.provider_message_id : nil
+      }.compact
+    end
+
+    def aggregate_delivery_metadata(messages, success:, processing_error:)
+      last = messages.last || {}
+      {
+        "recipient_role" => @identity.role,
+        "recipient_phone" => @identity.phone_number,
+        "message_count" => messages.size,
+        "messages" => messages,
+        "success" => success,
+        "provider_message_id" => last["provider_message_id"],
+        "provider_status" => last["provider_status"],
+        "delivery_error" => messages.filter_map { |item| item["delivery_error"] }.first,
+        "processing_error" => processing_error,
+        "sent_at" => Time.current.iso8601
       }.compact
     end
 
